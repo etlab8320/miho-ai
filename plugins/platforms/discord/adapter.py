@@ -844,6 +844,38 @@ class DiscordAdapter(BasePlatformAdapter):
                 await self._handle_message(message)
 
             @self._client.event
+            async def on_guild_channel_create(channel):
+                try:
+                    from gateway.discord_workspace import ensure_workspace_for_channel
+                    ensure_workspace_for_channel(channel)
+                except Exception as exc:
+                    logger.debug("[%s] Discord channel workspace init failed: %s", self.name, exc)
+
+            @self._client.event
+            async def on_thread_create(thread):
+                try:
+                    from gateway.discord_workspace import ensure_workspace_for_thread
+                    ensure_workspace_for_thread(thread)
+                except Exception as exc:
+                    logger.debug("[%s] Discord thread workspace init failed: %s", self.name, exc)
+
+            @self._client.event
+            async def on_guild_channel_delete(channel):
+                try:
+                    from gateway.discord_workspace import archive_workspace_for_channel
+                    archive_workspace_for_channel(channel)
+                except Exception as exc:
+                    logger.debug("[%s] Discord channel workspace archive failed: %s", self.name, exc)
+
+            @self._client.event
+            async def on_thread_delete(thread):
+                try:
+                    from gateway.discord_workspace import archive_workspace_for_thread
+                    archive_workspace_for_thread(thread)
+                except Exception as exc:
+                    logger.debug("[%s] Discord thread workspace archive failed: %s", self.name, exc)
+
+            @self._client.event
             async def on_voice_state_update(member, before, after):
                 """Track voice channel join/leave events."""
                 # Only track channels where the bot is connected
@@ -3566,6 +3598,9 @@ class DiscordAdapter(BasePlatformAdapter):
         _chan = getattr(interaction, "channel", None)
         chat_topic = self._get_effective_topic(_chan, is_thread=True) if _chan else None
 
+        _parent_channel = self._thread_parent_channel(getattr(interaction, "channel", None))
+        _parent_id = str(getattr(_parent_channel, "id", "") or "")
+
         source = self.build_source(
             chat_id=thread_id,
             chat_name=chat_name,
@@ -3574,12 +3609,25 @@ class DiscordAdapter(BasePlatformAdapter):
             user_name=interaction.user.display_name,
             thread_id=thread_id,
             chat_topic=chat_topic,
+            guild_id=str(getattr(interaction.guild, "id", "") or "") if getattr(interaction, "guild", None) else None,
+            parent_chat_id=_parent_id or None,
         )
 
-        _parent_channel = self._thread_parent_channel(getattr(interaction, "channel", None))
-        _parent_id = str(getattr(_parent_channel, "id", "") or "")
         _skills = self._resolve_channel_skills(thread_id, _parent_id or None)
         _channel_prompt = self._resolve_channel_prompt(thread_id, _parent_id or None)
+        try:
+            from gateway.discord_workspace import record_turn_and_build_prompt
+            _workspace_prompt = record_turn_and_build_prompt(
+                source=source,
+                text=text,
+                message_id=None,
+            )
+            if _workspace_prompt:
+                _channel_prompt = "\n\n".join(
+                    part for part in [_channel_prompt, _workspace_prompt] if part
+                )
+        except Exception as exc:
+            logger.debug("[%s] Discord thread workspace context failed: %s", self.name, exc)
         event = MessageEvent(
             text=text,
             message_type=MessageType.TEXT,
@@ -4834,6 +4882,20 @@ class DiscordAdapter(BasePlatformAdapter):
         _chan_id = str(getattr(_chan, "id", ""))
         _skills = self._resolve_channel_skills(_chan_id, _parent_id or None)
         _channel_prompt = self._resolve_channel_prompt(_chan_id, _parent_id or None)
+        try:
+            from gateway.discord_workspace import record_turn_and_build_prompt
+            _workspace_prompt = record_turn_and_build_prompt(
+                source=source,
+                text=event_text,
+                message_id=str(message.id),
+                timestamp=getattr(message, "created_at", None),
+            )
+            if _workspace_prompt:
+                _channel_prompt = "\n\n".join(
+                    part for part in [_channel_prompt, _workspace_prompt] if part
+                )
+        except Exception as exc:
+            logger.debug("[%s] Discord workspace context failed: %s", self.name, exc)
 
         reply_to_id = None
         reply_to_text = None

@@ -8602,6 +8602,13 @@ class GatewayRunner:
                 agent_result, response, history_len=len(history),
             )
             response = _sanitize_gateway_final_response(source.platform, response)
+            if source.platform == Platform.DISCORD and response:
+                try:
+                    from gateway.discord_workspace import record_assistant_turn
+
+                    record_assistant_turn(source=source, text=response)
+                except Exception as exc:
+                    logger.debug("Discord workspace assistant memory failed: %s", exc)
 
             # If the agent's session_id changed during compression, update
             # session_entry so transcript writes below go to the right session.

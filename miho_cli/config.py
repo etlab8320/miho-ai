@@ -1385,6 +1385,10 @@ DEFAULT_CONFIG = {
         # real memory cost. Default 32 MiB matches the historical hardcoded
         # cap. Set to 0 for no cap. Env override: DISCORD_MAX_ATTACHMENT_BYTES.
         "max_attachment_bytes": 33554432,
+        "workspace_rag": {
+            "embedding_provider": "auto",  # auto | voyage | openai | local
+            "embedding_model": "voyage-4-large",
+        },
     },
 
     # WhatsApp platform settings (gateway mode)
@@ -1825,6 +1829,14 @@ OPTIONAL_ENV_VARS = {
         "tools": ["vision_analyze", "mixture_of_agents"],
         "category": "provider",
         "advanced": True,
+    },
+    "VOYAGE_API_KEY": {
+        "description": "Voyage AI API key for Discord workspace embeddings",
+        "prompt": "Voyage AI API key",
+        "url": "https://dash.voyageai.com/",
+        "password": True,
+        "tools": ["discord_workspace_rag"],
+        "category": "tool",
     },
     "GOOGLE_API_KEY": {
         "description": "Google AI Studio API key (also recognized as GEMINI_API_KEY)",

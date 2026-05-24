@@ -2789,6 +2789,68 @@ def _reconfigure_simple_requirements(ts_key: str):
             _print_info("    Kept current")
 
 
+def _configure_discord_workspace_rag(config: dict):
+    """Configure Discord workspace RAG embedding provider and token."""
+    print()
+    print(color("  --- 💬 Discord Workspace RAG Embeddings ---", Colors.CYAN))
+    print(color("  Used for channel/thread memory vector search.", Colors.DIM))
+    choices = [
+        "Voyage AI [recommended]",
+        "OpenAI embeddings",
+        "Local fallback only (no API key)",
+        "Cancel",
+    ]
+    idx = _prompt_choice("  Select embedding provider", choices, default=0)
+    if idx == 3:
+        return
+
+    rag_cfg = config.setdefault("discord", {}).setdefault("workspace_rag", {})
+    if idx == 0:
+        rag_cfg["embedding_provider"] = "voyage"
+        models = [
+            "voyage-4-large (best quality)",
+            "voyage-4 (balanced)",
+            "voyage-4-lite (fast/cheap)",
+            "voyage-code-3 (code retrieval)",
+        ]
+        model_idx = _prompt_choice("  Select Voyage embedding model", models, default=0)
+        selected_model = models[model_idx].split(" ", 1)[0]
+        rag_cfg["embedding_model"] = selected_model
+        existing = get_env_value("VOYAGE_API_KEY")
+        if existing:
+            _print_info(f"  VOYAGE_API_KEY: configured ({existing[:8]}...)")
+        _print_info("  Get yours at: https://dash.voyageai.com/")
+        value = _prompt("    Voyage AI API key (Enter to keep current)", password=True)
+        if value and value.strip():
+            save_env_value("VOYAGE_API_KEY", value.strip())
+            _print_success("    Saved")
+        elif existing:
+            _print_info("    Kept current")
+        else:
+            _print_warning("    Skipped")
+        _print_success(f"  Voyage model set to: {selected_model}")
+    elif idx == 1:
+        rag_cfg["embedding_provider"] = "openai"
+        rag_cfg["embedding_model"] = "text-embedding-3-small"
+        existing = get_env_value("OPENAI_API_KEY")
+        if existing:
+            _print_info(f"  OPENAI_API_KEY: configured ({existing[:8]}...)")
+        _print_info("  Get yours at: https://platform.openai.com/api-keys")
+        value = _prompt("    OpenAI API key (Enter to keep current)", password=True)
+        if value and value.strip():
+            save_env_value("OPENAI_API_KEY", value.strip())
+            _print_success("    Saved")
+        elif existing:
+            _print_info("    Kept current")
+        else:
+            _print_warning("    Skipped")
+    else:
+        rag_cfg["embedding_provider"] = "local"
+        rag_cfg["embedding_model"] = ""
+        _print_success("  Discord workspace RAG will use local fallback embeddings.")
+    save_config(config)
+
+
 # ─── Main Entry Point ─────────────────────────────────────────────────────────
 
 def tools_command(args=None, first_install: bool = False, config: dict = None):
@@ -2908,6 +2970,7 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
     if len(platform_keys) > 1:
         platform_choices.append("Configure all platforms (global)")
     platform_choices.append("Reconfigure an existing tool's provider or API key")
+    platform_choices.append("Configure Discord workspace RAG embeddings")
 
     # Show MCP option if any MCP servers are configured
     _has_mcp = bool(config.get("mcp_servers"))
@@ -2919,8 +2982,9 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
     # Index offsets for the extra options after per-platform entries
     _global_idx = len(platform_keys) if len(platform_keys) > 1 else -1
     _reconfig_idx = len(platform_keys) + (1 if len(platform_keys) > 1 else 0)
-    _mcp_idx = (_reconfig_idx + 1) if _has_mcp else -1
-    _done_idx = _reconfig_idx + (2 if _has_mcp else 1)
+    _rag_idx = _reconfig_idx + 1
+    _mcp_idx = (_rag_idx + 1) if _has_mcp else -1
+    _done_idx = _rag_idx + (2 if _has_mcp else 1)
 
     while True:
         idx = _prompt_choice("Select an option:", platform_choices, default=0)
@@ -2932,6 +2996,11 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
         # "Reconfigure" selected
         if idx == _reconfig_idx:
             _reconfigure_tool(config)
+            print()
+            continue
+
+        if idx == _rag_idx:
+            _configure_discord_workspace_rag(config)
             print()
             continue
 

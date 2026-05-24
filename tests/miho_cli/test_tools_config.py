@@ -8,6 +8,7 @@ from miho_cli.tools_config import (
     _DEFAULT_OFF_TOOLSETS,
     _apply_toolset_change,
     _configure_provider,
+    _configure_discord_workspace_rag,
     _reconfigure_provider,
     _get_platform_tools,
     _platform_toolset_summary,
@@ -619,6 +620,51 @@ def test_reconfigure_lists_enabled_web_without_existing_provider_config(monkeypa
 
     assert any("Web Search" in choice for choice in seen["choices"])
     assert configured == ["web"]
+
+
+def test_tools_command_exposes_discord_rag_embedding_menu(monkeypatch):
+    config = {"platform_toolsets": {"cli": []}}
+    seen = {}
+
+    monkeypatch.setattr("miho_cli.tools_config._get_enabled_platforms", lambda: ["cli"])
+    monkeypatch.setattr(
+        "miho_cli.tools_config._get_platform_tools",
+        lambda *args, **kwargs: set(),
+    )
+    def fake_prompt_choice(question, choices, default=0):
+        seen["choices"] = choices
+        return len(choices) - 1
+
+    monkeypatch.setattr("miho_cli.tools_config._prompt_choice", fake_prompt_choice)
+
+    tools_command(config=config)
+
+    assert "Configure Discord workspace RAG embeddings" in seen["choices"]
+
+
+def test_configure_discord_rag_saves_voyage_key(monkeypatch):
+    config = {"discord": {}}
+    saved_env = {}
+    saved_configs = []
+
+    monkeypatch.setattr("miho_cli.tools_config.get_env_value", lambda key: "")
+    monkeypatch.setattr("miho_cli.tools_config._prompt_choice", lambda *args, **kwargs: 0)
+    monkeypatch.setattr("miho_cli.tools_config._prompt", lambda *args, **kwargs: "voyage-token")
+    monkeypatch.setattr(
+        "miho_cli.tools_config.save_env_value",
+        lambda key, value: saved_env.setdefault(key, value),
+    )
+    monkeypatch.setattr(
+        "miho_cli.tools_config.save_config",
+        lambda cfg: saved_configs.append(cfg.copy()),
+    )
+
+    _configure_discord_workspace_rag(config)
+
+    assert saved_env["VOYAGE_API_KEY"] == "voyage-token"
+    assert config["discord"]["workspace_rag"]["embedding_provider"] == "voyage"
+    assert config["discord"]["workspace_rag"]["embedding_model"] == "voyage-4-large"
+    assert saved_configs
 
 
 def test_first_install_nous_auto_configures_managed_defaults(monkeypatch):
