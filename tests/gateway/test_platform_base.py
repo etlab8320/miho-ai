@@ -426,6 +426,13 @@ class TestMediaDeliveryPathValidation:
 
         assert BasePlatformAdapter.validate_media_delivery_path(str(media_file)) == str(media_file.resolve())
 
+    def test_default_roots_include_agent_generated_media_cache(self):
+        from gateway.platforms import base
+
+        roots = {root.name for root in base.MEDIA_DELIVERY_SAFE_ROOTS}
+
+        assert "media_cache" in roots
+
 
 # ---------------------------------------------------------------------------
 # should_send_media_as_audio

@@ -814,6 +814,7 @@ def cache_video_from_bytes(data: bytes, ext: str = ".mp4") -> str:
 
 DOCUMENT_CACHE_DIR = get_miho_dir("cache/documents", "document_cache")
 SCREENSHOT_CACHE_DIR = get_miho_dir("cache/screenshots", "browser_screenshots")
+MEDIA_CACHE_DIR = get_miho_dir("cache/media", "media_cache")
 _MIHO_HOME = get_miho_home()
 MEDIA_DELIVERY_ALLOW_DIRS_ENV = "MIHO_MEDIA_ALLOW_DIRS"
 MEDIA_DELIVERY_SAFE_ROOTS = (
@@ -822,11 +823,13 @@ MEDIA_DELIVERY_SAFE_ROOTS = (
     VIDEO_CACHE_DIR,
     DOCUMENT_CACHE_DIR,
     SCREENSHOT_CACHE_DIR,
+    MEDIA_CACHE_DIR,
     _MIHO_HOME / "image_cache",
     _MIHO_HOME / "audio_cache",
     _MIHO_HOME / "video_cache",
     _MIHO_HOME / "document_cache",
     _MIHO_HOME / "browser_screenshots",
+    _MIHO_HOME / "media_cache",
 )
 
 
