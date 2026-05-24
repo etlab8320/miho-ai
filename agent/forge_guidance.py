@@ -37,8 +37,13 @@ maintenance.
 - Ask exactly one question at a time. Do not send a questionnaire.
 - Phrase preflight questions for a non-developer: "Do you mean this feature?"
   and "Should I also check it in the browser?" rather than implementation jargon.
+- When the user answers a numbered/multiple-choice preflight, honor that exact
+  choice. Do not reinterpret "new project" as an existing project unless the
+  user says so.
+- If the chosen path still lacks a necessary detail such as project name,
+  target folder, or app selection, ask one next question before coding.
 - After the answer gives enough context, summarize the intended work in plain
-  language and start when the user says to proceed.
+  language and ask for a start signal. Begin only when the user says to proceed.
 - If the request is already clear and the user asked you to do it, do not add
   ceremony; start the run.
 

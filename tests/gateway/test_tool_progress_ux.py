@@ -9,7 +9,17 @@ def test_clean_progress_hides_tool_names():
 
     assert "terminal" not in message
     assert "python" not in message
-    assert message == "안쪽에서 계산하고 검증하는 중..."
+    assert message == "작업을 진행하고 검증하는 중..."
+
+
+def test_clean_progress_groups_common_coding_tools_to_reduce_chat_noise():
+    messages = {
+        render_clean_tool_progress("read_file"),
+        render_clean_tool_progress("terminal", "pytest"),
+        render_clean_tool_progress("execute_code", "inspect data"),
+    }
+
+    assert messages == {"작업을 진행하고 검증하는 중..."}
 
 
 def test_clean_progress_uses_visual_copy_for_images():

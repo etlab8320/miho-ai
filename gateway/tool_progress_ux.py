@@ -36,17 +36,14 @@ def render_clean_tool_progress(tool_name: str | None, preview: str | None = None
     name = str(tool_name or "").strip()
     preview_text = str(preview or "").strip()
 
-    if name in _RESEARCH_TOOLS:
-        return "자료를 조용히 확인하는 중..."
     if name in _VISUAL_TOOLS:
         return "눈으로 한 번 더 검수하는 중..."
-    if name in _MEMORY_TOOLS:
-        return "맥락을 꺼내 맞춰보는 중..."
     if name in _BUILD_TOOLS:
         if any(word in preview_text.lower() for word in ("html", "png", "image", "screenshot")):
             return "결과물을 빚고 검수하는 중..."
-        return "안쪽에서 계산하고 검증하는 중..."
-    return "흐름을 읽고 다음 수를 고르는 중..."
+    if name in _RESEARCH_TOOLS or name in _MEMORY_TOOLS or name in _BUILD_TOOLS:
+        return "작업을 진행하고 검증하는 중..."
+    return "작업 흐름을 정리하는 중..."
 
 
 def media_delivery_failure_message(platform: Any = None) -> str:
