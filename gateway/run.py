@@ -2707,7 +2707,15 @@ class GatewayRunner:
         if prompt:
             return prompt
         cfg = _load_gateway_runtime_config()
-        return str(cfg_get(cfg, "agent", "system_prompt", default="") or "").strip()
+        configured = str(cfg_get(cfg, "agent", "system_prompt", default="") or "").strip()
+        if configured:
+            return configured
+        try:
+            from hermes_cli.brand import current_brand
+
+            return current_brand().system_prompt
+        except Exception:
+            return ""
 
     @staticmethod
     def _load_reasoning_config() -> dict | None:

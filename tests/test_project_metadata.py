@@ -18,6 +18,12 @@ def _load_package_data():
     return tool["setuptools"]["package-data"]
 
 
+def _load_pyproject():
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with pyproject_path.open("rb") as handle:
+        return tomllib.load(handle)
+
+
 def test_matrix_extra_not_in_all():
     """The [matrix] extra pulls `mautrix[encryption]` -> `python-olm`,
     which has Linux-only wheels and no native build path on Windows or
@@ -110,6 +116,13 @@ def test_feishu_extra_includes_qrcode_for_qr_login():
 
     feishu_extra = optional_dependencies["feishu"]
     assert any(dep.startswith("qrcode") for dep in feishu_extra)
+
+
+def test_miho_console_script_is_packaged():
+    data = _load_pyproject()
+
+    assert data["project"]["scripts"]["miho"] == "miho_cli:main"
+    assert "miho_cli" in data["tool"]["setuptools"]["py-modules"]
 
 
 def test_dashboard_plugin_manifests_and_assets_are_packaged():

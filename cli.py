@@ -421,7 +421,7 @@ def load_cli_config() -> Dict[str, Any]:
             "persistent_output": True,
             "persistent_output_max_lines": 200,
 
-            "skin": "default",
+            "skin": os.environ.get("HERMES_DEFAULT_SKIN", "default"),
         },
         "clarify": {
             "timeout": 120,  # Seconds to wait for a clarify answer before auto-proceeding
@@ -531,6 +531,18 @@ def load_cli_config() -> Dict[str, Any]:
                 defaults["agent"]["max_turns"] = file_config["max_turns"]
         except Exception as e:
             logger.warning("Failed to load cli-config.yaml: %s", e)
+
+    env_default_skin = os.environ.get("HERMES_DEFAULT_SKIN", "default")
+    if env_default_skin != "default" and defaults.get("display", {}).get("skin") == "default":
+        defaults["display"]["skin"] = env_default_skin
+    try:
+        from hermes_cli.brand import current_brand
+
+        brand_prompt = current_brand().system_prompt
+        if brand_prompt and not defaults.get("agent", {}).get("system_prompt"):
+            defaults["agent"]["system_prompt"] = brand_prompt
+    except Exception:
+        pass
 
     # Expand ${ENV_VAR} references in config values before bridging to env vars.
     from hermes_cli.config import _expand_env_vars

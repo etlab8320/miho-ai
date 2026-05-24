@@ -113,6 +113,7 @@ Activate with ``/skin <name>`` in the CLI or ``display.skin: <name>`` in config.
 """
 
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -345,6 +346,82 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
             "help_header": "(^_^)? Available Commands",
         },
         "tool_prefix": "┊",
+    },
+    "miho": {
+        "name": "miho",
+        "description": "Miho AI — moonlit focus with vermilion accents",
+        "colors": {
+            "banner_border": "#C84A3D",
+            "banner_title": "#F7F0E8",
+            "banner_accent": "#F2B84B",
+            "banner_dim": "#8E5A53",
+            "banner_text": "#F8EFE6",
+            "ui_accent": "#F2B84B",
+            "ui_label": "#E37C67",
+            "ui_ok": "#72D7A8",
+            "ui_error": "#FF6B6B",
+            "ui_warn": "#F2B84B",
+            "prompt": "#F8EFE6",
+            "input_rule": "#C84A3D",
+            "response_border": "#F2B84B",
+            "status_bar_bg": "#161316",
+            "status_bar_text": "#F8EFE6",
+            "status_bar_strong": "#F2B84B",
+            "status_bar_dim": "#8E5A53",
+            "status_bar_good": "#72D7A8",
+            "status_bar_warn": "#F2B84B",
+            "status_bar_bad": "#E37C67",
+            "status_bar_critical": "#FF6B6B",
+            "session_label": "#F2B84B",
+            "session_border": "#8E5A53",
+            "selection_bg": "#3A2428",
+            "completion_menu_bg": "#120F12",
+            "completion_menu_current_bg": "#3A2428",
+            "completion_menu_meta_bg": "#181317",
+            "completion_menu_meta_current_bg": "#4A2C31",
+        },
+        "spinner": {
+            "waiting_faces": ["(mi)", "(ho)", "(◆)", "(◐)", "(◇)"],
+            "thinking_faces": ["(◆)", "(◐)", "(mi)", "(ho)", "(◇)"],
+            "thinking_verbs": [
+                "tracking the thread", "reading moonlight", "sharpening intent",
+                "cross-checking paths", "setting the charm", "finding the signal",
+                "quietly deciding", "threading the answer",
+            ],
+            "wings": [
+                ["⟪◆", "◆⟫"],
+                ["⟪◐", "◑⟫"],
+                ["⟪mi", "ho⟫"],
+                ["⟪◇", "◇⟫"],
+            ],
+        },
+        "branding": {
+            "agent_name": "Miho AI",
+            "welcome": "Welcome to Miho AI. Type your message or /help for commands.",
+            "goodbye": "Goodbye from Miho AI. ◆",
+            "response_label": " ◆ Miho AI ",
+            "prompt_symbol": "miho›",
+            "help_header": "(◆) Miho Commands",
+        },
+        "tool_prefix": "▏",
+        "banner_logo": """[bold #F8EFE6]███╗   ███╗██╗██╗  ██╗ ██████╗        █████╗ ██╗[/]
+[bold #F2B84B]████╗ ████║██║██║  ██║██╔═══██╗      ██╔══██╗██║[/]
+[#E37C67]██╔████╔██║██║███████║██║   ██║█████╗███████║██║[/]
+[#C84A3D]██║╚██╔╝██║██║██╔══██║██║   ██║╚════╝██╔══██║██║[/]
+[#8E5A53]██║ ╚═╝ ██║██║██║  ██║╚██████╔╝      ██║  ██║██║[/]
+[#5F3A3D]╚═╝     ╚═╝╚═╝╚═╝  ╚═╝ ╚═════╝       ╚═╝  ╚═╝╚═╝[/]""",
+        "banner_hero": """[#F8EFE6]⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
+[#F2B84B]⠀⠀⠀⠀⠀⠀⠀⣠⠞⠁⠀⠀⠀⠈⠳⣄⠀⠀⠀⠀⠀⠀⠀[/]
+[#E37C67]⠀⠀⠀⠀⠀⠀⣰⠃⠀⢀⣀⠀⣀⡀⠀⠘⣆⠀⠀⠀⠀⠀⠀[/]
+[#C84A3D]⠀⠀⠀⠀⠀⠀⡇⠀⠀⠈◐⠀⠀◑⠁⠀⠀⡇⠀⠀⠀⠀⠀⠀[/]
+[#8E5A53]⠀⠀⠀⠀⠀⠀⢳⡀⠀⠀⠀◆⠀⠀⠀⢀⡞⠀⠀⠀⠀⠀⠀[/]
+[#F2B84B]⠀⠀⠀⠀⠀⣀⣤⠿⣦⣀⠀⠀⠀⣀⣴⠿⣤⣀⠀⠀⠀⠀⠀[/]
+[#F8EFE6]⠀⠀⠀⢀⡾⠋⠀⠀⠀⠉⠛⠛⠛⠉⠀⠀⠀⠙⢷⡀⠀⠀⠀[/]
+[#C84A3D]⠀⠀⠀⠘⣧⡀⠀⠐⠲⣄⠀⠀⠀⠀⣠⠖⠂⠀⢀⣼⠃⠀⠀[/]
+[#E37C67]⠀⠀⠀⠀⠈⠻⣦⣀⠀⠈⠳⣄⣠⠞⠁⠀⣀⣴⠟⠁⠀⠀⠀[/]
+[#8E5A53]⠀⠀⠀⠀⠀⠀⠀⠉⠛⠶⣤⣀⣀⣤⠶⠛⠉⠀⠀⠀⠀⠀⠀[/]
+[#F2B84B]⠀⠀⠀⠀⠀◆⠀⠀◆⠀⠀◆⠀⠀◆⠀⠀◆⠀⠀⠀⠀⠀[/]
+[dim #8E5A53]⠀⠀⠀⠀⠀⠀⠀moonlit operator⠀⠀⠀⠀⠀⠀⠀[/]""",
     },
     "daylight": {
         "name": "daylight",
@@ -795,11 +872,16 @@ def init_skin_from_config(config: dict) -> None:
     display = config.get("display") or {}
     if not isinstance(display, dict):
         display = {}
-    skin_name = display.get("skin", "default")
+    default_skin = os.environ.get("HERMES_DEFAULT_SKIN", "default").strip() or "default"
+    configured_skin = display.get("skin")
+    if configured_skin == "default" and default_skin != "default":
+        skin_name = default_skin
+    else:
+        skin_name = configured_skin or default_skin
     if isinstance(skin_name, str) and skin_name.strip():
         set_active_skin(skin_name.strip())
     else:
-        set_active_skin("default")
+        set_active_skin(default_skin)
 
 
 # =============================================================================

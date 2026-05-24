@@ -1,16 +1,34 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Hermes Agent" width="100%">
+  <img src="assets/banner.png" alt="Miho AI" width="100%">
 </p>
 
-# Hermes Agent ☤
+# Miho AI
 
 <p align="center">
-  <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Docs-hermes--agent.nousresearch.com-FFD700?style=for-the-badge" alt="Documentation"></a>
+  <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Engine-Hermes%20Agent-FFD700?style=for-the-badge" alt="Hermes Agent engine"></a>
   <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://github.com/NousResearch/hermes-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://nousresearch.com"><img src="https://img.shields.io/badge/Built%20by-Nous%20Research-blueviolet?style=for-the-badge" alt="Built by Nous Research"></a>
+  <a href="https://github.com/NousResearch/hermes-agent"><img src="https://img.shields.io/badge/Upstream-Nous%20Research-blueviolet?style=for-the-badge" alt="Upstream Nous Research"></a>
   <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/Lang-中文-red?style=for-the-badge" alt="中文"></a>
 </p>
+
+**Miho AI is a Discord-first custom fork of [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
+The first Miho layer keeps the Hermes engine and upstream compatibility intact while adding a Miho-branded CLI, default skin, system prompt, and gateway UX. Use `miho` for the Miho experience or `hermes` when you want the upstream-style entry point.
+
+```bash
+uv run miho --version
+uv run miho              # Miho AI CLI/TUI
+uv run miho gateway      # Miho-branded messaging gateway
+```
+
+For Discord, set the application and bot display name to **Miho AI** in the
+Discord Developer Portal. The Miho runtime handles the in-app layer: slash
+command descriptions, presence text, gateway status wording, and the default
+agent prompt.
+
+---
+
+# Hermes Agent Engine ☤
 
 **The self-improving AI agent built by [Nous Research](https://nousresearch.com).** It's the only agent with a built-in learning loop — it creates skills from experience, improves them during use, nudges itself to persist knowledge, searches its own past conversations, and builds a deepening model of who you are across sessions. Run it on a $5 VPS, a GPU cluster, or serverless infrastructure that costs nearly nothing when idle. It's not tied to your laptop — talk to it from Telegram while it works on a cloud VM.
 

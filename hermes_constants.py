@@ -17,6 +17,26 @@ _HERMES_HOME_OVERRIDE: ContextVar[str | object] = ContextVar(
 )
 
 
+def _is_miho_runtime() -> bool:
+    brand = os.environ.get("HERMES_BRAND", "").strip().lower()
+    skin = os.environ.get("HERMES_DEFAULT_SKIN", "").strip().lower()
+    return brand in {"miho", "miho-ai", "miho_ai"} or skin == "miho"
+
+
+def get_miho_home() -> Path:
+    """Return the Miho home directory (default: ~/.miho)."""
+    val = os.environ.get("MIHO_HOME", "").strip()
+    if val:
+        return Path(val)
+    return Path.home() / ".miho"
+
+
+def _native_home() -> Path:
+    if _is_miho_runtime():
+        return Path.home() / ".miho"
+    return Path.home() / ".hermes"
+
+
 def set_hermes_home_override(path: str | Path | None) -> Token:
     """Set a context-local Hermes home override and return its reset token.
 
@@ -41,9 +61,11 @@ def get_hermes_home_override() -> str | None:
 
 
 def get_hermes_home() -> Path:
-    """Return the Hermes home directory (default: ~/.hermes).
+    """Return the runtime home directory.
 
-    Reads HERMES_HOME env var, falls back to ~/.hermes.
+    Hermes reads ``HERMES_HOME`` and falls back to ``~/.hermes``.
+    Miho reads ``MIHO_HOME`` and falls back to ``~/.miho``; ``HERMES_HOME``
+    remains supported as an internal engine bridge.
     This is the single source of truth — all other copies should import this.
 
     When ``HERMES_HOME`` is unset but an ``active_profile`` file indicates
@@ -60,6 +82,11 @@ def get_hermes_home() -> Path:
     if override:
         return Path(override)
 
+    if _is_miho_runtime():
+        val = os.environ.get("MIHO_HOME", "").strip()
+        if val:
+            return Path(val)
+
     val = os.environ.get("HERMES_HOME", "").strip()
     if val:
         return Path(val)
@@ -72,7 +99,7 @@ def get_hermes_home() -> Path:
             # Inline the default-root resolution from get_default_hermes_root()
             # to stay import-safe (this function is called from module scope
             # in 30+ files; we cannot afford to trigger logging setup here).
-            active_path = (Path.home() / ".hermes" / "active_profile")
+            active_path = (_native_home() / "active_profile")
             active = active_path.read_text().strip() if active_path.exists() else ""
         except (UnicodeDecodeError, OSError):
             active = ""
@@ -98,7 +125,7 @@ def get_hermes_home() -> Path:
             except Exception:
                 pass
 
-    return Path.home() / ".hermes"
+    return _native_home()
 
 
 def get_default_hermes_root() -> Path:
@@ -117,8 +144,12 @@ def get_default_hermes_root() -> Path:
 
     Import-safe — no dependencies beyond stdlib.
     """
-    native_home = Path.home() / ".hermes"
-    env_home = os.environ.get("HERMES_HOME", "")
+    native_home = _native_home()
+    env_home = (
+        os.environ.get("MIHO_HOME", "").strip()
+        if _is_miho_runtime() and os.environ.get("MIHO_HOME", "").strip()
+        else os.environ.get("HERMES_HOME", "").strip()
+    )
     if not env_home:
         return native_home
     env_path = Path(env_home)

@@ -78,6 +78,17 @@ class TestBuiltinSkins:
         assert skin.name == "slate"
         assert skin.get_color("banner_title") == "#7eb8f6"
 
+    def test_miho_skin_loads(self):
+        from hermes_cli.skin_engine import load_skin
+
+        skin = load_skin("miho")
+        assert skin.name == "miho"
+        assert skin.tool_prefix == "▏"
+        assert skin.get_branding("agent_name") == "Miho AI"
+        assert skin.get_branding("prompt_symbol") == "miho›"
+        assert skin.get_color("banner_title") == "#F7F0E8"
+        assert "████" in skin.banner_logo
+
     def test_daylight_skin_loads(self):
         from hermes_cli.skin_engine import load_skin
 
@@ -148,6 +159,7 @@ class TestSkinManagement:
         assert "ares" in names
         assert "mono" in names
         assert "slate" in names
+        assert "miho" in names
         assert "daylight" in names
         assert "warm-lightmode" in names
         for s in skins:
@@ -163,6 +175,33 @@ class TestSkinManagement:
         from hermes_cli.skin_engine import init_skin_from_config, get_active_skin_name
         init_skin_from_config({})
         assert get_active_skin_name() == "default"
+
+    def test_init_skin_uses_env_default_when_config_has_no_skin(self, monkeypatch):
+        from hermes_cli.skin_engine import init_skin_from_config, get_active_skin_name
+
+        monkeypatch.setenv("HERMES_DEFAULT_SKIN", "miho")
+
+        init_skin_from_config({})
+
+        assert get_active_skin_name() == "miho"
+
+    def test_init_skin_treats_default_as_env_default(self, monkeypatch):
+        from hermes_cli.skin_engine import init_skin_from_config, get_active_skin_name
+
+        monkeypatch.setenv("HERMES_DEFAULT_SKIN", "miho")
+
+        init_skin_from_config({"display": {"skin": "default"}})
+
+        assert get_active_skin_name() == "miho"
+
+    def test_configured_skin_overrides_env_default(self, monkeypatch):
+        from hermes_cli.skin_engine import init_skin_from_config, get_active_skin_name
+
+        monkeypatch.setenv("HERMES_DEFAULT_SKIN", "miho")
+
+        init_skin_from_config({"display": {"skin": "ares"}})
+
+        assert get_active_skin_name() == "ares"
 
     def test_init_skin_from_null_display(self):
         """display: null should fall back to default, not crash."""

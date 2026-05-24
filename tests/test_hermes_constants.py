@@ -9,7 +9,10 @@ import pytest
 import hermes_constants
 from hermes_constants import (
     VALID_REASONING_EFFORTS,
+    display_hermes_home,
     get_default_hermes_root,
+    get_hermes_home,
+    get_miho_home,
     is_container,
     parse_reasoning_effort,
     secure_parent_dir,
@@ -68,6 +71,30 @@ class TestGetDefaultHermesRoot:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("HERMES_HOME", str(profile))
         assert get_default_hermes_root() == docker_root
+
+    def test_miho_runtime_defaults_to_miho_home(self, tmp_path, monkeypatch):
+        """Miho has a native ~/.miho root when no explicit home is set."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("HERMES_BRAND", "miho")
+        monkeypatch.delenv("MIHO_HOME", raising=False)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+
+        assert get_hermes_home() == tmp_path / ".miho"
+        assert get_default_hermes_root() == tmp_path / ".miho"
+        assert get_miho_home() == tmp_path / ".miho"
+
+    def test_miho_home_wins_over_hermes_home(self, tmp_path, monkeypatch):
+        """Miho must not accidentally reuse a user's Hermes install."""
+        miho_home = tmp_path / "miho-data"
+        hermes_home = tmp_path / "hermes-data"
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("HERMES_BRAND", "miho")
+        monkeypatch.setenv("MIHO_HOME", str(miho_home))
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        assert get_hermes_home() == miho_home
+        assert get_default_hermes_root() == miho_home
+        assert display_hermes_home() == "~/miho-data"
 
 
 class TestIsContainer:
@@ -262,5 +289,4 @@ class TestSecureParentDir:
         secure_parent_dir(link_target)
         assert len(called_with) == 1
         assert called_with[0] == (str(real_dir), 0o700)
-
 

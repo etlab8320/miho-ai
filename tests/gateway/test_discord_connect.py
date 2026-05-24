@@ -21,6 +21,12 @@ class _FakeAllowedMentions:
         self.replied_user = replied_user
 
 
+class _FakeActivity:
+    def __init__(self, *, type, name):
+        self.type = type
+        self.name = name
+
+
 def _ensure_discord_mock():
     """Install (or augment) a mock ``discord`` module.
 
@@ -85,8 +91,10 @@ class FakeTree:
         self.sync = AsyncMock(return_value=[])
         self.fetch_commands = AsyncMock(return_value=[])
         self._commands = []
+        self.command_kwargs = []
 
     def command(self, *args, **kwargs):
+        self.command_kwargs.append(kwargs)
         return lambda fn: fn
 
     def get_commands(self, *args, **kwargs):
@@ -117,6 +125,55 @@ class FakeBot:
 
     async def close(self):
         return None
+
+
+def test_discord_slash_descriptions_use_miho_brand(monkeypatch):
+    monkeypatch.setenv("HERMES_BRAND", "miho")
+    adapter = DiscordAdapter(PlatformConfig(enabled=True, token="test-token"))
+    tree = FakeTree()
+    adapter._client = SimpleNamespace(tree=tree)
+
+    adapter._register_slash_commands()
+
+    descriptions = {item["name"]: item["description"] for item in tree.command_kwargs}
+    assert descriptions["reset"] == "Reset your Miho session"
+    assert descriptions["status"] == "Show Miho session status"
+    assert descriptions["update"] == "Update Miho AI to the latest version"
+    assert descriptions["thread"] == "Create a new thread and start a Miho session in it"
+
+
+def test_discord_thread_fallback_uses_miho_brand(monkeypatch):
+    monkeypatch.setenv("HERMES_BRAND", "miho")
+
+    assert discord_platform._thread_created_message("Plan") == "🧵 Thread created by Miho: **Plan**"
+
+
+def test_discord_yaml_status_text_maps_to_env(monkeypatch):
+    monkeypatch.delenv("DISCORD_STATUS_TEXT", raising=False)
+
+    discord_platform._apply_yaml_config({}, {"status_text": "Miho watching"})
+
+    assert __import__("os").environ["DISCORD_STATUS_TEXT"] == "Miho watching"
+
+
+@pytest.mark.asyncio
+async def test_discord_presence_uses_miho_status(monkeypatch):
+    monkeypatch.setenv("HERMES_BRAND", "miho")
+    monkeypatch.delenv("DISCORD_STATUS_TEXT", raising=False)
+    monkeypatch.setattr(discord_platform.discord, "Activity", _FakeActivity, raising=False)
+    monkeypatch.setattr(
+        discord_platform.discord,
+        "ActivityType",
+        SimpleNamespace(watching="watching"),
+        raising=False,
+    )
+    adapter = DiscordAdapter(PlatformConfig(enabled=True, token="test-token"))
+    adapter._client = SimpleNamespace(change_presence=AsyncMock())
+
+    await adapter._apply_brand_presence()
+
+    activity = adapter._client.change_presence.await_args.kwargs["activity"]
+    assert activity.name == "Miho AI"
 
 
 class SlowSyncTree(FakeTree):
