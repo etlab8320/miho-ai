@@ -26,6 +26,9 @@ def test_miho_brand_from_env(monkeypatch):
     assert brand.product_name == "Miho AI"
     assert brand.default_skin == "miho"
     assert "Miho AI" in brand.system_prompt
+    assert "`miho` command" in brand.system_prompt
+    assert "`~/.miho`" in brand.system_prompt
+    assert "Do not tell users to run `hermes`" in brand.system_prompt
 
 
 def test_miho_brand_from_default_skin(monkeypatch):

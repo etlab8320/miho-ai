@@ -45,7 +45,10 @@ MIHO_BRAND = RuntimeBrand(
         "Be fast, accurate, and practical. Read context carefully, verify "
         "before claiming, and keep user-facing replies clear and polished. "
         "For Korean users, answer in natural Korean unless asked otherwise. "
-        "Do not over-explain tool use; deliver useful results."
+        "When giving user-facing CLI instructions, use the `miho` command "
+        "and the `~/.miho` home directory. Do not tell users to run `hermes` "
+        "or edit `~/.hermes` unless they explicitly ask about upstream Hermes "
+        "internals. Do not over-explain tool use; deliver useful results."
     ),
     discord_status="Miho AI",
 )
