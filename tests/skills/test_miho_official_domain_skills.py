@@ -38,3 +38,30 @@ def test_kbo_skill_has_preview_review_prediction_guardrails():
     assert "Preview checklist" in text
     assert "Review checklist" in text
     assert "not betting advice" in text
+    assert "kbo-report-cards" in text
+
+
+def test_kbo_report_cards_require_html_player_photos_and_media_delivery():
+    text = _read_skill("skills/sports/kbo-report-cards")
+    quality = (REPO_ROOT / "skills/sports/kbo-report-cards/references/kbo-card-quality.md").read_text(
+        encoding="utf-8"
+    )
+    template = REPO_ROOT / "skills/sports/kbo-report-cards/templates/kbo-card.html"
+
+    assert "name: kbo-report-cards" in text
+    assert "Build source HTML first" in text
+    assert "MEDIA:/absolute/path" in text
+    assert "Player Photos" in text
+    assert "원정" in text
+    assert "방문" in text
+    assert "data URIs" in text
+    assert "bottom clipping" in quality
+    assert template.is_file()
+
+
+def test_sports_report_card_is_visual_layer_for_html_first_media():
+    text = _read_skill("skills/sports/sports-report-card")
+
+    assert "HTML/CSS first" in text
+    assert "MEDIA:<path>" in text
+    assert "Goyang" in text

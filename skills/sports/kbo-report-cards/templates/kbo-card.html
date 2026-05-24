@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KBO Report Card</title>
+  <style>
+    :root {
+      --ink: #151515;
+      --muted: #64666d;
+      --line: #e4e7ec;
+      --paper: #fbfaf6;
+      --panel: #ffffff;
+      --accent: #f36f21;
+      --accent-2: #1f3b73;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Goyang", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+    .card {
+      width: 1080px;
+      min-height: 1350px;
+      padding: 54px;
+      display: grid;
+      gap: 24px;
+      background:
+        linear-gradient(90deg, rgba(243,111,33,.10), transparent 34%),
+        var(--paper);
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 28px;
+      align-items: end;
+      border-bottom: 4px solid var(--ink);
+      padding-bottom: 22px;
+    }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 24px;
+      font-weight: 800;
+    }
+    h1 {
+      margin: 8px 0 0;
+      font-size: 58px;
+      line-height: 1.03;
+      letter-spacing: 0;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 23px;
+      line-height: 1.45;
+      text-align: right;
+    }
+    .score {
+      display: grid;
+      grid-template-columns: 1fr 230px 1fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+    .team, .scorebox, .panel {
+      background: var(--panel);
+      border: 2px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 14px 34px rgba(18, 24, 40, .08);
+    }
+    .team { padding: 24px; }
+    .team .label {
+      color: var(--muted);
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .team .name {
+      margin-top: 10px;
+      font-size: 42px;
+      font-weight: 900;
+      line-height: 1.05;
+    }
+    .team .stats {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 12px;
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1.3;
+    }
+    .scorebox {
+      display: grid;
+      place-items: center;
+      padding: 22px 12px;
+      background: var(--ink);
+      color: white;
+    }
+    .scorebox .num {
+      font-size: 76px;
+      font-weight: 950;
+      line-height: 1;
+    }
+    .scorebox .tag {
+      margin-top: 12px;
+      color: rgba(255,255,255,.72);
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.08fr .92fr;
+      gap: 20px;
+    }
+    .panel { padding: 24px; }
+    .panel h2 {
+      margin: 0 0 16px;
+      font-size: 30px;
+      line-height: 1.1;
+    }
+    .bullets {
+      margin: 0;
+      padding-left: 24px;
+      font-size: 24px;
+      line-height: 1.45;
+      word-break: keep-all;
+    }
+    .players {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .player {
+      background: #f7f8fb;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .photo {
+      height: 170px;
+      background: linear-gradient(135deg, #dfe3ec, #f7f8fb);
+    }
+    .photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center top;
+      display: block;
+    }
+    .player .body { padding: 14px; }
+    .role {
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: 800;
+    }
+    .player .name {
+      margin-top: 4px;
+      font-size: 25px;
+      font-weight: 900;
+      line-height: 1.05;
+    }
+    .line {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.25;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .chip-list { display: flex; flex-wrap: wrap; gap: 10px; }
+    .chip {
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: var(--accent-2);
+      font-size: 20px;
+      font-weight: 800;
+    }
+    footer {
+      color: var(--muted);
+      font-size: 18px;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <header>
+      <div>
+        <div class="eyebrow">KBO REPORT</div>
+        <h1>한화 5 : 2 두산</h1>
+      </div>
+      <div class="meta">2026.05.24<br>잠실 · 경기 종료</div>
+    </header>
+
+    <section class="score">
+      <article class="team">
+        <div class="label">원정</div>
+        <div class="name">한화 이글스</div>
+        <div class="stats"><span>최근 10: 6-4</span><span>팀 ERA 3.82</span><span>타율 .271</span><span>홈런 42</span></div>
+      </article>
+      <div class="scorebox"><div class="num">5:2</div><div class="tag">FINAL</div></div>
+      <article class="team">
+        <div class="label">홈</div>
+        <div class="name">두산 베어스</div>
+        <div class="stats"><span>최근 10: 4-6</span><span>팀 ERA 4.31</span><span>타율 .259</span><span>홈런 35</span></div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>승부처</h2>
+        <ul class="bullets">
+          <li>중반 장타로 리드를 벌리고 불펜 소모를 줄였다.</li>
+          <li>선발이 볼넷을 억제하며 두산의 빅이닝을 차단했다.</li>
+          <li>수비 무실책 흐름이 후반 운영을 쉽게 만들었다.</li>
+        </ul>
+      </article>
+      <article class="panel">
+        <h2>투수 운영</h2>
+        <ul class="bullets">
+          <li>선발: 6이닝 2실점 기준 안정권.</li>
+          <li>불펜: 추격 구간 장타 억제가 핵심.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>오늘의 키플레이어</h2>
+      <div class="players">
+        <article class="player"><div class="photo"></div><div class="body"><div class="role">SP</div><div class="name">선발투수</div><div class="line">6IP · 2R · QS</div></div></article>
+        <article class="player"><div class="photo"></div><div class="body"><div class="role">BAT</div><div class="name">중심타자</div><div class="line">장타 · 타점 · 득점권</div></div></article>
+        <article class="player"><div class="photo"></div><div class="body"><div class="role">RP</div><div class="name">불펜</div><div class="line">리드 보호 구간</div></div></article>
+      </div>
+    </section>
+
+    <section class="split">
+      <article class="panel"><h2>수확</h2><div class="chip-list"><span class="chip">선발 안정</span><span class="chip">장타 생산</span><span class="chip">무실책</span></div></article>
+      <article class="panel"><h2>숙제</h2><div class="chip-list"><span class="chip">잔루 관리</span><span class="chip">후반 볼넷</span></div></article>
+    </section>
+
+    <footer><span>Source: KBO/Naver verified data</span><span>Miho AI</span></footer>
+  </main>
+</body>
+</html>
