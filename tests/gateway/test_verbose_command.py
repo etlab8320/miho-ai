@@ -86,6 +86,48 @@ class TestVerboseCommand:
         assert saved["display"]["platforms"]["telegram"]["tool_progress"] == "verbose"
 
     @pytest.mark.asyncio
+    async def test_explicit_clean_mode(self, tmp_path, monkeypatch):
+        """Users can directly set the quiet Miho progress mode."""
+        miho_home = tmp_path / "miho"
+        miho_home.mkdir()
+        config_path = miho_home / "config.yaml"
+        config_path.write_text(
+            "display:\n  tool_progress_command: true\n  tool_progress: all\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(gateway_run, "_miho_home", miho_home)
+
+        runner = _make_runner()
+        result = await runner._handle_verbose_command(_make_event(text="/verbose clean"))
+
+        assert "CLEAN" in result
+        saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert saved["display"]["platforms"]["telegram"]["tool_progress"] == "clean"
+
+    @pytest.mark.asyncio
+    async def test_discord_clean_default_jumps_to_verbose(self, tmp_path, monkeypatch):
+        """Discord starts clean, so one /verbose should reveal tool details."""
+        miho_home = tmp_path / "miho"
+        miho_home.mkdir()
+        config_path = miho_home / "config.yaml"
+        config_path.write_text(
+            "display:\n  tool_progress_command: true\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(gateway_run, "_miho_home", miho_home)
+
+        runner = _make_runner()
+        result = await runner._handle_verbose_command(
+            _make_event(platform=Platform.DISCORD)
+        )
+
+        assert "VERBOSE" in result
+        saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert saved["display"]["platforms"]["discord"]["tool_progress"] == "verbose"
+
+    @pytest.mark.asyncio
     async def test_quoted_false_keeps_command_disabled(self, tmp_path, monkeypatch):
         """Quoted false must not enable the /verbose gateway command."""
         miho_home = tmp_path / "miho"

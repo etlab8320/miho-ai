@@ -1191,6 +1191,27 @@ async def test_verbose_mode_does_not_truncate_args_by_default(monkeypatch, tmp_p
 
 
 @pytest.mark.asyncio
+async def test_clean_progress_hides_internal_tool_names(monkeypatch, tmp_path):
+    adapter, result = await _run_with_agent(
+        monkeypatch,
+        tmp_path,
+        FakeAgent,
+        session_id="sess-clean-progress",
+        config_data={"display": {"tool_progress": "clean"}},
+        platform=Platform.DISCORD,
+        chat_id="discord-chat",
+        chat_type="group",
+        thread_id=None,
+    )
+
+    assert result["final_response"] == "done"
+    all_content = "\n".join(call["content"] for call in adapter.sent + adapter.edits)
+    assert "terminal" not in all_content
+    assert "browser_navigate" not in all_content
+    assert "안쪽에서 계산하고 검증하는 중..." in all_content
+
+
+@pytest.mark.asyncio
 async def test_verbose_mode_respects_explicit_tool_preview_length(monkeypatch, tmp_path):
     """When tool_preview_length is set to a positive value, verbose truncates to that."""
     adapter, result = await _run_with_agent(

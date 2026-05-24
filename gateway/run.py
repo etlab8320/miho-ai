@@ -148,8 +148,16 @@ def _redact_gateway_user_facing_secrets(text: str) -> str:
     return redacted
 
 
-def _gateway_provider_error_reply(text: str) -> str:
-    """Map raw provider/API errors to a short user-safe Telegram reply."""
+def _gateway_provider_error_reply(text: str, platform: Any = None) -> str:
+    """Map raw provider/API errors to a short user-safe chat reply."""
+    if _gateway_platform_value(platform) == "discord":
+        if _GATEWAY_AUTH_ERROR_RE.search(text):
+            return "인증 설정이 맞지 않아 모델에 연결하지 못했어. 토큰 값은 채팅에 노출하지 않았고, 자세한 내용은 gateway 로그에 남겨둘게."
+        if _GATEWAY_PROVIDER_POLICY_RE.search(text):
+            return "모델 제공자가 이 요청을 거절했어. 원문 오류는 숨겼고, 표현을 바꿔서 다시 시도하면 돼."
+        if _GATEWAY_RATE_LIMIT_RE.search(text):
+            return "지금 모델 요청이 잠깐 막혔어. 조금만 기다렸다가 다시 보내줘."
+        return "모델 호출이 끝까지 성공하지 못했어. 채팅에는 내부 오류를 숨겼고, 로그에 진단 정보를 남겨둘게."
     if _GATEWAY_AUTH_ERROR_RE.search(text):
         return (
             "⚠️ Provider authentication failed. Check the configured credentials; "
@@ -209,18 +217,18 @@ def _looks_like_gateway_provider_error(text: str) -> bool:
 def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
     """Sanitize final gateway replies before sending them to high-noise chats.
 
-    Telegram is Bob's mobile inbox, so it should receive concise, safe provider
-    failure categories instead of raw HTTP bodies, request IDs, or policy text.
-    Other platforms keep the existing behaviour for now.
+    Chat platforms should receive concise, safe provider failure categories
+    instead of raw HTTP bodies, request IDs, or policy text.
     """
     if not text:
         return text
-    if _gateway_platform_value(platform) != "telegram":
+    platform_value = _gateway_platform_value(platform)
+    if platform_value not in {"telegram", "discord"}:
         return text
 
     redacted = _redact_gateway_user_facing_secrets(str(text))
     if _looks_like_gateway_provider_error(redacted):
-        return _gateway_provider_error_reply(redacted)
+        return _gateway_provider_error_reply(redacted, platform)
     return redacted
 
 
@@ -1469,23 +1477,22 @@ def _normalize_empty_agent_response(
         ) or ("400" in error_str and history_len > 50)
         if is_context_failure:
             return (
-                "⚠️ Session too large for the model's context window.\n"
-                "Use /compact to compress the conversation, or "
-                "/reset to start fresh."
+                "대화가 너무 커져서 모델이 한 번에 읽기 어려워졌어.\n"
+                "`/compact`로 압축하거나 `/reset`으로 새로 시작하면 돼."
             )
         return (
-            f"The request failed: {str(error_detail)[:300]}\n"
-            "Try again or use /reset to start a fresh session."
+            f"요청 처리 중 막혔어: {str(error_detail)[:300]}\n"
+            "다시 보내거나 `/reset`으로 새 세션을 열어줘."
         )
 
     api_calls = int(agent_result.get("api_calls", 0) or 0)
     if api_calls > 0 and not agent_result.get("interrupted"):
         if agent_result.get("partial"):
             err = agent_result.get("error", "processing incomplete")
-            return f"⚠️ Processing stopped: {str(err)[:200]}. Try again."
+            return f"처리가 중간에 멈췄어: {str(err)[:200]}. 다시 시도해줘."
         return (
-            "⚠️ Processing completed but no response was generated. "
-            "This may be a transient error — try sending your message again."
+            "작업은 끝났는데 보낼 답변이 비어 있었어. "
+            "일시적인 문제일 수 있으니 같은 메시지를 한 번만 다시 보내줘."
         )
 
     return response
@@ -8567,9 +8574,8 @@ class GatewayRunner:
             # looks like a bug; a short explanation is more helpful.
             if response == "(empty)":
                 response = (
-                    "⚠️ The model returned no response after processing tool "
-                    "results. This can happen with some models — try again or "
-                    "rephrase your question."
+                    "도구 결과까지 처리했는데 모델 답변이 비어 있었어. "
+                    "같은 요청을 다시 보내거나 문장을 조금 바꿔줘."
                 )
             agent_messages = agent_result.get("messages", [])
             _response_time = time.time() - _msg_start_time
@@ -11834,8 +11840,9 @@ class GatewayRunner:
         """Handle /verbose command — cycle tool progress display mode.
 
         Gated by ``display.tool_progress_command`` in config.yaml (default off).
-        When enabled, cycles the tool progress mode through off → new → all →
-        verbose → off for the *current platform*.  The setting is saved to
+        When enabled, cycles the tool progress mode. ``clean`` jumps straight
+        to ``verbose`` for quick debugging; legacy off/new/all/verbose cycling
+        stays compatible. The setting is saved to
         ``display.platforms.<platform>.tool_progress`` so each channel can
         have its own verbosity level independently.
         """
@@ -11856,22 +11863,43 @@ class GatewayRunner:
         if not gate_enabled:
             return t("gateway.verbose.not_enabled")
 
-        # --- cycle mode (per-platform) ----------------------------------------
-        cycle = ["off", "new", "all", "verbose"]
+        # --- cycle/set mode (per-platform) -------------------------------------
+        cycle = ["clean", "off", "new", "all", "verbose"]
+        next_mode = {
+            "clean": "verbose",
+            "off": "new",
+            "new": "all",
+            "all": "verbose",
+            "verbose": "off",
+        }
         descriptions = {
+            "clean": (
+                "⚙️ 도구 진행 상황: **CLEAN** — 내부 도구명은 숨기고 "
+                "짧은 한국어 진행 상태만 보여줍니다."
+            ),
             "off": t("gateway.verbose.mode_off"),
             "new": t("gateway.verbose.mode_new"),
             "all": t("gateway.verbose.mode_all"),
             "verbose": t("gateway.verbose.mode_verbose"),
         }
+        requested_mode = ""
+        try:
+            requested_mode = (event.get_command_args() or "").strip().lower()
+        except Exception:
+            requested_mode = ""
+        if requested_mode in {"debug", "tools"}:
+            requested_mode = "verbose"
+        if requested_mode and requested_mode not in cycle:
+            requested_mode = ""
 
         # Read current effective mode for this platform via the resolver
         from gateway.display_config import resolve_display_setting
         current = resolve_display_setting(user_config, platform_key, "tool_progress", "all")
         if current not in cycle:
-            current = "all"
-        idx = (cycle.index(current) + 1) % len(cycle)
-        new_mode = cycle[idx]
+            current = "clean"
+        new_mode = requested_mode
+        if not new_mode:
+            new_mode = next_mode[current]
 
         # Save to display.platforms.<platform>.tool_progress
         try:
@@ -15715,6 +15743,17 @@ class GatewayRunner:
             if progress_mode == "new" and tool_name == last_tool[0]:
                 return
             last_tool[0] = tool_name
+
+            if progress_mode == "clean":
+                from gateway.tool_progress_ux import render_clean_tool_progress
+
+                msg = render_clean_tool_progress(tool_name, preview)
+                if msg == last_progress_msg[0]:
+                    return
+                last_progress_msg[0] = msg
+                repeat_count[0] = 0
+                progress_queue.put(msg)
+                return
             
             # Build progress message with primary argument preview
             from agent.display import get_tool_emoji

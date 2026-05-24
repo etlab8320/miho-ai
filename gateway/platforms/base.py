@@ -3277,8 +3277,9 @@ class BasePlatformAdapter(ABC):
                 force_document_attachments = "[[as_document]]" in response
 
                 # Extract MEDIA:<path> tags (from TTS tool) before other processing
-                media_files, response = self.extract_media(response)
-                media_files = self.filter_media_delivery_paths(media_files)
+                raw_media_files, response = self.extract_media(response)
+                media_files = self.filter_media_delivery_paths(raw_media_files)
+                blocked_media_count = max(0, len(raw_media_files) - len(media_files))
 
                 # Extract image URLs and send them as native platform attachments
                 images, text_content = self.extract_images(response)
@@ -3286,6 +3287,13 @@ class BasePlatformAdapter(ABC):
                 text_content = text_content.replace("[[audio_as_voice]]", "").strip()
                 text_content = text_content.replace("[[as_document]]", "").strip()
                 text_content = re.sub(r"MEDIA:\s*\S+", "", text_content).strip()
+                if blocked_media_count and not media_files:
+                    from gateway.tool_progress_ux import media_delivery_failure_message
+
+                    failure_note = media_delivery_failure_message(self.platform)
+                    text_content = "\n\n".join(
+                        part for part in (text_content, failure_note) if part
+                    )
                 if images:
                     logger.info("[%s] extract_images found %d image(s) in response (%d chars)", self.name, len(images), len(response))
 

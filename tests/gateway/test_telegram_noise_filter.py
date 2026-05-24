@@ -80,3 +80,17 @@ def test_telegram_final_response_keeps_normal_answers():
     answer = "Here is the clean summary you asked for."
 
     assert _sanitize_gateway_final_response(Platform.TELEGRAM, answer) == answer
+
+
+def test_discord_final_response_sanitizes_provider_errors_in_korean():
+    raw = (
+        "API call failed after 3 retries: HTTP 400: This request was blocked "
+        "under the provider cybersecurity risk policy. request_id=req_abc"
+    )
+
+    sanitized = _sanitize_gateway_final_response(Platform.DISCORD, raw)
+
+    assert "모델 제공자" in sanitized
+    assert "cybersecurity risk" not in sanitized.lower()
+    assert "HTTP 400" not in sanitized
+    assert "req_abc" not in sanitized
