@@ -40,6 +40,7 @@ from agent.prompt_builder import (
     TOOL_USE_ENFORCEMENT_GUIDANCE,
     TOOL_USE_ENFORCEMENT_MODELS,
 )
+from agent.forge_guidance import FORGE_CODING_GUIDANCE, should_inject_forge_guidance
 
 
 def _ra():
@@ -120,6 +121,9 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         tool_guidance.append(KANBAN_GUIDANCE)
     if tool_guidance:
         stable_parts.append(" ".join(tool_guidance))
+
+    if should_inject_forge_guidance(agent.valid_tool_names):
+        stable_parts.append(FORGE_CODING_GUIDANCE)
 
     # Computer-use (macOS) — goes in as its own block rather than being
     # merged into tool_guidance because the content is multi-paragraph.

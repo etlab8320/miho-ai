@@ -177,6 +177,12 @@ class TestClarifySchema:
         assert "description" in CLARIFY_SCHEMA
         assert len(CLARIFY_SCHEMA["description"]) > 50
 
+    def test_schema_requests_one_question_at_a_time(self):
+        """Chat UX should avoid bundled questionnaires."""
+        description = CLARIFY_SCHEMA["description"]
+        assert "one question at a time" in description
+        assert "Do not bundle a questionnaire" in description
+
     def test_schema_question_required(self):
         """Question parameter should be required."""
         assert "question" in CLARIFY_SCHEMA["parameters"]["required"]
