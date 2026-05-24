@@ -7322,6 +7322,9 @@ class GatewayRunner:
         if canonical == "kanban":
             return await self._handle_kanban_command(event)
 
+        if canonical == "memory":
+            return await self._handle_memory_command(event)
+
         if canonical == "retry":
             return await self._handle_retry_command(event)
         
@@ -9444,6 +9447,21 @@ class GatewayRunner:
         if len(output) > 3800:
             output = output[:3800] + "\n" + t("gateway.kanban.truncated_suffix")
         return output or t("gateway.kanban.no_output")
+
+    async def _handle_memory_command(self, event: MessageEvent) -> str:
+        """Handle Discord workspace memory operations."""
+        import asyncio
+        from gateway.discord_memory_ops import run_memory_command
+
+        text = (event.text or "").strip()
+        if text.startswith("/"):
+            text = text.lstrip("/")
+        if text.startswith("memory"):
+            text = text[len("memory"):].lstrip()
+        output = await asyncio.to_thread(run_memory_command, event.source, text)
+        if len(output) > 3800:
+            output = output[:3800] + "\n...(생략)"
+        return output
 
     async def _handle_status_command(self, event: MessageEvent) -> str:
         """Handle /status command."""

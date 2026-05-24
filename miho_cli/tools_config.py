@@ -2953,6 +2953,17 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
             print(color(f"  ✓ Saved {pinfo['label']} tool configuration", Colors.GREEN))
             print()
 
+        if "discord" in enabled_platforms:
+            print(color("  Discord memory setup", Colors.CYAN))
+            print(color("  Configure channel/thread RAG embeddings now, or skip and run `miho setup tools` later.", Colors.DIM))
+            choice = _prompt_choice(
+                "  Configure Discord workspace memory embeddings?",
+                ["Yes — set up Voyage/OpenAI/local now", "Skip for now"],
+                default=0,
+            )
+            if choice == 0:
+                _configure_discord_workspace_rag(config)
+
         return
 
     # ── Returning user: platform menu loop ──

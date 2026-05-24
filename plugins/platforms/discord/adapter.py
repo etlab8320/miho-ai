@@ -3031,6 +3031,23 @@ class DiscordAdapter(BasePlatformAdapter):
         async def slash_status(interaction: discord.Interaction):
             await self._run_simple_slash(interaction, "/status", "Status sent~")
 
+        @tree.command(name="memory", description="Search or inspect this Discord workspace memory")
+        @discord.app_commands.describe(
+            action="status, search, or rebuild",
+            query="Search query when action is search",
+        )
+        @discord.app_commands.choices(action=[
+            discord.app_commands.Choice(name="status — show workspace memory state", value="status"),
+            discord.app_commands.Choice(name="search — search relevant memories", value="search"),
+            discord.app_commands.Choice(name="rebuild — rebuild vector index", value="rebuild"),
+        ])
+        async def slash_memory(
+            interaction: discord.Interaction,
+            action: str = "status",
+            query: str = "",
+        ):
+            await self._run_simple_slash(interaction, f"/memory {action} {query}".strip())
+
         @tree.command(name="sethome", description="Set this chat as the home channel")
         async def slash_sethome(interaction: discord.Interaction):
             await self._run_simple_slash(interaction, "/sethome")
