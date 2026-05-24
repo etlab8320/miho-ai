@@ -234,7 +234,7 @@ def cmd_setup(args) -> None:
     items = []
     for name, desc, _ in providers:
         items.append((name, f"— {desc}"))
-    items.append(("Built-in only", "— MEMORY.md / USER.md (default)"))
+    items.append(("Built-in only", "— MEMORY.md / USER.md + owner profile timeline (default)"))
 
     builtin_idx = len(items) - 1
     selected = _curses_select("Memory provider setup", items, default=builtin_idx)

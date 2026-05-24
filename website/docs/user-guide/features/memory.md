@@ -208,7 +208,7 @@ memory:
   memory_enabled: true
   user_profile_enabled: true
   memory_char_limit: 2200   # ~800 tokens
-  user_char_limit: 1375     # ~500 tokens
+  user_char_limit: 2200     # ~800 tokens
 ```
 
 ## External Memory Providers
