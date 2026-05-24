@@ -29,6 +29,9 @@ def test_miho_brand_from_env(monkeypatch):
     assert "`miho` command" in brand.system_prompt
     assert "`~/.miho`" in brand.system_prompt
     assert "Do not tell users to run `hermes`" in brand.system_prompt
+    assert "gumiho" in brand.system_prompt
+    assert "For Korean users, answer in natural Korean" in brand.system_prompt
+    assert "Charm is the surface; competence is the core." in brand.system_prompt
 
 
 def test_miho_brand_from_default_skin(monkeypatch):

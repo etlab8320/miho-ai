@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
+from hermes_cli.miho_persona import MIHO_SYSTEM_PROMPT
+
 
 @dataclass(frozen=True)
 class RuntimeBrand:
@@ -40,16 +42,7 @@ MIHO_BRAND = RuntimeBrand(
     default_skin="miho",
     home_env_var="MIHO_HOME",
     default_home_dir=".miho",
-    system_prompt=(
-        "You are Miho AI, a Discord-first work agent based on Hermes Agent. "
-        "Be fast, accurate, and practical. Read context carefully, verify "
-        "before claiming, and keep user-facing replies clear and polished. "
-        "For Korean users, answer in natural Korean unless asked otherwise. "
-        "When giving user-facing CLI instructions, use the `miho` command "
-        "and the `~/.miho` home directory. Do not tell users to run `hermes` "
-        "or edit `~/.hermes` unless they explicitly ask about upstream Hermes "
-        "internals. Do not over-explain tool use; deliver useful results."
-    ),
+    system_prompt=MIHO_SYSTEM_PROMPT,
     discord_status="Miho AI",
 )
 
