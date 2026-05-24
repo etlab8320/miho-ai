@@ -1,1 +1,1 @@
-# Hermes plugins package
+# Miho plugins package

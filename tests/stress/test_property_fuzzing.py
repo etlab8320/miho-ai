@@ -234,16 +234,16 @@ def main():
     for seq_idx in range(NUM_SEQUENCES):
         seed = random.randint(0, 10**9)
         rng = random.Random(seed)
-        home = tempfile.mkdtemp(prefix=f"hermes_fuzz_{seq_idx}_")
-        os.environ["HERMES_HOME"] = home
+        home = tempfile.mkdtemp(prefix=f"miho_fuzz_{seq_idx}_")
+        os.environ["MIHO_HOME"] = home
         os.environ["HOME"] = home
         sys.path.insert(0, WT)
 
         # Fresh module state per sequence to avoid cached init paths.
         for m in list(sys.modules.keys()):
-            if m.startswith("hermes_cli"):
+            if m.startswith("miho_cli"):
                 del sys.modules[m]
-        from hermes_cli import kanban_db as kb
+        from miho_cli import kanban_db as kb
 
         kb.init_db()
         conn = kb.connect()

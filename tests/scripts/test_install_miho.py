@@ -33,7 +33,8 @@ def test_install_miho_creates_native_launcher(tmp_path):
     assert miho_home.is_dir()
     assert stat.S_IMODE(miho_home.stat().st_mode) == 0o700
     assert launcher.exists()
+    assert 'export MIHO_RUNTIME="1"' in launcher_text
+    assert 'export MIHO_BRAND="miho"' in launcher_text
     assert 'export MIHO_HOME="' in launcher_text
-    assert "HERMES_BRAND=\"miho\"" in launcher_text
-    assert "HERMES_HOME" not in launcher_text
+    assert "MIHO_DEFAULT_SKIN" not in launcher_text
     assert "exec uv run miho" in launcher_text

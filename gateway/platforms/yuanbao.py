@@ -74,7 +74,7 @@ from gateway.platforms.yuanbao_proto import (
     _parse_fields,
     WS_HEARTBEAT_RUNNING,
     WS_HEARTBEAT_FINISH,
-    HERMES_INSTANCE_ID,
+    MIHO_INSTANCE_ID,
     decode_conn_msg,
     decode_inbound_push,
     decode_query_group_info_rsp,
@@ -98,13 +98,13 @@ logger = logging.getLogger(__name__)
 # Version / platform constants (used in AUTH_BIND and sign-token headers)
 # ---------------------------------------------------------------------------
 try:
-    from hermes_cli import __version__ as _HERMES_VERSION
+    from miho_cli import __version__ as _MIHO_VERSION
 except ImportError:
-    _HERMES_VERSION = "0.0.0"
+    _MIHO_VERSION = "0.0.0"
 
-_APP_VERSION = _HERMES_VERSION
-_BOT_VERSION = _HERMES_VERSION
-_YUANBAO_INSTANCE_ID = str(HERMES_INSTANCE_ID)  # single source: yuanbao_proto.HERMES_INSTANCE_ID
+_APP_VERSION = _MIHO_VERSION
+_BOT_VERSION = _MIHO_VERSION
+_YUANBAO_INSTANCE_ID = str(MIHO_INSTANCE_ID)  # single source: yuanbao_proto.MIHO_INSTANCE_ID
 _OPERATION_SYSTEM = sys.platform
 
 # ---------------------------------------------------------------------------
@@ -1588,11 +1588,11 @@ class AutoSetHomeMiddleware(InboundMiddleware):
                 adapter._auto_sethome_done = True  # DM seen — no further upgrades needed
             if _should_set:
                 try:
-                    from hermes_constants import get_hermes_home
+                    from miho_constants import get_miho_home
                     from utils import atomic_yaml_write
                     import yaml
 
-                    _home = get_hermes_home()
+                    _home = get_miho_home()
                     config_path = _home / "config.yaml"
                     user_config: dict = {}
                     if config_path.exists():

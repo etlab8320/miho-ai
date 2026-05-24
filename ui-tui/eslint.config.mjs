@@ -86,7 +86,7 @@ export default [
     }
   },
   {
-    files: ['packages/hermes-ink/**/*.{ts,tsx}'],
+    files: ['packages/miho-ink/**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/consistent-type-imports': 'off',
       'no-constant-condition': 'off',

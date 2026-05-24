@@ -70,11 +70,11 @@ class TestIsWriteDenied:
             "mcp-tokens/subdir/token2.json",
         ],
     )
-    def test_hermes_control_files_and_mcp_tokens_denied(self, path):
-        """Hermes control files and mcp-tokens entries must be write-denied."""
-        from hermes_constants import get_hermes_home
-        hermes_home = get_hermes_home()
-        full_path = str(hermes_home / path)
+    def test_miho_control_files_and_mcp_tokens_denied(self, path):
+        """Miho control files and mcp-tokens entries must be write-denied."""
+        from miho_constants import get_miho_home
+        miho_home = get_miho_home()
+        full_path = str(miho_home / path)
         assert _is_write_denied(full_path) is True
 
     @pytest.mark.parametrize(
@@ -85,11 +85,11 @@ class TestIsWriteDenied:
             "mcp-tokens/../config.yaml",
         ],
     )
-    def test_hermes_control_files_traversal_denied(self, path):
+    def test_miho_control_files_traversal_denied(self, path):
         """Path traversal attempts to control files must be blocked by realpath."""
-        from hermes_constants import get_hermes_home
-        hermes_home = get_hermes_home()
-        full_path = str(hermes_home / path)
+        from miho_constants import get_miho_home
+        miho_home = get_miho_home()
+        full_path = str(miho_home / path)
         assert _is_write_denied(full_path) is True
 
     @pytest.mark.parametrize(
@@ -112,16 +112,16 @@ class TestIsWriteDenied:
         """Under a profile, BOTH <profile>/X and <root>/X must be denied (#15981 shape).
 
         Without the root-level pass, a profile-mode session leaves the
-        global ~/.hermes/{auth.json,config.yaml,webhook_subscriptions.json}
+        global ~/.miho/{auth.json,config.yaml,webhook_subscriptions.json}
         writable — the same gap PR #15981 fixed for .env.
         """
-        # Simulate a profile-mode HERMES_HOME layout:
+        # Simulate a profile-mode MIHO_HOME layout:
         #   <root>/profiles/coder/{auth.json,config.yaml,...}
         #   <root>/{auth.json,config.yaml,...}        ← must also be denied
-        root = tmp_path / "hermes"
+        root = tmp_path / "miho"
         profile = root / "profiles" / "coder"
         profile.mkdir(parents=True)
-        monkeypatch.setenv("HERMES_HOME", str(profile))
+        monkeypatch.setenv("MIHO_HOME", str(profile))
 
         # Profile copy
         assert _is_write_denied(str(profile / name)) is True
@@ -130,10 +130,10 @@ class TestIsWriteDenied:
 
     def test_mcp_tokens_dir_protected_in_profile_mode(self, tmp_path, monkeypatch):
         """mcp-tokens/ under profile AND under root must both be denied."""
-        root = tmp_path / "hermes"
+        root = tmp_path / "miho"
         profile = root / "profiles" / "coder"
         profile.mkdir(parents=True)
-        monkeypatch.setenv("HERMES_HOME", str(profile))
+        monkeypatch.setenv("MIHO_HOME", str(profile))
 
         assert _is_write_denied(str(profile / "mcp-tokens" / "tok.json")) is True
         assert _is_write_denied(str(root / "mcp-tokens" / "tok.json")) is True
@@ -354,10 +354,10 @@ class TestShellFileOpsHelpers:
 
     def test_read_file_strips_leaked_terminal_fence_markers(self, mock_env):
         leaked = (
-            "'\x07__HERMES_FENCE_a9f7b3__\x1b]0;cat "
+            "'\x07__MIHO_FENCE_a9f7b3__\x1b]0;cat "
             "'/tmp/test/a.py' 2> /dev/null\x07\n"
             "print('ok')\n"
-            "__HERMES_FENCE_a9f7b3__\x07'\n"
+            "__MIHO_FENCE_a9f7b3__\x07'\n"
         )
 
         def side_effect(command, **kwargs):
@@ -376,16 +376,16 @@ class TestShellFileOpsHelpers:
         result = ops.read_file("/tmp/test/a.py")
 
         assert result.error is None
-        assert "HERMES_FENCE" not in result.content
+        assert "MIHO_FENCE" not in result.content
         assert "\x1b]" not in result.content
         assert "\x07" not in result.content
         assert "     1|print('ok')" in result.content
 
     def test_read_file_raw_strips_leaked_terminal_fence_markers(self, mock_env):
         leaked = (
-            "__HERMES_FENCE_a9f7b3__\x07'\n"
+            "__MIHO_FENCE_a9f7b3__\x07'\n"
             "alpha\n"
-            "\x1b]0;cat '/tmp/test/a.txt'\x07__HERMES_FENCE_a9f7b3__\n"
+            "\x1b]0;cat '/tmp/test/a.txt'\x07__MIHO_FENCE_a9f7b3__\n"
         )
 
         def side_effect(command, **kwargs):
@@ -491,7 +491,7 @@ class TestSearchFilesFallbackHiddenPaths:
 
     def test_hidden_root_with_hidden_ancestor_includes_files(self, tmp_path, monkeypatch):
         """Fallback find should include visible files when path is inside hidden root."""
-        root = tmp_path / ".hermes" / "logs"
+        root = tmp_path / ".miho" / "logs"
         root.mkdir(parents=True)
         visible_file = root / "agent.log"
         hidden_dir_file = root / ".hidden" / "secret.log"

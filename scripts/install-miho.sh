@@ -61,9 +61,9 @@ cat > "$MIHO_BIN" <<EOF
 #!/usr/bin/env bash
 # Miho AI launcher
 set -euo pipefail
+export MIHO_RUNTIME="1"
+export MIHO_BRAND="miho"
 export MIHO_HOME="$MIHO_HOME"
-export HERMES_BRAND="miho"
-export HERMES_DEFAULT_SKIN="miho"
 cd "$REPO_ROOT"
 exec uv run miho "\$@"
 EOF
