@@ -7,13 +7,13 @@
 <p align="center">
   <a href="https://miho-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Engine-Miho%20Agent-FFD700?style=for-the-badge" alt="Miho Agent engine"></a>
   <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://github.com/NousResearch/miho-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://github.com/NousResearch/miho-agent"><img src="https://img.shields.io/badge/Upstream-Nous%20Research-blueviolet?style=for-the-badge" alt="Upstream Nous Research"></a>
+  <a href="https://github.com/etlab8320/miho-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
+  <a href="https://github.com/etlab8320/miho-ai"><img src="https://img.shields.io/badge/Release-miho--ai-blueviolet?style=for-the-badge" alt="Miho AI release"></a>
   <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/Lang-中文-red?style=for-the-badge" alt="中文"></a>
 </p>
 
-**Miho AI is a Discord-first custom fork of [Miho Agent](https://github.com/NousResearch/miho-agent).**
-The first Miho layer keeps the Miho engine and upstream compatibility intact while adding a Miho-branded CLI, default skin, system prompt, and gateway UX. Use `miho` for the Miho experience.
+**Miho AI is a Discord-first installable AI agent.**
+The first Miho layer keeps the agent engine portable while adding a Miho-branded CLI, default skin, system prompt, gateway UX, and workspace memory. Use `miho` for the Miho experience.
 
 ```bash
 uv run miho --version
@@ -53,17 +53,17 @@ Use any model you want — [Nous Portal](https://portal.nousresearch.com), [Open
 ### Linux, macOS, WSL2, Termux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/miho-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/etlab8320/miho-ai/main/scripts/install.sh | bash
 ```
 
 ### Windows (native, PowerShell) — Early Beta
 
-> **Heads up:** Native Windows support is **early beta**. It installs and runs, but hasn't been road-tested as broadly as our Linux/macOS/WSL2 paths. Please [file issues](https://github.com/NousResearch/miho-agent/issues) when you hit rough edges. For the most battle-tested Windows setup today, run the Linux/macOS one-liner above inside **WSL2**.
+> **Heads up:** Native Windows support is **early beta**. It installs and runs, but hasn't been road-tested as broadly as our Linux/macOS/WSL2 paths. Please [file issues](https://github.com/etlab8320/miho-ai/issues) when you hit rough edges. For the most battle-tested Windows setup today, run the Linux/macOS one-liner above inside **WSL2**.
 
 Run this in PowerShell:
 
 ```powershell
-iex (irm https://raw.githubusercontent.com/NousResearch/miho-agent/main/scripts/install.ps1)
+iex (irm https://raw.githubusercontent.com/etlab8320/miho-ai/main/scripts/install.ps1)
 ```
 
 The installer handles everything: uv, Python 3.11, Node.js, ripgrep, ffmpeg, **and a portable Git Bash** (MinGit, unpacked to `%LOCALAPPDATA%\miho\git` — no admin required, completely isolated from any system Git install).  Miho uses this bundled Git Bash to run shell commands.
@@ -200,8 +200,8 @@ We welcome contributions! See the [Contributing Guide](https://miho-agent.nousre
 Quick start for contributors — clone and go with `setup-miho.sh`:
 
 ```bash
-git clone https://github.com/NousResearch/miho-agent.git
-cd miho-agent
+git clone https://github.com/etlab8320/miho-ai.git
+cd miho-ai
 ./setup-miho.sh     # installs uv, creates venv, installs .[all], symlinks ~/.local/bin/miho
 ./miho              # auto-detects the venv, no need to `source` first
 ```
@@ -222,7 +222,7 @@ scripts/run_tests.sh
 
 - 💬 [Discord](https://discord.gg/NousResearch)
 - 📚 [Skills Hub](https://agentskills.io)
-- 🐛 [Issues](https://github.com/NousResearch/miho-agent/issues)
+- 🐛 [Issues](https://github.com/etlab8320/miho-ai/issues)
 - 🔌 [computer-use-linux](https://github.com/avifenesh/computer-use-linux) — Linux desktop-control MCP server for Miho and other MCP hosts, with AT-SPI accessibility trees, Wayland/X11 input, screenshots, and compositor window targeting.
 - 🔌 [MihoClaw](https://github.com/AaronWong1999/mihoclaw) — Community WeChat bridge: Run Miho Agent and OpenClaw on the same WeChat account.
 

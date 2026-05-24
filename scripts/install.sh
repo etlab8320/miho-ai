@@ -6,7 +6,7 @@
 # Uses uv for desktop/server installs and Python's stdlib venv + pip on Termux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/NousResearch/miho-agent/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/etlab8320/miho-ai/main/scripts/install.sh | bash
 #
 # Or with options:
 #   curl -fsSL ... | bash -s -- --no-venv --skip-setup
@@ -43,8 +43,8 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:NousResearch/miho-agent.git"
-REPO_URL_HTTPS="https://github.com/NousResearch/miho-agent.git"
+REPO_URL_SSH="git@github.com:etlab8320/miho-ai.git"
+REPO_URL_HTTPS="https://github.com/etlab8320/miho-ai.git"
 MIHO_HOME="${MIHO_HOME:-$HOME/.miho}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
@@ -337,7 +337,7 @@ detect_os() {
             OS="windows"
             DISTRO="windows"
             log_error "Windows detected. Please use the PowerShell installer:"
-            log_info "  iex (irm https://raw.githubusercontent.com/NousResearch/miho-agent/main/scripts/install.ps1)"
+            log_info "  iex (irm https://raw.githubusercontent.com/etlab8320/miho-ai/main/scripts/install.ps1)"
             exit 1
             ;;
         *)

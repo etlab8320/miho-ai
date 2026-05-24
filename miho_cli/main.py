@@ -6952,10 +6952,10 @@ def _update_via_zip(args):
     import zipfile
     from urllib.request import urlretrieve
 
-    branch = "main"
-    zip_url = (
-        f"https://github.com/NousResearch/miho-agent/archive/refs/heads/{branch}.zip"
-    )
+    from miho_cli.update_source import DEFAULT_UPDATE_BRANCH, archive_zip_url
+
+    branch = os.environ.get("MIHO_UPDATE_BRANCH", DEFAULT_UPDATE_BRANCH)
+    zip_url = archive_zip_url(branch)
 
     print("→ Downloading latest version...")
     tmp_dir = tempfile.mkdtemp(prefix="miho-update-")
@@ -7279,13 +7279,8 @@ def _restore_stashed_changes(
 # Fork detection and upstream management for `miho update`
 # =========================================================================
 
-OFFICIAL_REPO_URLS = {
-    "https://github.com/NousResearch/miho-agent.git",
-    "git@github.com:NousResearch/miho-agent.git",
-    "https://github.com/NousResearch/miho-agent",
-    "git@github.com:NousResearch/miho-agent",
-}
-OFFICIAL_REPO_URL = "https://github.com/NousResearch/miho-agent.git"
+from miho_cli.update_source import OFFICIAL_REPO_URL, OFFICIAL_REPO_URLS
+
 SKIP_UPSTREAM_PROMPT_FILE = ".skip_upstream_prompt"
 
 
@@ -7418,8 +7413,8 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
 
         # Ask user if they want to add upstream
         print()
-        print("ℹ Your fork is not tracking the official Miho repository.")
-        print("  This means you may miss updates from NousResearch/miho-agent.")
+        print("ℹ Your fork is not tracking the official Miho AI repository.")
+        print("  This means you may miss updates from etlab8320/miho-ai.")
         print()
         try:
             response = (
@@ -7432,17 +7427,13 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
         if response in {"", "y", "yes"}:
             print("→ Adding upstream remote...")
             if _add_upstream_remote(git_cmd, cwd):
-                print(
-                    "  ✓ Added upstream: https://github.com/NousResearch/miho-agent.git"
-                )
+                print(f"  ✓ Added upstream: {OFFICIAL_REPO_URL}")
                 has_upstream = True
             else:
                 print("  ✗ Failed to add upstream remote. Skipping upstream sync.")
                 return
         else:
-            print(
-                "  Skipped. Run 'git remote add upstream https://github.com/NousResearch/miho-agent.git' to add later."
-            )
+            print(f"  Skipped. Run 'git remote add upstream {OFFICIAL_REPO_URL}' to add later.")
             _mark_skip_upstream_prompt()
             return
 
@@ -8317,6 +8308,7 @@ def _finalize_update_output(state):
 def _cmd_update_check():
     """Implement ``miho update --check``: fetch and report without installing."""
     from miho_cli.config import detect_install_method
+    from miho_cli.update_source import select_update_branch
     method = detect_install_method(PROJECT_ROOT)
     if method == "pip":
         from miho_cli.config import recommended_update_command
@@ -8341,28 +8333,13 @@ def _cmd_update_check():
     if sys.platform == "win32":
         git_cmd = ["git", "-c", "windows.appendAtomically=false"]
 
-    # Fetch both origin and upstream; prefer upstream as the canonical reference
-    print("→ Fetching from upstream...")
+    print("→ Fetching from origin...")
     fetch_result = subprocess.run(
-        git_cmd + ["fetch", "upstream"],
+        git_cmd + ["fetch", "origin"],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
     )
-    if fetch_result.returncode != 0:
-        # Fallback to origin if upstream doesn't exist
-        print("→ Fetching from origin...")
-        fetch_result = subprocess.run(
-            git_cmd + ["fetch", "origin"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-        )
-        upstream_exists = False
-        compare_branch = "origin/main"
-    else:
-        upstream_exists = True
-        compare_branch = "upstream/main"
 
     if fetch_result.returncode != 0:
         stderr = fetch_result.stderr.strip()
@@ -8375,6 +8352,16 @@ def _cmd_update_check():
             if stderr:
                 print(f"  {stderr.splitlines()[0]}")
         sys.exit(1)
+
+    branch_result = subprocess.run(
+        git_cmd + ["rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    branch = select_update_branch(git_cmd, PROJECT_ROOT, branch_result.stdout.strip())
+    compare_branch = f"origin/{branch}"
 
     rev_result = subprocess.run(
         git_cmd + ["rev-list", f"HEAD..{compare_branch}", "--count"],
@@ -8676,9 +8663,8 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 _cmd_update_pip(args)
                 return
             print("✗ Not a git repository. Please reinstall:")
-            print(
-                "  curl -fsSL https://raw.githubusercontent.com/NousResearch/miho-agent/main/scripts/install.sh | bash"
-            )
+            from miho_cli.update_source import install_script_url
+            print(f"  curl -fsSL {install_script_url()} | bash")
             sys.exit(1)
 
     # On Windows, git can fail with "unable to write loose object file: Invalid argument"
@@ -8754,21 +8740,21 @@ def _cmd_update_impl(args, gateway_mode: bool):
         )
         current_branch = result.stdout.strip()
 
-        # Always update against main
-        branch = "main"
+        from miho_cli.update_source import select_update_branch
+        branch = select_update_branch(git_cmd, PROJECT_ROOT, current_branch)
 
-        # If user is on a non-main branch or detached HEAD, switch to main
-        if current_branch != "main":
+        # If user is on a different branch or detached HEAD, switch to the release branch.
+        if current_branch != branch:
             label = (
                 "detached HEAD"
                 if current_branch == "HEAD"
                 else f"branch '{current_branch}'"
             )
-            print(f"  ⚠ Currently on {label} — switching to main for update...")
+            print(f"  ⚠ Currently on {label} — switching to {branch} for update...")
             # Stash before checkout so uncommitted work isn't lost
             auto_stash_ref = _stash_local_changes_if_needed(git_cmd, PROJECT_ROOT)
             subprocess.run(
-                git_cmd + ["checkout", "main"],
+                git_cmd + ["checkout", branch],
                 cwd=PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -8804,7 +8790,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     prompt_user=prompt_for_restore,
                     input_fn=gw_input_fn,
                 )
-            if current_branch not in {"main", "HEAD"}:
+            if current_branch not in {branch, "HEAD"}:
                 subprocess.run(
                     git_cmd + ["checkout", current_branch],
                     cwd=PROJECT_ROOT,
@@ -8865,9 +8851,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     print(f"✗ Failed to reset to origin/{branch}.")
                     if reset_result.stderr.strip():
                         print(f"  {reset_result.stderr.strip()}")
-                    print(
-                        "  Try manually: git fetch origin && git reset --hard origin/main"
-                    )
+                    print(f"  Try manually: git fetch origin && git reset --hard origin/{branch}")
                     sys.exit(1)
 
             # Post-pull syntax guard: validate critical-path files actually

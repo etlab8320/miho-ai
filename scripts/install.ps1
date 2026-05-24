@@ -5,7 +5,7 @@
 # Uses uv for fast Python provisioning and package management.
 #
 # Usage:
-#   iex (irm https://raw.githubusercontent.com/NousResearch/miho-agent/main/scripts/install.ps1)
+#   iex (irm https://raw.githubusercontent.com/etlab8320/miho-ai/main/scripts/install.ps1)
 #
 # Or download and run with options:
 #   .\install.ps1 -NoVenv -SkipSetup
@@ -75,8 +75,8 @@ try {
 # Configuration
 # ============================================================================
 
-$RepoUrlSsh = "git@github.com:NousResearch/miho-agent.git"
-$RepoUrlHttps = "https://github.com/NousResearch/miho-agent.git"
+$RepoUrlSsh = "git@github.com:etlab8320/miho-ai.git"
+$RepoUrlHttps = "https://github.com/etlab8320/miho-ai.git"
 $PythonVersion = "3.11"
 $NodeVersion = "22"
 
@@ -1055,13 +1055,13 @@ function Install-Repository {
                 # for.  GitHub supports archive URLs for commits, tags, and
                 # branches; we honour Commit > Tag > Branch.
                 if ($Commit) {
-                    $zipUrl = "https://github.com/NousResearch/miho-agent/archive/$Commit.zip"
+                    $zipUrl = "https://github.com/etlab8320/miho-ai/archive/$Commit.zip"
                     $zipLabel = $Commit
                 } elseif ($Tag) {
-                    $zipUrl = "https://github.com/NousResearch/miho-agent/archive/refs/tags/$Tag.zip"
+                    $zipUrl = "https://github.com/etlab8320/miho-ai/archive/refs/tags/$Tag.zip"
                     $zipLabel = $Tag
                 } else {
-                    $zipUrl = "https://github.com/NousResearch/miho-agent/archive/refs/heads/$Branch.zip"
+                    $zipUrl = "https://github.com/etlab8320/miho-ai/archive/refs/heads/$Branch.zip"
                     $zipLabel = $Branch
                 }
                 $zipPath = "$env:TEMP\miho-agent-$zipLabel.zip"
@@ -2364,7 +2364,7 @@ try {
     Write-Err "Installation failed: $_"
     Write-Host ""
     Write-Info "If the error is unclear, try downloading and running the script directly:"
-    Write-Host "  Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/NousResearch/miho-agent/main/scripts/install.ps1' -OutFile install.ps1" -ForegroundColor Yellow
+    Write-Host "  Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/etlab8320/miho-ai/main/scripts/install.ps1' -OutFile install.ps1" -ForegroundColor Yellow
     Write-Host "  .\install.ps1" -ForegroundColor Yellow
     Write-Host ""
 }

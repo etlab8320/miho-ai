@@ -446,6 +446,7 @@ def _make_update_side_effect(
     reset_fails=False,
     fetch_fails=False,
     fetch_stderr="",
+    remote_branches=("main",),
 ):
     """Build a subprocess.run side_effect for cmd_update tests."""
     recorded = []
@@ -459,6 +460,14 @@ def _make_update_side_effect(
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         if "rev-parse" in joined and "--abbrev-ref" in joined:
             return SimpleNamespace(stdout=f"{current_branch}\n", stderr="", returncode=0)
+        if "rev-parse" in joined and "--verify" in joined:
+            remote_ref = str(cmd[-1])
+            branch = remote_ref.removeprefix("origin/")
+            return SimpleNamespace(
+                stdout="",
+                stderr="" if branch in remote_branches else "not found",
+                returncode=0 if branch in remote_branches else 128,
+            )
         if "checkout" in joined and "main" in joined:
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         if "rev-list" in joined:
@@ -597,6 +606,25 @@ def test_cmd_update_no_checkout_when_already_on_main(monkeypatch, tmp_path):
 
     checkout_calls = [c for c in recorded if "checkout" in c]
     assert len(checkout_calls) == 0
+
+
+def test_cmd_update_tracks_current_remote_branch(monkeypatch, tmp_path):
+    """A Miho install on a release branch updates from that same remote branch."""
+    _setup_update_mocks(monkeypatch, tmp_path)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+
+    side_effect, recorded = _make_update_side_effect(
+        current_branch="release/miho",
+        remote_branches=("main", "release/miho"),
+    )
+    monkeypatch.setattr(miho_main.subprocess, "run", side_effect)
+
+    miho_main.cmd_update(SimpleNamespace())
+
+    rev_list_calls = [c for c in recorded if "rev-list" in c]
+    pull_calls = [c for c in recorded if "--ff-only" in c]
+    assert ["git", "rev-list", "HEAD..origin/release/miho", "--count"] in rev_list_calls
+    assert ["git", "pull", "--ff-only", "origin", "release/miho"] in pull_calls
 
 
 # ---------------------------------------------------------------------------
