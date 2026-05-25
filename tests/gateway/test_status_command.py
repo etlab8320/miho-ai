@@ -50,6 +50,7 @@ def _make_runner(session_entry: SessionEntry, *, platform: Platform = Platform.T
     runner.session_store.rewrite_transcript = MagicMock()
     runner.session_store.update_session = MagicMock()
     runner._running_agents = {}
+    runner._last_run_observability = {}
     runner._session_run_generation = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
@@ -175,6 +176,34 @@ async def test_status_command_tokens_zero_when_session_db_row_missing():
 
 
 @pytest.mark.asyncio
+async def test_status_command_includes_recent_run_observability():
+    session_entry = SessionEntry(
+        session_key=build_session_key(_make_source()),
+        session_id="sess-1",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        platform=Platform.TELEGRAM,
+        chat_type="dm",
+        total_tokens=0,
+    )
+    runner = _make_runner(session_entry)
+    runner._last_run_observability[session_entry.session_key] = {
+        "status": "completed",
+        "duration_seconds": 1.24,
+        "api_calls": 2,
+        "tool_calls": 3,
+        "model": "openai/test-model",
+    }
+
+    result = await runner._handle_message(_make_event("/status"))
+
+    assert "**Recent Run:** completed in 1.2s" in result
+    assert "**Model:** `openai/test-model`" in result
+    assert "**Tool calls:** 3" in result
+    assert "**API calls:** 2" in result
+
+
+@pytest.mark.asyncio
 async def test_agents_command_reports_active_agents_and_processes(monkeypatch):
     session_key = build_session_key(_make_source())
     session_entry = SessionEntry(
@@ -261,7 +290,8 @@ async def test_handle_message_persists_agent_token_counts(monkeypatch):
         return_value={
             "final_response": "ok",
             "messages": [],
-            "tools": [],
+            "api_calls": 2,
+            "tools": [{"name": "read_file"}, {"name": "terminal"}],
             "history_offset": 0,
             "last_prompt_tokens": 80,
             "input_tokens": 120,
@@ -279,6 +309,12 @@ async def test_handle_message_persists_agent_token_counts(monkeypatch):
     result = await runner._handle_message(_make_event("hello"))
 
     assert result == "ok"
+    observed = runner._last_run_observability[session_entry.session_key]
+    assert observed["status"] == "completed"
+    assert observed["api_calls"] == 2
+    assert observed["tool_calls"] == 2
+    assert observed["model"] == "openai/test-model"
+    assert observed["duration_seconds"] >= 0
     runner.session_store.update_session.assert_called_once_with(
         session_entry.session_key,
         last_prompt_tokens=80,

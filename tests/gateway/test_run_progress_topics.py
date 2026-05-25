@@ -1221,8 +1221,9 @@ async def test_clean_progress_hides_internal_tool_names(monkeypatch, tmp_path):
     all_content = "\n".join(call["content"] for call in adapter.sent + adapter.edits)
     assert "terminal" not in all_content
     assert "browser_navigate" not in all_content
-    assert "명령을 실행하고 결과를 확인하는 중..." in all_content
-    assert "필요한 자료를 확인하는 중..." in all_content
+    assert "작업 카드 | 작업 실행" in all_content
+    assert "작업 카드 | 자료 확인" in all_content
+    assert "작업 카드 | 완료" in all_content
 
 
 @pytest.mark.asyncio
@@ -1241,7 +1242,8 @@ async def test_clean_progress_sends_start_signal_before_tools(monkeypatch, tmp_p
 
     assert result["final_response"] == "done"
     all_content = "\n".join(call["content"] for call in adapter.sent + adapter.edits)
-    assert "요청을 살펴보는 중..." in all_content
+    assert "작업 카드 | 요청 확인" in all_content
+    assert "작업 카드 | 완료" in all_content
     assert "terminal" not in all_content
 
 

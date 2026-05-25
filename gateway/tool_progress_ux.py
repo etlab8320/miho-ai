@@ -32,10 +32,17 @@ _MEMORY_TOOLS = {
     "list_files",
 }
 
+_ARTIFACT_STAGE = "작업 카드 | 결과물 확인"
+_FINISH_STAGES = {
+    "completed": "작업 카드 | 완료",
+    "failed": "작업 카드 | 확인 필요",
+    "interrupted": "작업 카드 | 중단됨",
+}
+
 
 def render_clean_start_progress() -> str:
     """Return the first visible sign that Miho accepted the request."""
-    return "요청을 살펴보는 중..."
+    return "작업 카드 | 요청 확인"
 
 
 def should_emit_clean_progress(
@@ -47,7 +54,7 @@ def should_emit_clean_progress(
     """Return True when a clean progress message should be shown for this run."""
     if not message or message in seen_messages:
         return False
-    if len(seen_messages) >= max_messages and message != "결과물을 빚고 검수하는 중...":
+    if len(seen_messages) >= max_messages and message not in {_ARTIFACT_STAGE, *_FINISH_STAGES.values()}:
         return False
     seen_messages.add(message)
     return True
@@ -61,17 +68,27 @@ def render_clean_tool_progress(tool_name: str | None, preview: str | None = None
 
     if name in _BUILD_TOOLS:
         if any(word in preview_lower for word in ("html", "png", "image", "screenshot")):
-            return "결과물을 빚고 검수하는 중..."
+            return _ARTIFACT_STAGE
         if any(word in preview_lower for word in ("pytest", "ruff", "test", "check", "lint")):
-            return "테스트와 검증을 실행하는 중..."
-        return "명령을 실행하고 결과를 확인하는 중..."
+            return "작업 카드 | 검증 중"
+        return "작업 카드 | 작업 실행"
     if name in _RESEARCH_TOOLS:
-        return "필요한 자료를 확인하는 중..."
+        return "작업 카드 | 자료 확인"
     if name in _MEMORY_TOOLS:
-        return "관련 맥락을 확인하는 중..."
+        return "작업 카드 | 맥락 확인"
     if name in _VISUAL_TOOLS:
-        return "결과물을 빚고 검수하는 중..."
-    return "작업을 진행하고 검증하는 중..."
+        return _ARTIFACT_STAGE
+    return "작업 카드 | 작업 중"
+
+
+def render_clean_finish_progress(result: dict[str, Any] | None = None) -> str:
+    """Return the last clean progress stage for an agent run."""
+    payload = result or {}
+    if payload.get("interrupted"):
+        return _FINISH_STAGES["interrupted"]
+    if payload.get("failed") or payload.get("error"):
+        return _FINISH_STAGES["failed"]
+    return _FINISH_STAGES["completed"]
 
 
 def media_delivery_failure_message(platform: Any = None) -> str:

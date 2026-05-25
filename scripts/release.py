@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Miho Agent Release Script
 
-Generates changelogs and creates GitHub releases with CalVer tags.
+Generates changelogs and creates GitHub releases with SemVer tags.
 
 Usage:
     # Preview changelog (dry run)
@@ -16,7 +16,7 @@ Usage:
     # First release (no previous tag)
     python scripts/release.py --bump minor --publish --first-release
 
-    # Override CalVer date (e.g. for a belated release)
+    # Override release date metadata (e.g. for a belated release)
     python scripts/release.py --bump minor --publish --date 2026.3.15
 """
 
@@ -38,6 +38,7 @@ PYPROJECT_FILE = REPO_ROOT / "pyproject.toml"
 # tests/acp/test_registry_manifest.py enforces this lockstep so the release
 # bump touches both files atomically.
 ACP_REGISTRY_MANIFEST = REPO_ROOT / "acp_registry" / "agent.json"
+SEMVER_TAG_RE = re.compile(r"^v(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)$")
 
 # ──────────────────────────────────────────────────────────────────────
 # Git email → GitHub username mapping
@@ -1300,24 +1301,36 @@ def git_result(*args, cwd=None):
     )
 
 
+def is_semver_release_tag(tag: str) -> bool:
+    """Return True for this project's SemVer release tags."""
+    match = SEMVER_TAG_RE.match(tag.strip())
+    if not match:
+        return False
+    # Ignore legacy CalVer tags like v2026.5.25. Miho's package releases use
+    # normal SemVer (currently v0.x), so a year-sized major is not a package tag.
+    return int(match.group("major")) < 100
+
+
 def get_last_tag():
-    """Get the most recent CalVer tag."""
-    tags = git("tag", "--list", "v20*", "--sort=-v:refname")
-    if tags:
-        return tags.split("\n")[0]
+    """Get the most recent SemVer package tag."""
+    tags = git("tag", "--list", "v*", "--sort=-v:refname")
+    for tag in tags.splitlines():
+        if is_semver_release_tag(tag):
+            return tag
     return None
 
 
-def next_available_tag(base_tag: str) -> tuple[str, str]:
-    """Return a tag/calver pair, suffixing same-day releases when needed."""
-    if not git("tag", "--list", base_tag):
-        return base_tag, base_tag.removeprefix("v")
+def release_tag_for_version(semver: str) -> str:
+    """Return the SemVer tag name for a package version."""
+    tag = f"v{semver}"
+    if not is_semver_release_tag(tag):
+        raise ValueError(f"Invalid SemVer release version: {semver}")
+    return tag
 
-    suffix = 2
-    while git("tag", "--list", f"{base_tag}.{suffix}"):
-        suffix += 1
-    tag_name = f"{base_tag}.{suffix}"
-    return tag_name, tag_name.removeprefix("v")
+
+def tag_exists(tag_name: str) -> bool:
+    """Return True when the exact tag already exists locally."""
+    return bool(git("tag", "--list", tag_name).strip())
 
 
 def get_current_version():
@@ -1700,24 +1713,19 @@ def main():
     parser.add_argument("--publish", action="store_true",
                         help="Actually create the tag and GitHub release (otherwise dry run)")
     parser.add_argument("--date", type=str,
-                        help="Override CalVer date (format: YYYY.M.D)")
+                        help="Override release date metadata (format: YYYY.M.D)")
     parser.add_argument("--first-release", action="store_true",
                         help="Mark as first release (no previous tag expected)")
     parser.add_argument("--output", type=str,
                         help="Write changelog to file instead of stdout")
     args = parser.parse_args()
 
-    # Determine CalVer date
+    # Determine release date metadata
     if args.date:
-        calver_date = args.date
+        release_date = args.date
     else:
         now = datetime.now()
-        calver_date = f"{now.year}.{now.month}.{now.day}"
-
-    base_tag = f"v{calver_date}"
-    tag_name, calver_date = next_available_tag(base_tag)
-    if tag_name != base_tag:
-        print(f"Note: Tag {base_tag} already exists, using {tag_name}")
+        release_date = f"{now.year}.{now.month}.{now.day}"
 
     # Determine semver
     current_version = get_current_version()
@@ -1725,6 +1733,13 @@ def main():
         new_version = bump_version(current_version, args.bump)
     else:
         new_version = current_version
+    tag_name = release_tag_for_version(new_version)
+
+    if tag_exists(tag_name):
+        print(f"Tag {tag_name} already exists. Bump the version before releasing.")
+        if not args.publish:
+            print(f"Would keep version: {new_version}")
+        return
 
     # Get previous tag
     prev_tag = get_last_tag()
@@ -1744,7 +1759,8 @@ def main():
     print(f"{'='*60}")
     print(f"  Miho Agent Release Preview")
     print(f"{'='*60}")
-    print(f"  CalVer tag:      {tag_name}")
+    print(f"  Release tag:     {tag_name}")
+    print(f"  Release date:    {release_date}")
     print(f"  SemVer:          v{current_version} → v{new_version}")
     print(f"  Previous tag:    {prev_tag or '(none — first release)'}")
     print(f"  Commits:         {len(commits)}")
@@ -1773,8 +1789,8 @@ def main():
 
         # Update version files
         if args.bump:
-            update_version_files(new_version, calver_date)
-            print(f"  ✓ Updated version files to v{new_version} ({calver_date})")
+            update_version_files(new_version, release_date)
+            print(f"  ✓ Updated version files to v{new_version} ({release_date})")
 
             # Commit version bump
             add_files = [str(VERSION_FILE), str(PYPROJECT_FILE)]
@@ -1786,7 +1802,7 @@ def main():
                 return
 
             commit_result = git_result(
-                "commit", "-m", f"chore: bump version to v{new_version} ({calver_date})"
+                "commit", "-m", f"chore: bump version to v{new_version} ({release_date})"
             )
             if commit_result.returncode != 0:
                 print(f"  ✗ Failed to commit version bump: {commit_result.stderr.strip()}")
@@ -1796,7 +1812,7 @@ def main():
         # Create annotated tag
         tag_result = git_result(
             "tag", "-a", tag_name, "-m",
-            f"Miho Agent v{new_version} ({calver_date})\n\nWeekly release"
+            f"Miho Agent v{new_version} ({release_date})\n\nRelease"
         )
         if tag_result.returncode != 0:
             print(f"  ✗ Failed to create tag {tag_name}: {tag_result.stderr.strip()}")
@@ -1812,8 +1828,8 @@ def main():
             print("    Continue manually after fixing access:")
             print("    git push origin HEAD --tags")
 
-        # Build semver-named Python artifacts so downstream packagers
-        # (e.g. Homebrew) can target them without relying on CalVer tag names.
+        # Build SemVer-named Python artifacts so downstream packagers
+        # (e.g. Homebrew) can target the package version directly.
         artifacts = build_release_artifacts(new_version)
         if artifacts:
             print("  ✓ Built release artifacts:")
@@ -1826,7 +1842,7 @@ def main():
 
         gh_cmd = [
             "gh", "release", "create", tag_name,
-            "--title", f"Miho Agent v{new_version} ({calver_date})",
+            "--title", f"Miho Agent v{new_version} ({release_date})",
             "--notes-file", str(changelog_file),
         ]
         gh_cmd.extend(str(path) for path in artifacts)
@@ -1853,7 +1869,7 @@ def main():
             print(f"    Release notes kept at: {changelog_file}")
             print(f"    Tag was created locally. Create the release manually:")
             print(
-                f"    gh release create {tag_name} --title 'Miho Agent v{new_version} ({calver_date})' "
+                f"    gh release create {tag_name} --title 'Miho Agent v{new_version} ({release_date})' "
                 f"--notes-file .release_notes.md {' '.join(str(path) for path in artifacts)}"
             )
             print(f"\n  ✓ Release artifacts prepared for manual publish: v{new_version} ({tag_name})")

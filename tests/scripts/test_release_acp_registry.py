@@ -111,3 +111,35 @@ def test_update_version_files_bumps_manifest_alongside_pyproject(
     )
     assert manifest["version"] == "0.14.0"
     assert manifest["distribution"]["uvx"]["package"] == "miho-agent[acp]==0.14.0"
+
+
+def test_release_tags_use_semver_and_ignore_legacy_calver(monkeypatch, tmp_path):
+    module = _load_release_module(monkeypatch, tmp_path)
+
+    def fake_git(*args, cwd=None):
+        if args == ("tag", "--list", "v*", "--sort=-v:refname"):
+            return "v2026.5.25\nv0.15.4\nv0.15.3\n"
+        return ""
+
+    monkeypatch.setattr(module, "git", fake_git)
+
+    assert module.get_last_tag() == "v0.15.4"
+    assert module.release_tag_for_version("0.15.5") == "v0.15.5"
+    assert module.is_semver_release_tag("v2026.5.25") is False
+
+
+def test_tag_exists_checks_exact_semver_tag(monkeypatch, tmp_path):
+    module = _load_release_module(monkeypatch, tmp_path)
+    calls = []
+
+    def fake_git(*args, cwd=None):
+        calls.append(args)
+        if args == ("tag", "--list", "v0.15.5"):
+            return "v0.15.5"
+        return ""
+
+    monkeypatch.setattr(module, "git", fake_git)
+
+    assert module.tag_exists("v0.15.5") is True
+    assert module.tag_exists("v0.15.6") is False
+    assert ("tag", "--list", "v0.15.5") in calls

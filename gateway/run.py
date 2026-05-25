@@ -1574,6 +1574,8 @@ class GatewayRunner:
     _stop_task: Optional[asyncio.Task] = None
     _session_model_overrides: Dict[str, Dict[str, str]] = {}
     _session_reasoning_overrides: Dict[str, Dict[str, Any]] = {}
+    _last_run_observability: Dict[str, Dict[str, Any]] = {}
+    _pending_forge_preflight: Dict[str, Dict[str, Any]] = {}
 
     def __init__(self, config: Optional[GatewayConfig] = None):
         global _gateway_runner_ref
@@ -1619,6 +1621,8 @@ class GatewayRunner:
         # Key: session_key, Value: AIAgent instance
         self._running_agents: Dict[str, Any] = {}
         self._running_agents_ts: Dict[str, float] = {}  # start timestamp per session
+        self._last_run_observability: Dict[str, Dict[str, Any]] = {}
+        self._pending_forge_preflight: Dict[str, Dict[str, Any]] = {}
         self._pending_messages: Dict[str, str] = {}  # Queued messages during interrupt
         # Overflow buffer for explicit /queue commands.  The adapter-level
         # _pending_messages dict is a single slot per session (designed for
@@ -2523,6 +2527,72 @@ class GatewayRunner:
         if adapter is not None and session_key in getattr(adapter, "_pending_messages", {}):
             depth += 1
         return depth
+
+    def _record_run_observability(
+        self,
+        session_key: str,
+        result: Any,
+        *,
+        started_at: float,
+    ) -> None:
+        """Store one lightweight, local status snapshot for the last agent run."""
+        if not session_key or not isinstance(result, dict):
+            return
+
+        observations = getattr(self, "_last_run_observability", None)
+        if observations is None:
+            observations = {}
+            self._last_run_observability = observations
+
+        tools = result.get("tools") or []
+        if not isinstance(tools, list):
+            tools = []
+
+        if result.get("interrupted"):
+            status = "interrupted"
+        elif result.get("failed") or result.get("error"):
+            status = "failed"
+        else:
+            status = "completed"
+
+        error = str(result.get("error") or "").replace("\n", " ").strip()
+        if len(error) > 160:
+            error = error[:157] + "..."
+
+        observations[session_key] = {
+            "status": status,
+            "duration_seconds": max(0.0, time.time() - started_at),
+            "api_calls": int(result.get("api_calls") or 0),
+            "tool_calls": len(tools),
+            "model": str(result.get("model") or "").strip(),
+            "error": error,
+            "finished_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+
+    def _format_status_observability(self, session_key: str) -> list[str]:
+        """Render the last local run snapshot for /status."""
+        observation = (getattr(self, "_last_run_observability", None) or {}).get(session_key)
+        if not observation:
+            return []
+
+        status = str(observation.get("status") or "unknown")
+        try:
+            duration = float(observation.get("duration_seconds") or 0.0)
+        except (TypeError, ValueError):
+            duration = 0.0
+
+        lines = [
+            "",
+            f"**Recent Run:** {status} in {duration:.1f}s",
+        ]
+        model = str(observation.get("model") or "").replace("`", "").strip()
+        if model:
+            lines.append(f"**Model:** `{model}`")
+        lines.append(f"**Tool calls:** {int(observation.get('tool_calls') or 0)}")
+        lines.append(f"**API calls:** {int(observation.get('api_calls') or 0)}")
+        if observation.get("error"):
+            lines.append(f"**Last error:** {observation['error']}")
+        return lines
 
     @staticmethod
     def _is_goal_continuation_event(event_or_text: Any) -> bool:
@@ -7596,12 +7666,40 @@ class GatewayRunner:
             return None
 
         try:
+            from gateway.preflight_learning import consume_preflight_correction
+
+            if consume_preflight_correction(
+                getattr(self, "_pending_forge_preflight", {}),
+                _quick_key,
+                correction_text=event.text,
+            ):
+                return "알겠어. 이건 작업 생성이 아니라 대화로 볼게."
+        except Exception as exc:
+            logger.debug("forge preflight correction recording failed: %s", exc)
+
+        try:
             from gateway.forge_preflight import project_target_question_for
 
             _project_target_question = project_target_question_for(event.text)
         except Exception:
             _project_target_question = None
         if _project_target_question:
+            try:
+                from gateway.preflight_learning import remember_preflight_prompt
+
+                _pending_preflight = getattr(self, "_pending_forge_preflight", None)
+                if _pending_preflight is None:
+                    _pending_preflight = {}
+                    self._pending_forge_preflight = _pending_preflight
+                remember_preflight_prompt(
+                    _pending_preflight,
+                    _quick_key,
+                    original_text=event.text,
+                    question=_project_target_question,
+                    platform=source.platform.value if source.platform else None,
+                )
+            except Exception as exc:
+                logger.debug("forge preflight prompt tracking failed: %s", exc)
             return _project_target_question
 
         # ── Claim this session before any await ───────────────────────
@@ -8540,6 +8638,7 @@ class GatewayRunner:
             await self.hooks.emit("agent:start", hook_ctx)
 
             # Run the agent
+            _run_started_at = time.time()
             agent_result = await self._run_agent(
                 message=message_text,
                 context_prompt=context_prompt,
@@ -8575,6 +8674,12 @@ class GatewayRunner:
                 elif _stale_adapter and hasattr(_stale_adapter, "_post_delivery_callbacks"):
                     _stale_adapter._post_delivery_callbacks.pop(_quick_key, None)
                 return None
+
+            self._record_run_observability(
+                session_key,
+                agent_result,
+                started_at=_run_started_at,
+            )
 
             response = agent_result.get("final_response") or ""
 
@@ -9536,6 +9641,7 @@ class GatewayRunner:
         ])
         if queue_depth:
             lines.append(t("gateway.status.queued", count=queue_depth))
+        lines.extend(self._format_status_observability(session_key))
         lines.extend([
             "",
             t("gateway.status.platforms", platforms=', '.join(connected_platforms)),
@@ -16018,6 +16124,20 @@ class GatewayRunner:
                         if progress_lines:
                             progress_lines[-1] = f"{base_msg} (×{count + 1})"
                         msg = progress_lines[-1] if progress_lines else base_msg
+                    elif isinstance(raw, tuple) and len(raw) == 2 and raw[0] == "__finish__":
+                        msg = raw[1]
+                        progress_lines.append(msg)
+                        full_text = _progress_text(progress_lines)
+                        if can_edit and progress_msg_id is not None:
+                            await _edit_progress_message(progress_msg_id, full_text)
+                        elif can_edit:
+                            result = await _send_progress_text(full_text)
+                            if result.success and result.message_id:
+                                progress_msg_id = result.message_id
+                        else:
+                            await _send_progress_text(msg)
+                        _last_edit_ts = time.monotonic()
+                        continue
                     elif isinstance(raw, tuple) and len(raw) >= 1 and raw[0] == "__reset__":
                         # Content bubble just landed on the platform — close off
                         # the current tool-progress bubble so the next tool
@@ -16140,6 +16260,9 @@ class GatewayRunner:
                                 if progress_lines:
                                     progress_lines[-1] = f"{base_msg} (×{count + 1})"
                                     await _roll_progress_overflow_if_needed()
+                            elif isinstance(raw, tuple) and len(raw) == 2 and raw[0] == "__finish__":
+                                progress_lines.append(raw[1])
+                                await _roll_progress_overflow_if_needed()
                             elif isinstance(raw, tuple) and len(raw) >= 1 and raw[0] == "__reset__":
                                 # Content-bubble marker during drain: close off
                                 # the current progress bubble and start a fresh
@@ -17670,6 +17793,23 @@ class GatewayRunner:
                 )
                 return _preserve_queued_followup_history_offset(result, followup_result)
         finally:
+            if progress_task and progress_mode == "clean" and progress_queue is not None:
+                try:
+                    from gateway.tool_progress_ux import (
+                        render_clean_finish_progress,
+                        should_emit_clean_progress,
+                    )
+
+                    _final_progress_result = result_holder[0]
+                    _local_response = locals().get("response")
+                    if isinstance(_local_response, dict):
+                        _final_progress_result = _local_response
+                    _finish_msg = render_clean_finish_progress(_final_progress_result)
+                    if should_emit_clean_progress(_finish_msg, clean_progress_seen):
+                        progress_queue.put(("__finish__", _finish_msg))
+                        await asyncio.sleep(0.35)
+                except Exception:
+                    pass
             # Stop progress sender, interrupt monitor, and notification task
             if progress_task:
                 progress_task.cancel()
