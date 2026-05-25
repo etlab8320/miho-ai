@@ -169,3 +169,100 @@ def test_delete_requires_confirmation_and_removes_bundle(monkeypatch, tmp_path) 
         "guild-1", "channels", "channel-1__channel-1", "threads", "thread-thread-a__thread-a", "life_records"
     ).exists()
     assert result["db_path"].endswith("life_records.sqlite3")
+
+
+def test_attendance_parser_does_not_swallow_next_section_heading() -> None:
+    from plugins.life_record.parsers import parse_attendance
+
+    text = "\n".join(
+        [
+            "출결상황",
+            "1",
+            "191",
+            ".",
+            ".",
+            ".",
+            "1",
+            ".",
+            ".",
+            ".",
+            ".",
+            ".",
+            ".",
+            ".",
+            ".",
+            "원격수업일수 0일",
+            "2",
+            "190",
+            ".",
+            ".",
+            ".",
+            "1",
+            ".",
+            ".",
+            "1",
+            ".",
+            ".",
+            ".",
+            ".",
+            ".",
+            "3",
+            "190",
+            "1",
+            ".",
+            ".",
+            ".",
+            ".",
+            ".",
+            ".",
+            "9",
+            ".",
+            ".",
+            ".",
+            ".",
+            "국가직무능력표준 이수상황",
+        ]
+    )
+
+    rows = parse_attendance(text)
+
+    assert [row["grade"] for row in rows] == [1, 2, 3]
+    assert rows[0]["special_note"] == "원격수업일수 0일"
+    assert rows[1]["special_note"] == ""
+    assert rows[2]["special_note"] == ""
+
+
+def test_subject_note_parser_drops_wrapped_footer_and_next_table_header() -> None:
+    from plugins.life_record.parsers import parse_subject_special_notes
+
+    text = "\n".join(
+        [
+            "교과학습발달상황",
+            "과목 세부능력및특기사항",
+            "심리학: 범죄심리학 관련 도서를 읽고 주제를 정해 탐구 보고서를 작성함.",
+            "토론에서 근거를 들어 의견을 설명하고 발표함.",
+            "반",
+            "4",
+            "번호",
+            "1",
+            "이름",
+            "김민준",
+            "백양고등학교",
+            "8/28",
+            "2026년 5월 21일",
+            "또한 문서하단의 바코드로도 진위확인할 수 있습니다.",
+            "<진로 선택 과목>",
+            "원점수/과목평균 (수강자수) 성취도별 분포비율",
+            "체육 체육 A",
+        ]
+    )
+
+    notes = parse_subject_special_notes([text])
+
+    assert len(notes) == 1
+    assert notes[0]["subject"] == "심리학"
+    assert "발표함" in notes[0]["note_text"]
+    assert "김민준" not in notes[0]["note_text"]
+    assert "바코드" not in notes[0]["note_text"]
+    assert "<진로 선택 과목>" not in notes[0]["note_text"]
+    assert "체육 체육 A" not in notes[0]["note_text"]

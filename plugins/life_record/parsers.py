@@ -107,9 +107,7 @@ def parse_attendance(first_page: str) -> list[dict[str, Any]]:
             continue
         nums = [_to_int_cell(cell) for cell in cells]
         note_idx = idx + 14
-        note = ""
-        if note_idx < len(lines) and not re.fullmatch(r"[123]", lines[note_idx]):
-            note = lines[note_idx]
+        note = _attendance_note(lines, note_idx)
         rows.append(
             {
                 "grade": nums[0],
@@ -134,6 +132,21 @@ def parse_attendance(first_page: str) -> list[dict[str, Any]]:
     for row in rows:
         dedup.setdefault(int(row["grade"]), row)
     return list(dedup.values())
+
+
+_ATTENDANCE_NOTE_STOP_RE = re.compile(
+    r"^(국가직무능력표준 이수상황|창의적\s*체험활동상황|봉사활동실적|교과학습발달상황|"
+    r"행동특성\s*및\s*종합의견|학교생활세부사항기록부|백양고등학교|문서확인번호|◆)"
+)
+
+
+def _attendance_note(lines: list[str], note_idx: int) -> str:
+    if note_idx >= len(lines):
+        return ""
+    candidate = lines[note_idx]
+    if re.fullmatch(r"[123]", candidate) or _ATTENDANCE_NOTE_STOP_RE.search(candidate):
+        return ""
+    return candidate
 
 
 def parse_subject_grades(page_texts: list[str]) -> list[dict[str, Any]]:
@@ -281,31 +294,84 @@ def _dedup_grade_rows(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return unique
 
 
-_SUBJECT_LABEL_RE = re.compile(r"(?:^|\n)([가-힣A-Za-z0-9ⅠⅡⅢ·\s]{1,24}):\s*")
+_SUBJECT_LABEL_RE = re.compile(r"(?:^|\n)([가-힣A-Za-z0-9ⅠⅡⅢ·][가-힣A-Za-z0-9ⅠⅡⅢ· \t]{0,23}):\s*")
 _NOTE_NOISE = {"학기", "교과", "과목", "학점수", "성취도", "석차등급", "학년도", "학년", "구분명", "학과명", "편제명", "비고", "발급번호", "문서확인번호"}
 
 
 def _sanitize_note_text(text: str) -> str:
     cleaned: list[str] = []
-    for line in [item.strip() for item in text.splitlines() if item.strip()]:
+    lines = [item.strip() for item in text.splitlines() if item.strip()]
+    idx = 0
+    while idx < len(lines):
+        footer_span = _page_footer_span(lines, idx)
+        if footer_span:
+            idx += footer_span
+            continue
+        line = lines[idx]
         if line in _NOTE_NOISE or re.fullmatch(r"\d+|\d+/\d+", line):
+            idx += 1
             continue
         if line.startswith(("문서확인번호", "◆ 본 증명서는", "발급번호")):
+            idx += 1
+            continue
+        line = re.sub(r"\s*반\s+번호\s+이름.*$", "", line).strip()
+        if not line:
+            idx += 1
+            continue
+        if "정부24" in line or "바코드" in line:
+            idx += 1
             continue
         cleaned.append(line)
+        idx += 1
     return "\n".join(cleaned)
+
+
+def _page_footer_span(lines: list[str], idx: int) -> int:
+    if idx + 8 < len(lines) and (
+        lines[idx] == "반"
+        and re.fullmatch(r"\d+", lines[idx + 1])
+        and lines[idx + 2] == "번호"
+        and re.fullmatch(r"\d+", lines[idx + 3])
+        and lines[idx + 4] == "이름"
+        and re.fullmatch(r"[가-힣]{2,5}", lines[idx + 5])
+        and re.fullmatch(r"[가-힣A-Za-z0-9]+고등학교", lines[idx + 6])
+        and re.fullmatch(r"\d+/\d+", lines[idx + 7])
+        and re.fullmatch(r"20\d{2}년\s*\d{1,2}월\s*\d{1,2}일", lines[idx + 8])
+    ):
+        return 9
+    if idx + 5 < len(lines) and (
+        lines[idx : idx + 3] == ["반", "번호", "이름"]
+        and re.fullmatch(r"[가-힣]{2,5}", lines[idx + 3])
+        and re.fullmatch(r"[가-힣A-Za-z0-9]+고등학교", lines[idx + 4])
+        and re.fullmatch(r"20\d{2}년\s*\d{1,2}월\s*\d{1,2}일", lines[idx + 5])
+    ):
+        return 6
+    return 0
 
 
 def _clean_subject(subject: str) -> str:
     value = re.sub(r"\s+", " ", subject).strip()
-    value = re.sub(r"^(?:과목\s+)?세 부 능 력 및 특 기 사 항\s+", "", value).strip()
+    value = re.sub(r"^(?:과목\s+)?세\s*부\s*능\s*력\s*및\s*특\s*기\s*사\s*항\s*", "", value).strip()
     if re.search(r"20\d{2}년|문서확인번호|발급번호", value):
         return ""
     return "" if value in _NOTE_NOISE else value
 
 
 def _cut_note(note: str, start: int, end: int) -> tuple[str, int]:
-    cuts = [m.start() for pattern in [r"\n\[2학년\]", r"\n\[3학년\]", r"\n행동특성 및 종합의견", r"\n학년도\n학년"] if (m := re.search(pattern, note))]
+    cuts = [
+        m.start()
+        for pattern in [
+            r"\n\[2학년\]",
+            r"\n\[3학년\]",
+            r"\n행동특성 및 종합의견",
+            r"\n학년도\n학년",
+            r"\n<진로 선택 과목>",
+            r"\n<체육·예술>",
+            r"\n원점수/과목평균",
+            r"\n이수학점 합계",
+        ]
+        if (m := re.search(pattern, note))
+    ]
     if not cuts:
         return note, end
     cut = min(cuts)
