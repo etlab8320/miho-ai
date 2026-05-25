@@ -211,6 +211,7 @@ class _InstallResult:
     success: bool
     stdout: str
     stderr: str
+    command: str = ""
 
 
 # =============================================================================
@@ -357,7 +358,7 @@ def _venv_pip_install(specs: tuple[str, ...], *, timeout: int = 300) -> _Install
                 capture_output=True, text=True, timeout=timeout, env=uv_env,
             )
             if r.returncode == 0:
-                return _InstallResult(True, r.stdout or "", r.stderr or "")
+                return _InstallResult(True, r.stdout or "", r.stderr or "", "uv pip install")
             logger.debug("uv pip install failed: %s", r.stderr)
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
             logger.debug("uv invocation failed: %s", e)
@@ -379,18 +380,18 @@ def _venv_pip_install(specs: tuple[str, ...], *, timeout: int = 300) -> _Install
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             return _InstallResult(False, "",
-                                  f"pip not available and ensurepip failed: {e}")
+                                  f"pip not available and ensurepip failed: {e}", "python -m ensurepip")
 
     try:
         r = subprocess.run(
             pip_cmd + ["install", *specs],
             capture_output=True, text=True, timeout=timeout,
         )
-        return _InstallResult(r.returncode == 0, r.stdout or "", r.stderr or "")
+        return _InstallResult(r.returncode == 0, r.stdout or "", r.stderr or "", "python -m pip install")
     except subprocess.TimeoutExpired as e:
-        return _InstallResult(False, "", f"pip install timed out: {e}")
+        return _InstallResult(False, "", f"pip install timed out: {e}", "python -m pip install")
     except Exception as e:
-        return _InstallResult(False, "", f"pip install failed: {e}")
+        return _InstallResult(False, "", f"pip install failed: {e}", "python -m pip install")
 
 
 # =============================================================================
@@ -469,6 +470,13 @@ def ensure(feature: str, *, prompt: bool = True) -> None:
         if snippet:
             # Clip to a readable size — pip can dump pages of resolution traces.
             snippet = snippet[-2000:]
+        logger.error(
+            "Lazy install failed for feature %r using %s with Python %s: %s",
+            feature,
+            result.command or "pip install",
+            sys.executable,
+            snippet or "no error output",
+        )
         raise FeatureUnavailable(
             feature, missing,
             f"pip install failed: {snippet or 'no error output'}"

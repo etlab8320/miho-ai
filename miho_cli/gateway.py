@@ -1118,6 +1118,8 @@ def kill_gateway_processes(force: bool = False, exclude_pids: set | None = None,
             pass
         except PermissionError:
             print(f"⚠ Permission denied to kill PID {pid}")
+            if is_windows():
+                print(f"  Run elevated PowerShell: taskkill /F /T /PID {pid}")
     
         except OSError as exc:
             print(f"Failed to kill PID {pid}: {exc}")
@@ -1152,6 +1154,8 @@ def stop_profile_gateway() -> bool:
         pass  # Already gone
     except PermissionError:
         print(f"⚠ Permission denied to kill PID {pid}")
+        if is_windows():
+            print(f"  Run elevated PowerShell: taskkill /F /T /PID {pid}")
         return False
 
     # Wait briefly for it to exit. On Windows, os.kill(pid, 0) is NOT
@@ -3802,6 +3806,25 @@ def _platform_status(platform: dict) -> str:
     return "not configured"
 
 
+def _verify_configured_platform_dependencies(platform: dict, entry) -> None:
+    """Eagerly verify plugin deps after setup writes a real platform config."""
+    if _platform_status(platform) != "configured":
+        return
+    try:
+        ok = bool(entry.check_fn())
+    except Exception as exc:
+        ok = False
+        print_warning(f"  {entry.label} dependency check failed: {exc}")
+    if ok:
+        print_success(f"  {entry.label} dependencies ready.")
+        return
+    hint = f" Run: {entry.install_hint}" if getattr(entry, "install_hint", "") else ""
+    print_warning(
+        f"  {entry.label} is configured, but its runtime dependencies are not ready."
+        f"{hint}"
+    )
+
+
 def _runtime_health_lines() -> list[str]:
     """Summarize the latest persisted gateway runtime health state."""
     try:
@@ -3821,9 +3844,14 @@ def _runtime_health_lines() -> list[str]:
     platforms = state.get("platforms", {}) or {}
 
     for platform, pdata in platforms.items():
-        if pdata.get("state") == "fatal":
-            message = pdata.get("error_message") or "unknown error"
+        state_name = pdata.get("state")
+        if not state_name or state_name == "connected":
+            continue
+        message = pdata.get("error_message") or "unknown error"
+        if state_name == "fatal":
             lines.append(f"⚠ {platform}: {message}")
+        else:
+            lines.append(f"⚠ {platform} adapter: {state_name} - {message}")
 
     if gateway_state == "startup_failed" and exit_reason:
         lines.append(f"⚠ Last startup issue: {exit_reason}")
@@ -4764,6 +4792,7 @@ def _configure_platform(platform: dict) -> None:
 
     if entry is not None and entry.setup_fn is not None:
         entry.setup_fn()
+        _verify_configured_platform_dependencies(platform, entry)
         return
 
     fn = _builtin_setup_fn(platform["key"])
@@ -5363,7 +5392,12 @@ def _gateway_command_inner(args):
 
             # Start fresh
             print("Starting gateway...")
-            run_gateway(verbose=0)
+            if is_windows():
+                from miho_cli import gateway_windows
+
+                gateway_windows.start(prompt_install=False)
+            else:
+                run_gateway(verbose=0)
     
     elif subcmd == "status":
         deep = getattr(args, 'deep', False)

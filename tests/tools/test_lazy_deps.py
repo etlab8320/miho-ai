@@ -181,18 +181,20 @@ class TestEnsure:
         )
         ld.ensure("test.install", prompt=False)
 
-    def test_install_failure_surfaces_pip_stderr(self, monkeypatch):
+    def test_install_failure_surfaces_pip_stderr(self, monkeypatch, caplog):
         monkeypatch.setitem(ld.LAZY_DEPS, "test.fail", ("zzzfake>=1",))
         monkeypatch.setattr(ld, "_is_satisfied", lambda spec: False)
         monkeypatch.setattr(ld, "_allow_lazy_installs", lambda: True)
         monkeypatch.setattr(
             ld, "_venv_pip_install",
             lambda specs, **kw: ld._InstallResult(
-                False, "", "ERROR: package not found on PyPI"
+                False, "", "ERROR: package not found on PyPI", "uv pip install"
             ),
         )
-        with pytest.raises(ld.FeatureUnavailable, match="pip install failed"):
+        with caplog.at_level("ERROR"), pytest.raises(ld.FeatureUnavailable, match="pip install failed"):
             ld.ensure("test.fail", prompt=False)
+        assert "uv pip install" in caplog.text
+        assert "ERROR: package not found on PyPI" in caplog.text
 
     def test_install_succeeds_but_still_missing_raises(self, monkeypatch):
         # Pip says success but the package still isn't importable

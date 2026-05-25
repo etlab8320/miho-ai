@@ -41,6 +41,8 @@ from pathlib import Path
 # Short timeouts: schtasks occasionally wedges and we don't want to hang forever.
 _SCHTASKS_TIMEOUT_S = 15
 _SCHTASKS_NO_OUTPUT_TIMEOUT_S = 30
+_RESTART_STOP_TIMEOUT_S = 8.0
+_RESTART_STOP_POLL_INTERVAL_S = 0.25
 # Patterns in schtasks stderr that mean "fall back to the Startup folder".
 _FALLBACK_PATTERNS = re.compile(
     r"(access is denied|acceso denegado|přístup byl odepřen|schtasks timed out|schtasks produced no output)",
@@ -976,7 +978,26 @@ def status(deep: bool = False) -> None:
         print("  miho gateway install")
 
 
-def start() -> None:
+def _start_direct_spawn() -> None:
+    """Start one detached gateway process without touching Windows persistence."""
+    pid = _spawn_detached()
+    _report_gateway_start(f"direct spawn (PID {pid})")
+
+
+def _wait_until_stopped(
+    timeout_s: float = _RESTART_STOP_TIMEOUT_S,
+    interval_s: float = _RESTART_STOP_POLL_INTERVAL_S,
+) -> bool:
+    """Wait until PID scanning no longer sees a gateway process."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if not _gateway_pids():
+            return True
+        time.sleep(interval_s)
+    return not _gateway_pids()
+
+
+def start(*, prompt_install: bool = True) -> None:
     """Start the gateway. Prefers /Run on the scheduled task if present."""
     _assert_windows()
     running_pids = _gateway_pids()
@@ -988,6 +1009,10 @@ def start() -> None:
     startup_installed = is_startup_entry_installed()
 
     if not task_installed and not startup_installed:
+        if not prompt_install:
+            _start_direct_spawn()
+            return
+
         from miho_cli.setup import prompt_yes_no
 
         print("✗ Gateway service is not installed")
@@ -1010,8 +1035,7 @@ def start() -> None:
         print(f"⚠ schtasks /Run failed (code {code}): {err.strip()} — falling back to direct spawn")
 
     # Startup fallback or failed /Run: direct spawn one foreground-detached gateway.
-    pid = _spawn_detached()
-    _report_gateway_start(f"direct spawn (PID {pid})")
+    _start_direct_spawn()
 
 
 def stop() -> None:
@@ -1041,7 +1065,10 @@ def stop() -> None:
 def restart() -> None:
     """Stop the gateway then start it again."""
     _assert_windows()
+    was_installed = is_installed()
     stop()
-    # Give Windows a moment to release the listening port.
-    time.sleep(1.0)
-    start()
+    if not _wait_until_stopped():
+        print("⚠ Gateway process is still visible after stop; start skipped to avoid a duplicate.")
+        print("  Run: miho gateway status --deep")
+        return
+    start(prompt_install=was_installed)

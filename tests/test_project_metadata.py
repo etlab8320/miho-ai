@@ -77,7 +77,7 @@ def test_lazy_installable_extras_excluded_from_all():
         "edge-tts", "tts-premium",
         "voice",  # faster-whisper / sounddevice / numpy
         "modal", "daytona", "vercel",
-        "messaging", "slack", "matrix", "dingtalk", "feishu",
+        "discord", "messaging", "slack", "matrix", "dingtalk", "feishu",
         "honcho", "hindsight",
     }
     all_extra_specs = optional_dependencies["all"]
@@ -98,6 +98,14 @@ def test_messaging_extra_includes_qrcode_for_weixin_setup():
 
     messaging_extra = optional_dependencies["messaging"]
     assert any(dep.startswith("qrcode") for dep in messaging_extra)
+
+
+def test_discord_extra_matches_lazy_dependency_specs():
+    optional_dependencies = _load_optional_dependencies()
+
+    discord_extra = optional_dependencies["discord"]
+    assert "discord.py[voice]==2.7.1" in discord_extra
+    assert "brotlicffi==1.2.0.1" in discord_extra
 
 
 def test_dingtalk_extra_includes_qrcode_for_qr_auth():

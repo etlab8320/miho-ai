@@ -4007,6 +4007,20 @@ class GatewayRunner:
                 # Distinguish between missing builtin deps and missing plugin
                 _pval = platform.value
                 _builtin_names = {m.value for m in Platform.__members__.values()}
+                _adapter_message = "adapter unavailable; check dependencies and config"
+                try:
+                    from gateway.platform_registry import platform_registry
+                    _entry = platform_registry.get(_pval)
+                    if _entry is not None and _entry.install_hint:
+                        _adapter_message = f"adapter unavailable; install dependencies: {_entry.install_hint}"
+                except Exception:
+                    pass
+                self._update_platform_runtime_status(
+                    _pval,
+                    platform_state="unavailable",
+                    error_code="adapter_unavailable",
+                    error_message=_adapter_message,
+                )
                 if _pval not in _builtin_names:
                     logger.warning(
                         "No adapter for '%s' — is the plugin installed? "

@@ -311,8 +311,8 @@ def test_gateway_restart_on_windows_without_service_uses_detached_backend(monkey
     assert calls == ["restart"]
 
 
-def test_gateway_restart_on_windows_preserves_failure_fallback(monkeypatch):
-    """If the Windows backend cannot launch, keep the existing fallback."""
+def test_gateway_restart_on_windows_failure_fallback_stays_detached(monkeypatch):
+    """If the Windows backend restart fails, fallback must still be detached."""
     import miho_cli.gateway_windows as gateway_windows
 
     calls = []
@@ -328,12 +328,17 @@ def test_gateway_restart_on_windows_preserves_failure_fallback(monkeypatch):
     monkeypatch.setattr(gateway_windows, "restart", fail_restart)
     monkeypatch.setattr(gateway, "stop_profile_gateway", lambda: calls.append("stop") or False)
     monkeypatch.setattr(gateway, "_wait_for_gateway_exit", lambda *args, **kwargs: calls.append("wait"))
-    monkeypatch.setattr(gateway, "run_gateway", lambda *args, **kwargs: calls.append("run"))
+    monkeypatch.setattr(gateway_windows, "start", lambda **kwargs: calls.append(("start", kwargs)))
+    monkeypatch.setattr(
+        gateway,
+        "run_gateway",
+        lambda *args, **kwargs: pytest.fail("Windows restart fallback must not use foreground run_gateway()"),
+    )
 
     args = SimpleNamespace(gateway_command="restart", system=False, all=False)
     gateway.gateway_command(args)
 
-    assert calls == ["restart", "stop", "wait", "run"]
+    assert calls == ["restart", "stop", "wait", ("start", {"prompt_install": False})]
 
 
 def test_systemd_status_warns_when_linger_disabled(monkeypatch, tmp_path, capsys):
@@ -668,6 +673,22 @@ class TestWaitForGatewayExit:
 
         assert killed == 2
         assert calls == [(11, True), (22, True)]
+
+    def test_windows_permission_denied_prints_elevated_taskkill(self, monkeypatch, capsys):
+        monkeypatch.setattr(gateway, "find_gateway_pids", lambda exclude_pids=None, all_profiles=False: [24932])
+        monkeypatch.setattr(gateway, "is_windows", lambda: True)
+
+        def deny(_pid, force=False):
+            raise PermissionError
+
+        monkeypatch.setattr(gateway, "terminate_pid", deny)
+
+        killed = gateway.kill_gateway_processes(force=True)
+
+        assert killed == 0
+        out = capsys.readouterr().out
+        assert "Permission denied to kill PID 24932" in out
+        assert "taskkill /F /T /PID 24932" in out
 
 
 class TestStopProfileGateway:
