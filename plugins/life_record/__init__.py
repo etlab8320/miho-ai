@@ -1,0 +1,87 @@
+"""Thread-scoped Korean school life record tools."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .context import capture_gateway_context
+from .tools import (
+    _delete_tool_handler,
+    _ingest_pdf_tool_handler,
+    _search_tool_handler,
+    _summary_tool_handler,
+    _verify_tool_handler,
+)
+
+
+def _life_record_command(raw_args: str = "") -> str:
+    text = raw_args.strip()
+    if text == "status":
+        return _summary_tool_handler({})
+    return (
+        "생기부 도구\n"
+        "- PDF 업로드 후 `life_record_ingest_pdf`가 현재 Discord 스레드 전용 SQLite DB를 만듭니다.\n"
+        "- 원본 PDF와 학생 사진은 같은 스레드 폴더에만 보관합니다.\n"
+        "- 장기기억/RAG에는 원문을 넣지 않습니다.\n"
+        "- 검수 전 데이터는 needs_review로 다룹니다."
+    )
+
+
+def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, str]:
+    capture_gateway_context(event)
+    return {"action": "allow"}
+
+
+def register(ctx: Any) -> None:
+    ctx.register_command(
+        "life_record",
+        _life_record_command,
+        description="생기부 PDF 스레드 전용 DB화/검수 상태 안내",
+        args_hint="[status]",
+    )
+    ctx.register_hook("pre_gateway_dispatch", _capture_gateway_context)
+    ctx.register_tool(
+        name="life_record_ingest_pdf",
+        toolset="life_record",
+        schema={
+            "type": "object",
+            "properties": {"pdf_path": {"type": "string", "description": "Discord가 캐시한 생기부 PDF 로컬 경로."}},
+            "required": ["pdf_path"],
+            "additionalProperties": False,
+        },
+        handler=_ingest_pdf_tool_handler,
+        description="Ingest a Korean school life record PDF into the current Discord thread's private SQLite DB with original PDF, photo, review HTML, and 3-round verification. Never writes to long-term memory or Discord RAG.",
+    )
+    ctx.register_tool(
+        name="life_record_verify",
+        toolset="life_record",
+        schema={"type": "object", "properties": {"document_id": {"type": "integer"}}, "additionalProperties": False},
+        handler=_verify_tool_handler,
+        description="Run extraction, PDF-to-DB traceability, and human-review-gate checks for the current thread's life record DB.",
+    )
+    ctx.register_tool(
+        name="life_record_search",
+        toolset="life_record",
+        schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 8}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        handler=_search_tool_handler,
+        description="Search only the current Discord thread's life record SQLite DB. Use for 세특, 출결, 행동특성, 수상, 진로, or 상담 evidence lookups.",
+    )
+    ctx.register_tool(
+        name="life_record_summary",
+        toolset="life_record",
+        schema={"type": "object", "properties": {}, "additionalProperties": False},
+        handler=_summary_tool_handler,
+        description="Return safe summary metadata for the current thread's life record DB. The assistant must not invent content beyond DB facts.",
+    )
+    ctx.register_tool(
+        name="life_record_delete",
+        toolset="life_record",
+        schema={"type": "object", "properties": {"confirm_delete": {"type": "boolean"}}, "required": ["confirm_delete"], "additionalProperties": False},
+        handler=_delete_tool_handler,
+        description="Delete the current thread's life record bundle: SQLite DB, source PDFs, photos, reviews, and exports. Requires explicit confirmation.",
+    )

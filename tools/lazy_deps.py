@@ -163,6 +163,8 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "skill.youtube": ("youtube-transcript-api==1.2.4",),
 
     # ─── Tools ─────────────────────────────────────────────────────────────
+    # Korean school-life-record PDFs: text layer + embedded student photo.
+    "tool.life_record": ("PyMuPDF==1.26.6",),
     # ACP adapter (VS Code / Zed / JetBrains integration)
     "tool.acp": ("agent-client-protocol==0.9.0",),
     # Dashboard (`miho dashboard`)
