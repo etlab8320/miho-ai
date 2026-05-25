@@ -60,18 +60,6 @@ def format_login_link(url: str, expires_minutes: int, *, is_local: bool) -> str:
     return "\n".join(lines)
 
 
-def format_login_button_prompt(expires_minutes: int, *, is_local: bool) -> str:
-    lines = [
-        "학원관리 연결부터 할게.",
-        "",
-        "PACA랑 Peak은 같은 로그인 토큰을 써서 한 번만 연결하면 둘 다 쓸 수 있어.",
-        f"아래 버튼으로 로그인해줘. 링크는 {expires_minutes}분 동안 유효해.",
-    ]
-    if is_local:
-        lines.append("지금 링크는 로컬 개발용이라 다른 기기에서는 안 열릴 수 있어.")
-    return "\n".join(lines)
-
-
 def format_binding_status(name: str, academy_name: str, role: str) -> str:
     return f"연결됨: {name} / {academy_name} / {role}"
 

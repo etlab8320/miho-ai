@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import stat
@@ -12,7 +11,6 @@ import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -28,9 +26,7 @@ from plugins.academy_ops.catalog import CONNECTED_APIS, all_operations, find_ope
 from plugins.academy_ops.intent import draft_intent
 from plugins.academy_ops.paca_client import AcademyLoginError, login_paca
 from plugins.academy_ops.server import AcademyAuthHandler
-from plugins.academy_ops.trigger import detect_academy_trigger
 import plugins.academy_ops as academy_ops_module
-import plugins.academy_ops.discord_button as discord_button_module
 import plugins.academy_ops.server as auth_server_module
 
 
@@ -179,34 +175,17 @@ def test_login_command_warns_when_only_local_link_available(monkeypatch, tmp_pat
     assert "다른 기기에서는 안 열릴 수 있어" in output
 
 
-def test_academy_trigger_detects_varied_natural_language():
-    samples = [
-        "학원관리",
-        "파카랑 피크 붙여줘",
-        "출석조회 하고 싶은데",
-        "학생 관리 좀 보자",
-    ]
-
-    assert all(detect_academy_trigger(sample).should_prompt for sample in samples)
-    assert not detect_academy_trigger("오늘 날씨 어때?").should_prompt
-    assert not detect_academy_trigger("/academy login").should_prompt
-
-
-@pytest.mark.asyncio
-async def test_natural_trigger_sends_discord_login_button(monkeypatch, tmp_path):
-    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
-    monkeypatch.setenv("MIHO_ACADEMY_AUTH_BASE_URL", "https://academy-login.etlab.kr")
-
-    calls = []
-
-    async def fake_send_discord_link_button(**kwargs):
-        calls.append(kwargs)
-        return True
-
-    monkeypatch.setattr(academy_ops_module, "send_discord_link_button", fake_send_discord_link_button)
-    adapter = SimpleNamespace()
+def test_non_slash_academy_language_is_not_rewritten_to_static_catalog(monkeypatch):
+    monkeypatch.setattr(
+        academy_ops_module,
+        "get_binding",
+        lambda _user_id: SimpleNamespace(name="맥스", academy_name="ET", role="owner"),
+    )
     event = MessageEvent(
-        text="학원관리",
+        text=(
+            "학생 카드를 만드는것을 해야하는데 의견좀 줘봐. "
+            "연결된 api와 비교해서 어떤 부분 api를 연동해야할지 디자인은 어떻게 할지"
+        ),
         source=SessionSource(
             platform=Platform.DISCORD,
             user_id="discord-user-5",
@@ -214,22 +193,12 @@ async def test_natural_trigger_sends_discord_login_button(monkeypatch, tmp_path)
             guild_id="guild-5",
         ),
     )
-    gateway = SimpleNamespace(
-        adapters={Platform.DISCORD: adapter},
-        _is_user_authorized=lambda _source: True,
-    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
 
-    result = _capture_gateway_context(event, gateway=gateway)
-    await asyncio.sleep(0)
-
-    assert result == {"action": "skip", "reason": "academy_ops_login_button"}
-    assert calls
-    assert calls[0]["button_label"] == "학원 계정 연결하기"
-    assert calls[0]["url"].startswith("https://academy-login.etlab.kr/academy/login?state=")
-    assert "PACA랑 Peak은 같은 로그인 토큰" in calls[0]["content"]
+    assert _capture_gateway_context(event, gateway=gateway) == {"action": "allow"}
 
 
-def test_natural_trigger_does_not_bypass_gateway_auth(monkeypatch, tmp_path):
+def test_non_slash_academy_language_does_not_bypass_gateway_auth(monkeypatch, tmp_path):
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     event = MessageEvent(
         text="파카 연동해줘",
@@ -240,51 +209,20 @@ def test_natural_trigger_does_not_bypass_gateway_auth(monkeypatch, tmp_path):
     assert _capture_gateway_context(event, gateway=gateway) == {"action": "allow"}
 
 
-@pytest.mark.asyncio
-async def test_discord_button_sender_renders_url_button(monkeypatch):
-    from plugins.platforms.discord import adapter as discord_adapter
-
-    class FakeView:
-        def __init__(self, **_kwargs):
-            self.children = []
-
-        def add_item(self, item):
-            self.children.append(item)
-
-    class FakeButton:
-        def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
-    fake_discord = SimpleNamespace(
-        Embed=lambda **kwargs: SimpleNamespace(**kwargs),
-        Color=SimpleNamespace(blue=lambda: 3),
-        ui=SimpleNamespace(View=FakeView, Button=FakeButton),
-        ButtonStyle=SimpleNamespace(link=5),
+def test_non_slash_login_request_is_left_to_miho_context(monkeypatch, tmp_path):
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    event = MessageEvent(
+        text="학원관리 로그인 연결해줘",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="discord-user-5",
+            chat_id="channel-5",
+            guild_id="guild-5",
+        ),
     )
-    sent_message = SimpleNamespace(id=991)
-    channel = SimpleNamespace(send=AsyncMock(return_value=sent_message))
-    adapter = SimpleNamespace(
-        _client=SimpleNamespace(get_channel=lambda _id: channel, fetch_channel=AsyncMock())
-    )
-    monkeypatch.setattr(discord_adapter, "DISCORD_AVAILABLE", True)
-    monkeypatch.setattr(discord_adapter, "discord", fake_discord)
-    monkeypatch.setattr(discord_button_module, "is_safe_url", lambda _url: True)
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
 
-    ok = await discord_button_module.send_discord_link_button(
-        adapter=adapter,
-        chat_id="123",
-        content="학원관리 연결부터 할게.",
-        button_label="학원 계정 연결하기",
-        url="https://academy-login.etlab.kr/academy/login?state=abc",
-        title="PACA/Peak 학원관리 연결",
-    )
-
-    assert ok is True
-    kwargs = channel.send.await_args.kwargs
-    assert kwargs["embed"].title == "PACA/Peak 학원관리 연결"
-    assert kwargs["view"].children[0].label == "학원 계정 연결하기"
-    assert kwargs["view"].children[0].url.startswith("https://academy-login.etlab.kr/")
+    assert _capture_gateway_context(event, gateway=gateway) == {"action": "allow"}
 
 
 def test_complete_login_encrypts_token_and_binds_discord_user(monkeypatch, tmp_path):
