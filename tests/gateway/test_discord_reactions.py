@@ -85,7 +85,7 @@ def _make_event(message_id: str, raw_message) -> MessageEvent:
 
 
 @pytest.mark.asyncio
-async def test_process_message_background_adds_and_swaps_reactions(adapter):
+async def test_process_message_background_adds_progress_and_terminal_reactions(adapter):
     raw_message = SimpleNamespace(
         add_reaction=AsyncMock(),
         remove_reaction=AsyncMock(),
@@ -106,8 +106,24 @@ async def test_process_message_background_adds_and_swaps_reactions(adapter):
     await adapter._process_message_background(event, build_session_key(event.source))
 
     assert raw_message.add_reaction.await_args_list[0].args == ("👀",)
-    assert raw_message.remove_reaction.await_args_list[0].args == ("👀", adapter._client.user)
     assert raw_message.add_reaction.await_args_list[1].args == ("✅",)
+    raw_message.remove_reaction.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reaction_cleanup_is_opt_in(adapter, monkeypatch):
+    monkeypatch.setenv("DISCORD_REACTION_CLEANUP", "true")
+
+    raw_message = SimpleNamespace(
+        add_reaction=AsyncMock(),
+        remove_reaction=AsyncMock(),
+    )
+
+    event = _make_event("cleanup", raw_message)
+    await adapter.on_processing_complete(event, ProcessingOutcome.SUCCESS)
+
+    raw_message.remove_reaction.assert_awaited_once_with("👀", adapter._client.user)
+    raw_message.add_reaction.assert_awaited_once_with("✅")
 
 
 @pytest.mark.asyncio
@@ -235,7 +251,9 @@ async def test_reactions_enabled_by_default(adapter, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_on_processing_complete_cancelled_removes_eyes_without_terminal_reaction(adapter):
+async def test_on_processing_complete_cancelled_removes_eyes_without_terminal_reaction(adapter, monkeypatch):
+    monkeypatch.setenv("DISCORD_REACTION_CLEANUP", "true")
+
     raw_message = SimpleNamespace(
         add_reaction=AsyncMock(),
         remove_reaction=AsyncMock(),

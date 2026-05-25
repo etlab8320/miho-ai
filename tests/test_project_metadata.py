@@ -121,8 +121,8 @@ def test_feishu_extra_includes_qrcode_for_qr_login():
 def test_miho_console_script_is_packaged():
     data = _load_pyproject()
 
-    assert data["project"]["scripts"]["miho"] == "miho_cli:main"
-    assert "miho_cli" in data["tool"]["setuptools"]["py-modules"]
+    assert data["project"]["scripts"]["miho"] == "miho_cli.entry:main"
+    assert "miho_cli" in data["tool"]["setuptools"]["packages"]["find"]["include"]
 
 
 def test_dashboard_plugin_manifests_and_assets_are_packaged():

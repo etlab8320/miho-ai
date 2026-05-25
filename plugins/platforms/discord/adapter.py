@@ -1410,6 +1410,10 @@ class DiscordAdapter(BasePlatformAdapter):
         """Check if message reactions are enabled via config/env."""
         return os.getenv("DISCORD_REACTIONS", "true").lower() not in {"false", "0", "no"}
 
+    def _reaction_cleanup_enabled(self) -> bool:
+        """Return True when Discord should remove the in-progress reaction."""
+        return os.getenv("DISCORD_REACTION_CLEANUP", "false").lower() in {"true", "1", "yes", "on"}
+
     async def on_processing_start(self, event: MessageEvent) -> None:
         """Add an in-progress reaction for normal Discord message events."""
         if not self._reactions_enabled():
@@ -1424,7 +1428,8 @@ class DiscordAdapter(BasePlatformAdapter):
             return
         message = event.raw_message
         if hasattr(message, "add_reaction"):
-            await self._remove_reaction(message, "👀")
+            if self._reaction_cleanup_enabled():
+                await self._remove_reaction(message, "👀")
             if outcome == ProcessingOutcome.SUCCESS:
                 await self._add_reaction(message, "✅")
             elif outcome == ProcessingOutcome.FAILURE:

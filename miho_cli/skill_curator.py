@@ -31,6 +31,19 @@ _BLOCKED_PATTERNS = (
 )
 
 
+def _cron_jobs_for_current_home():
+    """Return cron.jobs after aligning its cached paths to current MIHO_HOME."""
+    import cron.jobs as cron_jobs
+
+    miho_home = get_miho_home().resolve()
+    if getattr(cron_jobs, "MIHO_DIR", None) != miho_home:
+        cron_jobs.MIHO_DIR = miho_home
+        cron_jobs.CRON_DIR = miho_home / "cron"
+        cron_jobs.JOBS_FILE = cron_jobs.CRON_DIR / "jobs.json"
+        cron_jobs.OUTPUT_DIR = cron_jobs.CRON_DIR / "output"
+    return cron_jobs
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -295,12 +308,12 @@ def build_daily_skill_review_prompt() -> str:
 
 def ensure_daily_skill_review_job(schedule: str = "10 23 * * *") -> dict[str, Any]:
     """Ensure a recurring job reviews pending skill candidates."""
-    from cron.jobs import compute_next_run, create_job, load_jobs, parse_schedule, save_jobs
+    cron_jobs = _cron_jobs_for_current_home()
 
     ensure_skill_curator_store()
     prompt = build_daily_skill_review_prompt()
     toolsets = ["skills", "session_search", "cronjob"]
-    jobs = load_jobs()
+    jobs = cron_jobs.load_jobs()
     for job in jobs:
         if job.get("name") == DAILY_SKILL_REVIEW_JOB_NAME:
             changed = False
@@ -314,16 +327,16 @@ def ensure_daily_skill_review_job(schedule: str = "10 23 * * *") -> dict[str, An
                 job["deliver"] = "local"
                 changed = True
             if job.get("schedule", {}).get("expr") != schedule:
-                parsed = parse_schedule(schedule)
+                parsed = cron_jobs.parse_schedule(schedule)
                 job["schedule"] = parsed
                 job["schedule_display"] = parsed.get("display", schedule)
-                job["next_run_at"] = compute_next_run(parsed)
+                job["next_run_at"] = cron_jobs.compute_next_run(parsed)
                 changed = True
             if changed:
-                save_jobs(jobs)
+                cron_jobs.save_jobs(jobs)
             return {"success": True, "created": False, "job": job}
 
-    job = create_job(
+    job = cron_jobs.create_job(
         prompt=prompt,
         schedule=schedule,
         name=DAILY_SKILL_REVIEW_JOB_NAME,

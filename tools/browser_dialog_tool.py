@@ -19,7 +19,6 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from tools.browser_supervisor import SUPERVISOR_REGISTRY
 from tools.registry import registry
 
 logger = logging.getLogger(__name__)
@@ -79,6 +78,12 @@ BROWSER_DIALOG_SCHEMA: Dict[str, Any] = {
 }
 
 
+def _get_supervisor_registry() -> Any:
+    from tools.browser_supervisor import SUPERVISOR_REGISTRY
+
+    return SUPERVISOR_REGISTRY
+
+
 def browser_dialog(
     action: str,
     prompt_text: Optional[str] = None,
@@ -87,7 +92,21 @@ def browser_dialog(
 ) -> str:
     """Respond to a pending dialog on the active task's CDP supervisor."""
     effective_task_id = task_id or "default"
-    supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
+    try:
+        supervisor_registry = _get_supervisor_registry()
+    except ModuleNotFoundError:
+        return json.dumps(
+            {
+                "success": False,
+                "error": (
+                    "The 'websockets' Python package is required for CDP "
+                    "dialog handling but is not installed. Install the "
+                    "browser/CDP dependencies before using browser_dialog."
+                ),
+            }
+        )
+
+    supervisor = supervisor_registry.get(effective_task_id)
     if supervisor is None:
         return json.dumps(
             {

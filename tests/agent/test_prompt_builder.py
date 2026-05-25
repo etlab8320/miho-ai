@@ -1163,6 +1163,13 @@ class TestOpenAIModelExecutionGuidance:
         assert "retry" in text
         assert "empty" in text or "partial" in text
 
+    def test_guidance_covers_accuracy_preserving_tool_economy(self):
+        text = OPENAI_MODEL_EXECUTION_GUIDANCE.lower()
+        assert "tool_economy" in text
+        assert "hardcoded assumptions" in text
+        assert "duplicate reads" in text
+        assert "without skipping evidence" in text
+
     def test_guidance_covers_prerequisite_checks(self):
         text = OPENAI_MODEL_EXECUTION_GUIDANCE.lower()
         assert "prerequisite" in text
@@ -1181,6 +1188,8 @@ class TestOpenAIModelExecutionGuidance:
     def test_guidance_uses_xml_tags(self):
         assert "<tool_persistence>" in OPENAI_MODEL_EXECUTION_GUIDANCE
         assert "</tool_persistence>" in OPENAI_MODEL_EXECUTION_GUIDANCE
+        assert "<tool_economy>" in OPENAI_MODEL_EXECUTION_GUIDANCE
+        assert "</tool_economy>" in OPENAI_MODEL_EXECUTION_GUIDANCE
         assert "<verification>" in OPENAI_MODEL_EXECUTION_GUIDANCE
         assert "</verification>" in OPENAI_MODEL_EXECUTION_GUIDANCE
 
@@ -1192,5 +1201,4 @@ class TestOpenAIModelExecutionGuidance:
 # =========================================================================
 # Budget warning history stripping
 # =========================================================================
-
 

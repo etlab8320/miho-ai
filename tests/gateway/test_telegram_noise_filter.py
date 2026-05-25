@@ -2,6 +2,7 @@
 
 from gateway.config import Platform
 from gateway.run import (
+    _normalize_empty_agent_response,
     _prepare_gateway_status_message,
     _sanitize_gateway_final_response,
 )
@@ -94,3 +95,21 @@ def test_discord_final_response_sanitizes_provider_errors_in_korean():
     assert "cybersecurity risk" not in sanitized.lower()
     assert "HTTP 400" not in sanitized
     assert "req_abc" not in sanitized
+
+
+def test_discord_failed_empty_response_does_not_wrap_raw_provider_error():
+    raw = (
+        "API call failed after 3 retries: Connection error. "
+        "request_id=req_timeout"
+    )
+
+    normalized = _normalize_empty_agent_response(
+        {"failed": True, "error": raw, "api_calls": 3},
+        "",
+    )
+    sanitized = _sanitize_gateway_final_response(Platform.DISCORD, normalized)
+
+    assert "모델 호출" in sanitized or "모델 요청" in sanitized
+    assert "API call failed" not in sanitized
+    assert "Connection error" not in sanitized
+    assert "req_timeout" not in sanitized

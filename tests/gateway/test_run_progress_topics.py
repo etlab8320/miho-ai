@@ -144,6 +144,19 @@ class FakeAgent:
         }
 
 
+class SlowNoToolAgent:
+    def __init__(self, **kwargs):
+        self.tools = []
+
+    def run_conversation(self, message, conversation_history=None, task_id=None):
+        time.sleep(0.6)
+        return {
+            "final_response": "done",
+            "messages": [],
+            "api_calls": 1,
+        }
+
+
 class LongPreviewAgent:
     """Agent that emits a tool call with a very long preview string."""
     LONG_CMD = "cd /home/teknium/.miho/miho-agent/.worktrees/miho-d8860339 && source .venv/bin/activate && python -m pytest tests/gateway/test_run_progress_topics.py -n0 -q"
@@ -1208,7 +1221,28 @@ async def test_clean_progress_hides_internal_tool_names(monkeypatch, tmp_path):
     all_content = "\n".join(call["content"] for call in adapter.sent + adapter.edits)
     assert "terminal" not in all_content
     assert "browser_navigate" not in all_content
-    assert "안쪽에서 계산하고 검증하는 중..." in all_content
+    assert "명령을 실행하고 결과를 확인하는 중..." in all_content
+    assert "필요한 자료를 확인하는 중..." in all_content
+
+
+@pytest.mark.asyncio
+async def test_clean_progress_sends_start_signal_before_tools(monkeypatch, tmp_path):
+    adapter, result = await _run_with_agent(
+        monkeypatch,
+        tmp_path,
+        SlowNoToolAgent,
+        session_id="sess-clean-progress-start",
+        config_data={"display": {"tool_progress": "clean"}},
+        platform=Platform.DISCORD,
+        chat_id="discord-chat",
+        chat_type="group",
+        thread_id=None,
+    )
+
+    assert result["final_response"] == "done"
+    all_content = "\n".join(call["content"] for call in adapter.sent + adapter.edits)
+    assert "요청을 살펴보는 중..." in all_content
+    assert "terminal" not in all_content
 
 
 @pytest.mark.asyncio

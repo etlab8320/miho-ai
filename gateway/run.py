@@ -1480,6 +1480,8 @@ def _normalize_empty_agent_response(
                 "대화가 너무 커져서 모델이 한 번에 읽기 어려워졌어.\n"
                 "`/compact`로 압축하거나 `/reset`으로 새로 시작하면 돼."
             )
+        if _looks_like_gateway_provider_error(str(error_detail)):
+            return str(error_detail)[:300]
         return (
             f"요청 처리 중 막혔어: {str(error_detail)[:300]}\n"
             "다시 보내거나 `/reset`으로 새 세션을 열어줘."
@@ -17115,6 +17117,10 @@ class GatewayRunner:
         progress_task = None
         if tool_progress_enabled:
             progress_task = asyncio.create_task(send_progress_messages())
+            if progress_mode == "clean" and progress_queue is not None:
+                from gateway.tool_progress_ux import render_clean_start_progress
+
+                progress_queue.put(render_clean_start_progress())
 
         # Start stream consumer task — polls for consumer creation since it
         # happens inside run_sync (thread pool) after the agent is constructed.

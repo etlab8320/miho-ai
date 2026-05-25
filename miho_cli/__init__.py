@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 import sys
 
-__version__ = "0.15.3"
-__release_date__ = "2026.5.24"
+__version__ = "0.15.4"
+__release_date__ = "2026.5.25"
 
 
 def _ensure_utf8() -> None:

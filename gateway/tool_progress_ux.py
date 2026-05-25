@@ -28,14 +28,21 @@ _MEMORY_TOOLS = {
     "memory",
     "skill_view",
     "read_file",
+    "search_files",
+    "list_files",
 }
+
+
+def render_clean_start_progress() -> str:
+    """Return the first visible sign that Miho accepted the request."""
+    return "요청을 살펴보는 중..."
 
 
 def should_emit_clean_progress(
     message: str,
     seen_messages: set[str],
     *,
-    max_messages: int = 1,
+    max_messages: int = 3,
 ) -> bool:
     """Return True when a clean progress message should be shown for this run."""
     if not message or message in seen_messages:
@@ -50,12 +57,20 @@ def render_clean_tool_progress(tool_name: str | None, preview: str | None = None
     """Return a concise Korean status line without exposing internal tool names."""
     name = str(tool_name or "").strip()
     preview_text = str(preview or "").strip()
+    preview_lower = preview_text.lower()
 
     if name in _BUILD_TOOLS:
-        if any(word in preview_text.lower() for word in ("html", "png", "image", "screenshot")):
+        if any(word in preview_lower for word in ("html", "png", "image", "screenshot")):
             return "결과물을 빚고 검수하는 중..."
-    if name in _RESEARCH_TOOLS or name in _MEMORY_TOOLS or name in _BUILD_TOOLS or name in _VISUAL_TOOLS:
-        return "작업을 진행하고 검증하는 중..."
+        if any(word in preview_lower for word in ("pytest", "ruff", "test", "check", "lint")):
+            return "테스트와 검증을 실행하는 중..."
+        return "명령을 실행하고 결과를 확인하는 중..."
+    if name in _RESEARCH_TOOLS:
+        return "필요한 자료를 확인하는 중..."
+    if name in _MEMORY_TOOLS:
+        return "관련 맥락을 확인하는 중..."
+    if name in _VISUAL_TOOLS:
+        return "결과물을 빚고 검수하는 중..."
     return "작업을 진행하고 검증하는 중..."
 
 
