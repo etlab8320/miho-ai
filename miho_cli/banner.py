@@ -1,18 +1,12 @@
-"""Welcome banner, ASCII art, skills summary, and update check for the CLI.
+"""Welcome banner, ASCII art, and skills summary for the CLI.
 
 Pure display functions with no MihoCLI state dependency.
 """
 
-import json
 import logging
 import os
 import shutil
-import subprocess
-import threading
-import time
-from pathlib import Path
-from miho_constants import get_miho_home
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from rich.console import Console
 from rich.panel import Panel
@@ -22,6 +16,19 @@ from prompt_toolkit import print_formatted_text as _pt_print
 from prompt_toolkit.formatted_text import ANSI as _PT_ANSI
 
 logger = logging.getLogger(__name__)
+
+from miho_cli.banner_update import (  # noqa: E402
+    UPDATE_AVAILABLE_NO_COUNT,
+    check_for_updates,
+    check_via_pypi,
+    format_banner_version_label,
+    get_git_banner_state,
+    get_latest_release_tag,
+    get_update_result,
+    prefetch_update_check,
+    _fetch_pypi_latest,
+    _version_tuple,
+)
 
 
 # =========================================================================
@@ -114,305 +121,6 @@ def get_available_skills() -> Dict[str, List[str]]:
         category = skill.get("category") or "general"
         skills_by_category.setdefault(category, []).append(skill["name"])
     return skills_by_category
-
-
-# =========================================================================
-# Update check
-# =========================================================================
-
-# Cache update check results for 6 hours to avoid repeated git fetches
-_UPDATE_CHECK_CACHE_SECONDS = 6 * 3600
-
-# Sentinel returned when we know an update exists but can't count commits
-# (e.g. nix-built miho — no local git history to count against).
-UPDATE_AVAILABLE_NO_COUNT = -1
-
-_UPSTREAM_REPO_URL = "https://github.com/NousResearch/miho-agent.git"
-
-
-def _check_via_rev(local_rev: str) -> Optional[int]:
-    """Compare an embedded git revision to upstream main via ls-remote.
-
-    Returns 0 if up-to-date, ``UPDATE_AVAILABLE_NO_COUNT`` if behind,
-    or ``None`` on failure.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "ls-remote", _UPSTREAM_REPO_URL, "refs/heads/main"],
-            capture_output=True, text=True, timeout=10,
-        )
-    except Exception:
-        return None
-    if result.returncode != 0 or not result.stdout:
-        return None
-    upstream_rev = result.stdout.split()[0]
-    if not upstream_rev:
-        return None
-    return 0 if upstream_rev == local_rev else UPDATE_AVAILABLE_NO_COUNT
-
-
-def _check_via_local_git(repo_dir: Path) -> Optional[int]:
-    """Count commits behind origin/main in a local checkout."""
-    try:
-        subprocess.run(
-            ["git", "fetch", "origin", "--quiet"],
-            capture_output=True, timeout=10,
-            cwd=str(repo_dir),
-        )
-    except Exception:
-        pass  # Offline or timeout — use stale refs, that's fine
-
-    try:
-        result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD..origin/main"],
-            capture_output=True, text=True, timeout=5,
-            cwd=str(repo_dir),
-        )
-        if result.returncode == 0:
-            return int(result.stdout.strip())
-    except Exception:
-        pass
-    return None
-
-
-def _version_tuple(v: str) -> tuple[int, ...]:
-    """Parse '0.13.0' into (0, 13, 0) for comparison. Non-numeric segments become 0."""
-    parts = []
-    for segment in v.split("."):
-        try:
-            parts.append(int(segment))
-        except ValueError:
-            parts.append(0)
-    return tuple(parts)
-
-
-def _fetch_pypi_latest(package: str = "miho-agent") -> Optional[str]:
-    """Fetch the latest version of a package from PyPI. Returns None on failure."""
-    try:
-        import urllib.request
-        url = f"https://pypi.org/pypi/{package}/json"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read())
-            return data.get("info", {}).get("version")
-    except Exception:
-        return None
-
-
-def check_via_pypi() -> Optional[int]:
-    """Compare installed version against PyPI latest.
-
-    Returns 0 if up-to-date, 1 if behind, None on failure.
-    """
-    latest = _fetch_pypi_latest()
-    if latest is None:
-        return None
-    if latest == VERSION:
-        return 0
-    try:
-        if _version_tuple(latest) > _version_tuple(VERSION):
-            return 1
-        return 0
-    except Exception:
-        return 1 if latest != VERSION else 0
-
-
-def check_for_updates() -> Optional[int]:
-    """Check whether a Miho update is available.
-
-    Two paths: if ``MIHO_REVISION`` is set (nix builds embed it), compare
-    it to upstream main via ``git ls-remote``. Otherwise look for a local
-    git checkout and count commits behind ``origin/main``.
-
-    Returns the number of commits behind, ``UPDATE_AVAILABLE_NO_COUNT`` (-1)
-    if behind but the count is unknown, ``0`` if up-to-date, or ``None`` if
-    the check failed or doesn't apply. Cached for 6 hours.
-    """
-    miho_home = get_miho_home()
-    cache_file = miho_home / ".update_check"
-    embedded_rev = os.environ.get("MIHO_REVISION") or None
-
-    # Read cache — invalidate if the embedded rev has changed since last check
-    now = time.time()
-    try:
-        if cache_file.exists():
-            cached = json.loads(cache_file.read_text())
-            if (
-                now - cached.get("ts", 0) < _UPDATE_CHECK_CACHE_SECONDS
-                and cached.get("rev") == embedded_rev
-            ):
-                return cached.get("behind")
-    except Exception:
-        pass
-
-    if embedded_rev:
-        behind = _check_via_rev(embedded_rev)
-    else:
-        # Prefer the running code's location over the profile-scoped path.
-        # $MIHO_HOME/miho-agent/ may be a stale copy from --clone-all;
-        # Path(__file__) always resolves to the actual installed checkout.
-        repo_dir = Path(__file__).parent.parent.resolve()
-        if not (repo_dir / ".git").exists():
-            repo_dir = miho_home / "miho-agent"
-        if not (repo_dir / ".git").exists():
-            behind = check_via_pypi()
-        else:
-            behind = _check_via_local_git(repo_dir)
-
-    try:
-        cache_file.write_text(json.dumps({"ts": now, "behind": behind, "rev": embedded_rev}))
-    except Exception:
-        pass
-
-    return behind
-
-
-def _resolve_repo_dir() -> Optional[Path]:
-    """Return the active Miho git checkout, or None if this isn't a git install.
-
-    Prefers the running code's location over the profile-scoped path
-    because ``$MIHO_HOME/miho-agent/`` may be a stale copy carried
-    over by ``--clone-all``.
-    """
-    repo_dir = Path(__file__).parent.parent.resolve()
-    if not (repo_dir / ".git").exists():
-        miho_home = get_miho_home()
-        repo_dir = miho_home / "miho-agent"
-    return repo_dir if (repo_dir / ".git").exists() else None
-
-
-def _git_short_hash(repo_dir: Path, rev: str) -> Optional[str]:
-    """Resolve a git revision to an 8-character short hash."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short=8", rev],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            cwd=str(repo_dir),
-        )
-    except Exception:
-        return None
-    if result.returncode != 0:
-        return None
-    value = (result.stdout or "").strip()
-    return value or None
-
-
-def get_git_banner_state(repo_dir: Optional[Path] = None) -> Optional[dict]:
-    """Return upstream/local git hashes for the startup banner."""
-    repo_dir = repo_dir or _resolve_repo_dir()
-    if repo_dir is None:
-        return None
-
-    upstream = _git_short_hash(repo_dir, "origin/main")
-    local = _git_short_hash(repo_dir, "HEAD")
-    if not upstream or not local:
-        return None
-
-    ahead = 0
-    try:
-        result = subprocess.run(
-            ["git", "rev-list", "--count", "origin/main..HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            cwd=str(repo_dir),
-        )
-        if result.returncode == 0:
-            ahead = int((result.stdout or "0").strip() or "0")
-    except Exception:
-        ahead = 0
-
-    return {"upstream": upstream, "local": local, "ahead": max(ahead, 0)}
-
-
-_RELEASE_URL_BASE = "https://github.com/NousResearch/miho-agent/releases/tag"
-_latest_release_cache: Optional[tuple] = None  # (tag, url) once resolved
-
-
-def get_latest_release_tag(repo_dir: Optional[Path] = None) -> Optional[tuple]:
-    """Return ``(tag, release_url)`` for the latest git tag, or None.
-
-    Local-only — runs ``git describe --tags --abbrev=0`` against the
-    Miho checkout. Cached per-process. Release URL always points at the
-    canonical NousResearch/miho-agent repo (forks don't get a link).
-    """
-    global _latest_release_cache
-    if _latest_release_cache is not None:
-        return _latest_release_cache or None
-
-    repo_dir = repo_dir or _resolve_repo_dir()
-    if repo_dir is None:
-        _latest_release_cache = ()  # falsy sentinel — skip future lookups
-        return None
-
-    try:
-        result = subprocess.run(
-            ["git", "describe", "--tags", "--abbrev=0"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-            cwd=str(repo_dir),
-        )
-    except Exception:
-        _latest_release_cache = ()
-        return None
-
-    if result.returncode != 0:
-        _latest_release_cache = ()
-        return None
-
-    tag = (result.stdout or "").strip()
-    if not tag:
-        _latest_release_cache = ()
-        return None
-
-    url = f"{_RELEASE_URL_BASE}/{tag}"
-    _latest_release_cache = (tag, url)
-    return _latest_release_cache
-
-
-def format_banner_version_label() -> str:
-    """Return the version label shown in the startup banner title."""
-    base = f"Miho Agent v{VERSION} ({RELEASE_DATE})"
-    state = get_git_banner_state()
-    if not state:
-        return base
-
-    upstream = state["upstream"]
-    local = state["local"]
-    ahead = int(state.get("ahead") or 0)
-
-    if ahead <= 0 or upstream == local:
-        return f"{base} · upstream {upstream}"
-
-    carried_word = "commit" if ahead == 1 else "commits"
-    return f"{base} · upstream {upstream} · local {local} (+{ahead} carried {carried_word})"
-
-
-# =========================================================================
-# Non-blocking update check
-# =========================================================================
-
-_update_result: Optional[int] = None
-_update_check_done = threading.Event()
-
-
-def prefetch_update_check():
-    """Kick off update check in a background daemon thread."""
-    def _run():
-        global _update_result
-        _update_result = check_for_updates()
-        _update_check_done.set()
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-
-
-def get_update_result(timeout: float = 0.5) -> Optional[int]:
-    """Get result of prefetched check. Returns None if not ready."""
-    _update_check_done.wait(timeout=timeout)
-    return _update_result
 
 
 # =========================================================================
@@ -512,7 +220,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
     if len(model_short) > 28:
         model_short = model_short[:25] + "..."
     ctx_str = f" [dim {dim}]·[/] [dim {dim}]{_format_context_length(context_length)} context[/]" if context_length else ""
-    left_lines.append(f"[{accent}]{model_short}[/]{ctx_str} [dim {dim}]·[/] [dim {dim}]Nous Research[/]")
+    left_lines.append(f"[{accent}]{model_short}[/]{ctx_str} [dim {dim}]·[/] [dim {dim}]Miho AI[/]")
 
     if os.getenv("MIHO_YOLO_MODE"):
         left_lines.append(f"[bold red]⚠ YOLO mode[/] [dim {dim}]— all approval prompts bypassed[/]")

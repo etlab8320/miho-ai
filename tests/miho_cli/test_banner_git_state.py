@@ -3,8 +3,9 @@ from unittest.mock import MagicMock, patch
 
 def test_format_banner_version_label_without_git_state():
     from miho_cli import banner
+    from miho_cli import banner_update
 
-    with patch.object(banner, "get_git_banner_state", return_value=None):
+    with patch.object(banner_update, "get_git_banner_state", return_value=None):
         value = banner.format_banner_version_label()
 
     assert value == f"Miho Agent v{banner.VERSION} ({banner.RELEASE_DATE})"
@@ -12,9 +13,10 @@ def test_format_banner_version_label_without_git_state():
 
 def test_format_banner_version_label_on_upstream_main():
     from miho_cli import banner
+    from miho_cli import banner_update
 
     with patch.object(
-        banner,
+        banner_update,
         "get_git_banner_state",
         return_value={"upstream": "b2f477a3", "local": "b2f477a3", "ahead": 0},
     ):
@@ -26,9 +28,10 @@ def test_format_banner_version_label_on_upstream_main():
 
 def test_format_banner_version_label_with_carried_commits():
     from miho_cli import banner
+    from miho_cli import banner_update
 
     with patch.object(
-        banner,
+        banner_update,
         "get_git_banner_state",
         return_value={"upstream": "b2f477a3", "local": "af8aad31", "ahead": 3},
     ):
@@ -57,7 +60,7 @@ def test_get_git_banner_state_reads_origin_and_head(tmp_path):
             raise AssertionError(f"unexpected command: {cmd}")
         return results[key]
 
-    with patch("miho_cli.banner.subprocess.run", side_effect=fake_run):
+    with patch("miho_cli.banner_update.subprocess.run", side_effect=fake_run):
         state = banner.get_git_banner_state(repo_dir)
 
     assert state == {"upstream": "b2f477a3", "local": "af8aad31", "ahead": 3}

@@ -4,8 +4,8 @@ from unittest.mock import patch
 def testcheck_via_pypi_detects_update():
     """check_via_pypi returns 1 when PyPI has newer version."""
     from miho_cli.banner import check_via_pypi
-    with patch("miho_cli.banner.VERSION", "0.12.0"):
-        with patch("miho_cli.banner._fetch_pypi_latest", return_value="0.13.0"):
+    with patch("miho_cli.banner_update.VERSION", "0.12.0"):
+        with patch("miho_cli.banner_update._fetch_pypi_latest", return_value="0.13.0"):
             result = check_via_pypi()
             assert result == 1
 
@@ -13,8 +13,8 @@ def testcheck_via_pypi_detects_update():
 def testcheck_via_pypi_up_to_date():
     """check_via_pypi returns 0 when versions match."""
     from miho_cli.banner import check_via_pypi
-    with patch("miho_cli.banner.VERSION", "0.13.0"):
-        with patch("miho_cli.banner._fetch_pypi_latest", return_value="0.13.0"):
+    with patch("miho_cli.banner_update.VERSION", "0.13.0"):
+        with patch("miho_cli.banner_update._fetch_pypi_latest", return_value="0.13.0"):
             result = check_via_pypi()
             assert result == 0
 
@@ -22,7 +22,7 @@ def testcheck_via_pypi_up_to_date():
 def testcheck_via_pypi_network_failure():
     """check_via_pypi returns None on network error."""
     from miho_cli.banner import check_via_pypi
-    with patch("miho_cli.banner._fetch_pypi_latest", return_value=None):
+    with patch("miho_cli.banner_update._fetch_pypi_latest", return_value=None):
         result = check_via_pypi()
         assert result is None
 

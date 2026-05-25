@@ -29,7 +29,7 @@ def test_check_for_updates_uses_cache(tmp_path, monkeypatch):
     cache_file.write_text(json.dumps({"ts": time.time(), "behind": 3}))
 
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
-    with patch("miho_cli.banner.subprocess.run") as mock_run:
+    with patch("miho_cli.banner_update.subprocess.run") as mock_run:
         result = check_for_updates()
 
     assert result == 3
@@ -51,7 +51,7 @@ def test_check_for_updates_expired_cache(tmp_path, monkeypatch):
     mock_result = MagicMock(returncode=0, stdout="5\n")
 
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
-    with patch("miho_cli.banner.subprocess.run", return_value=mock_result) as mock_run:
+    with patch("miho_cli.banner_update.subprocess.run", return_value=mock_result) as mock_run:
         result = check_for_updates()
 
     assert result == 5
@@ -60,7 +60,7 @@ def test_check_for_updates_expired_cache(tmp_path, monkeypatch):
 
 def test_check_for_updates_no_git_dir(tmp_path, monkeypatch):
     """Falls back to PyPI check when .git directory doesn't exist anywhere."""
-    import miho_cli.banner as banner
+    import miho_cli.banner_update as banner
 
     # Create a fake banner.py so the fallback path also has no .git
     fake_banner = tmp_path / "miho_cli" / "banner.py"
@@ -69,8 +69,8 @@ def test_check_for_updates_no_git_dir(tmp_path, monkeypatch):
 
     monkeypatch.setattr(banner, "__file__", str(fake_banner))
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
-    with patch("miho_cli.banner.subprocess.run") as mock_run:
-        with patch("miho_cli.banner.check_via_pypi", return_value=0):
+    with patch("miho_cli.banner_update.subprocess.run") as mock_run:
+        with patch("miho_cli.banner_update.check_via_pypi", return_value=0):
             result = banner.check_for_updates()
     assert result == 0
     mock_run.assert_not_called()
@@ -78,7 +78,7 @@ def test_check_for_updates_no_git_dir(tmp_path, monkeypatch):
 
 def test_check_for_updates_fallback_to_project_root(tmp_path, monkeypatch):
     """Dev install: falls back to Path(__file__).parent.parent when MIHO_HOME has no git repo."""
-    import miho_cli.banner as banner
+    import miho_cli.banner_update as banner
 
     project_root = Path(banner.__file__).parent.parent.resolve()
     if not (project_root / ".git").exists():
@@ -86,7 +86,7 @@ def test_check_for_updates_fallback_to_project_root(tmp_path, monkeypatch):
 
     # Point MIHO_HOME at a temp dir with no miho-agent/.git
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
-    with patch("miho_cli.banner.subprocess.run") as mock_run:
+    with patch("miho_cli.banner_update.subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0, stdout="0\n")
         result = banner.check_for_updates()
     # Should have fallen back to project root and run git commands
@@ -95,7 +95,7 @@ def test_check_for_updates_fallback_to_project_root(tmp_path, monkeypatch):
 
 def test_prefetch_non_blocking():
     """prefetch_update_check() should return immediately without blocking."""
-    import miho_cli.banner as banner
+    import miho_cli.banner_update as banner
 
     # Reset module state
     banner._update_result = None

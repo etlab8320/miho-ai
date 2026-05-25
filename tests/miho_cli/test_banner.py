@@ -78,8 +78,7 @@ def test_build_welcome_banner_title_is_hyperlinked_to_release():
     import model_tools as _mt
     import tools.mcp_tool as _mcp
 
-    _banner._latest_release_cache = None
-    tag_url = ("v2026.4.23", "https://github.com/NousResearch/miho-agent/releases/tag/v2026.4.23")
+    tag_url = ("v2026.4.23", "https://github.com/etlab8320/miho-ai/releases/tag/v2026.4.23")
 
     buf = io.StringIO()
     with (
@@ -113,7 +112,6 @@ def test_build_welcome_banner_title_falls_back_when_no_tag():
     import model_tools as _mt
     import tools.mcp_tool as _mcp
 
-    _banner._latest_release_cache = None
     buf = io.StringIO()
     with (
         _patch.object(_mt, "check_tool_availability", return_value=(["web"], [])),
