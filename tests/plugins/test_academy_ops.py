@@ -24,7 +24,7 @@ from plugins.academy_ops import _academy_command, _capture_gateway_context, _cat
 from plugins.academy_ops.auth_flow import AcademyLoginResult, complete_login, create_login_link
 from plugins.academy_ops.auth_pages import render_login_page
 from plugins.academy_ops.auth_store import decrypt_token, get_binding, key_path
-from plugins.academy_ops.catalog import all_operations, find_operation, operations_payload
+from plugins.academy_ops.catalog import CONNECTED_APIS, all_operations, find_operation, operations_payload
 from plugins.academy_ops.intent import draft_intent
 from plugins.academy_ops.paca_client import AcademyLoginError, login_paca
 from plugins.academy_ops.server import AcademyAuthHandler
@@ -34,11 +34,15 @@ import plugins.academy_ops.discord_button as discord_button_module
 import plugins.academy_ops.server as auth_server_module
 
 
-def test_catalog_uses_existing_backend_apis_by_default():
+def test_catalog_separates_connected_api_from_roadmap_candidates():
     payload = operations_payload()
 
-    assert payload["api_policy"] == "1차 범위는 기존 PACA/Peak API를 사용한다."
-    assert all(not op["needs_new_backend_api"] for op in payload["operations"])
+    assert payload["catalog_status"] == "roadmap"
+    assert "실제 구현된 API는 로그인 바인딩뿐" in payload["api_policy"]
+    assert payload["connected_apis"][0]["key"] == "auth.login"
+    assert payload["connected_apis"][0]["implementation_status"] == "implemented"
+    assert all(op["implementation_status"] == "planned" for op in payload["operations"])
+    assert all(op["api_contract_status"] == "unverified" for op in payload["operations"])
 
 
 def test_write_operations_require_confirmation_and_audit_log():
@@ -49,27 +53,32 @@ def test_write_operations_require_confirmation_and_audit_log():
     assert all(op.requires_audit_log for op in writes)
 
 
-def test_payment_completion_maps_to_existing_paca_payment_endpoint():
+def test_connected_api_is_only_login_binding_for_now():
+    assert [op.key for op in CONNECTED_APIS] == ["auth.login"]
+    assert CONNECTED_APIS[0].endpoint.path == "/paca/auth/login"
+
+
+def test_payment_completion_stays_a_planned_write_candidate():
     draft = draft_intent("홍길동 학원비 카드 결제 납부 완료")
     op = draft.operation
 
     assert draft.operation_key == "payment.mark_paid"
     assert draft.needs_confirmation is True
     assert op is not None
-    assert op.endpoint.service == "paca"
-    assert op.endpoint.method == "POST"
-    assert op.endpoint.path == "/paca/payments/{payment_id}/pay"
+    assert op.implementation_status == "planned"
+    assert op.api_contract_status == "unverified"
+    assert op.endpoint.path == "backend route inspection required"
 
 
-def test_plan_lookup_maps_to_peak_plans_endpoint():
+def test_plan_lookup_stays_a_planned_read_candidate():
     draft = draft_intent("5월 25일 박성준 강사 운동계획 보여줘")
     op = draft.operation
 
     assert draft.operation_key == "plan.by_date"
     assert draft.needs_confirmation is False
     assert op is not None
-    assert op.endpoint.service == "peak"
-    assert op.endpoint.path == "/peak/plans"
+    assert op.implementation_status == "planned"
+    assert op.endpoint.path == "backend route inspection required"
 
 
 def test_consultation_candidates_are_read_only_composed_analysis():
@@ -77,15 +86,16 @@ def test_consultation_candidates_are_read_only_composed_analysis():
 
     assert op is not None
     assert op.mode == "read"
-    assert op.endpoint.service == "paca+peak"
     assert op.requires_confirmation is False
+    assert op.api_contract_status == "unverified"
 
 
 def test_academy_slash_command_returns_catalog_without_args():
     output = _academy_command("")
 
     assert "PACA/Peak 디스코드 운영 기능" in output
-    assert "새 PACA/Peak API" in output
+    assert "현재 실제 연결된 건 PACA/Peak 로그인 바인딩" in output
+    assert "연동 후보" in output
     assert "확인 버튼" in output
 
 
@@ -94,7 +104,8 @@ def test_academy_slash_command_previews_write_request():
 
     assert "학원비 납부 완료 반영" in output
     assert "디스코드 버튼 승인 필요" in output
-    assert "새 API 필요: 아니오" in output
+    assert "구현 상태: 연동 후보" in output
+    assert "새 API 필요: 백엔드 route 확인 전 판단 불가" in output
 
 
 def test_catalog_tool_returns_json_payload():
