@@ -219,6 +219,8 @@ py-modules = ["run_agent", "model_tools", "toolsets", "batch_runner", "trajector
 miho_cli = ["web_dist/**/*", "tui_dist/**/*", "scripts/install.sh", "scripts/install.ps1"]
 gateway = ["assets/**/*"]
 plugins = [
+  "**/plugin.yaml",
+  "**/plugin.yml",
   "*/dashboard/manifest.json",
   "*/dashboard/dist/*",
   "*/dashboard/dist/**/*",

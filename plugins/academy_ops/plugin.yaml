@@ -1,0 +1,9 @@
+name: academy_ops
+version: 0.1.0
+description: "Discord-facing PACA/Peak academy operations catalog and guarded intent preview."
+author: "ET Lab"
+kind: standalone
+commands:
+  - academy
+tools:
+  - academy_operations_catalog
