@@ -31,19 +31,32 @@ _MEMORY_TOOLS = {
 }
 
 
+def should_emit_clean_progress(
+    message: str,
+    seen_messages: set[str],
+    *,
+    max_messages: int = 1,
+) -> bool:
+    """Return True when a clean progress message should be shown for this run."""
+    if not message or message in seen_messages:
+        return False
+    if len(seen_messages) >= max_messages and message != "결과물을 빚고 검수하는 중...":
+        return False
+    seen_messages.add(message)
+    return True
+
+
 def render_clean_tool_progress(tool_name: str | None, preview: str | None = None) -> str:
     """Return a concise Korean status line without exposing internal tool names."""
     name = str(tool_name or "").strip()
     preview_text = str(preview or "").strip()
 
-    if name in _VISUAL_TOOLS:
-        return "눈으로 한 번 더 검수하는 중..."
     if name in _BUILD_TOOLS:
         if any(word in preview_text.lower() for word in ("html", "png", "image", "screenshot")):
             return "결과물을 빚고 검수하는 중..."
-    if name in _RESEARCH_TOOLS or name in _MEMORY_TOOLS or name in _BUILD_TOOLS:
+    if name in _RESEARCH_TOOLS or name in _MEMORY_TOOLS or name in _BUILD_TOOLS or name in _VISUAL_TOOLS:
         return "작업을 진행하고 검증하는 중..."
-    return "작업 흐름을 정리하는 중..."
+    return "작업을 진행하고 검증하는 중..."
 
 
 def media_delivery_failure_message(platform: Any = None) -> str:

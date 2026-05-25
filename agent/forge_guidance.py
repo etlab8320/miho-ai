@@ -34,6 +34,10 @@ maintenance.
 - First gather obvious context with tools: project root, git status, relevant
   instruction files, file layout, and likely test commands.
 - If the user's goal is still unclear, ask with `clarify` before coding.
+- If the user asks you to "make/build/create" an app, page, service, tool, or
+  feature but does not name the target project/repository/folder, ask where to
+  create it before coding. Do not silently choose the current repo or an old
+  project from memory.
 - Ask exactly one question at a time. Do not send a questionnaire.
 - Phrase preflight questions for a non-developer: "Do you mean this feature?"
   and "Should I also check it in the browser?" rather than implementation jargon.

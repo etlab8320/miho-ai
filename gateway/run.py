@@ -15661,6 +15661,7 @@ class GatewayRunner:
         last_tool = [None]  # Mutable container for tracking in closure
         last_progress_msg = [None]  # Track last message for dedup
         repeat_count = [0]  # How many times the same message repeated
+        clean_progress_seen: set[str] = set()
 
         # Auto-cleanup of temporary progress bubbles (Telegram + any adapter
         # that implements ``delete_message``). When enabled via
@@ -15745,10 +15746,13 @@ class GatewayRunner:
             last_tool[0] = tool_name
 
             if progress_mode == "clean":
-                from gateway.tool_progress_ux import render_clean_tool_progress
+                from gateway.tool_progress_ux import (
+                    render_clean_tool_progress,
+                    should_emit_clean_progress,
+                )
 
                 msg = render_clean_tool_progress(tool_name, preview)
-                if msg == last_progress_msg[0]:
+                if not should_emit_clean_progress(msg, clean_progress_seen):
                     return
                 last_progress_msg[0] = msg
                 repeat_count[0] = 0

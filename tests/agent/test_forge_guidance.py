@@ -21,6 +21,10 @@ def test_forge_guidance_encodes_one_question_preflight():
     assert "Ask exactly one question at a time" in FORGE_CODING_GUIDANCE
     assert "Do not send a questionnaire" in FORGE_CODING_GUIDANCE
     assert "non-developer" in FORGE_CODING_GUIDANCE
+    assert "does not name the target project/repository/folder" in FORGE_CODING_GUIDANCE
+    assert "ask where to" in FORGE_CODING_GUIDANCE
+    assert "create it before coding" in FORGE_CODING_GUIDANCE
+    assert "Do not silently choose the current repo" in FORGE_CODING_GUIDANCE
     assert "honor that exact" in FORGE_CODING_GUIDANCE
     assert "choice. Do not reinterpret" in FORGE_CODING_GUIDANCE
     assert "Do not reinterpret \"new project\" as an existing project" in FORGE_CODING_GUIDANCE
