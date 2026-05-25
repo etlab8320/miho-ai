@@ -29,6 +29,7 @@ def _load_release_module(monkeypatch, tmp_root: Path):
     monkeypatch.setattr(
         module, "ACP_REGISTRY_MANIFEST", tmp_root / "acp_registry" / "agent.json"
     )
+    monkeypatch.setattr(module, "UV_LOCK_FILE", tmp_root / "uv.lock")
     return module
 
 
@@ -90,6 +91,10 @@ def test_update_version_files_bumps_manifest_alongside_pyproject(
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "miho-agent"\nversion = "0.13.0"\n', encoding="utf-8"
     )
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "miho-agent"\nversion = "0.13.0"\nsource = { editable = "." }\n',
+        encoding="utf-8",
+    )
     version_dir = tmp_path / "miho_cli"
     version_dir.mkdir()
     (version_dir / "__init__.py").write_text(
@@ -105,6 +110,8 @@ def test_update_version_files_bumps_manifest_alongside_pyproject(
 
     pyproject_text = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
     assert 'version = "0.14.0"' in pyproject_text
+    uv_lock_text = (tmp_path / "uv.lock").read_text(encoding="utf-8")
+    assert 'name = "miho-agent"\nversion = "0.14.0"' in uv_lock_text
 
     manifest = json.loads(
         (tmp_path / "acp_registry" / "agent.json").read_text(encoding="utf-8")

@@ -33,6 +33,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = REPO_ROOT / "miho_cli" / "__init__.py"
 PYPROJECT_FILE = REPO_ROOT / "pyproject.toml"
+UV_LOCK_FILE = REPO_ROOT / "uv.lock"
 
 # ACP Registry manifest must stay version-locked with pyproject.toml.
 # tests/acp/test_registry_manifest.py enforces this lockstep so the release
@@ -1388,9 +1389,22 @@ def update_version_files(semver: str, calver_date: str):
     )
     PYPROJECT_FILE.write_text(pyproject)
 
+    _update_uv_lock_version(semver)
+
     # Update ACP Registry manifest + npm launcher (must stay version-locked
     # with pyproject — enforced by tests/acp/test_registry_manifest.py).
     _update_acp_registry_versions(semver)
+
+
+def _update_uv_lock_version(semver: str) -> None:
+    """Keep the editable root package version in uv.lock aligned."""
+    if not UV_LOCK_FILE.exists():
+        return
+    content = UV_LOCK_FILE.read_text(encoding="utf-8")
+    pattern = r'(\[\[package\]\]\s+name = "miho-agent"\s+version = ")[^"]+(")'
+    updated, count = re.subn(pattern, rf"\g<1>{semver}\2", content, count=1)
+    if count:
+        UV_LOCK_FILE.write_text(updated, encoding="utf-8")
 
 
 def _update_acp_registry_versions(semver: str) -> None:
@@ -1794,6 +1808,8 @@ def main():
 
             # Commit version bump
             add_files = [str(VERSION_FILE), str(PYPROJECT_FILE)]
+            if UV_LOCK_FILE.exists():
+                add_files.append(str(UV_LOCK_FILE))
             if ACP_REGISTRY_MANIFEST.exists():
                 add_files.append(str(ACP_REGISTRY_MANIFEST))
             add_result = git_result("add", *add_files)
