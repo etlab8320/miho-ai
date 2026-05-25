@@ -70,6 +70,11 @@ def _student_card_image_tool_handler(
             "image_path": str(image_path),
             "media_tag": media_tag,
             "summary_text": card.risk.judgment,
+            "assistant_guidance": {
+                "persona_commentary": True,
+                "avoid_hardcoded_judgment": True,
+                "instruction": "이미지는 사실 기반 카드이고, 답변 문장은 card의 출결/기록/위험 신호를 보고 미호 말투로 작성해.",
+            },
             "missing_sources": card.missing_sources,
             "card": card.to_public_dict(),
         },

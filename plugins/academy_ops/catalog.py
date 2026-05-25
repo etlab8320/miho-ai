@@ -48,26 +48,65 @@ CONNECTED_APIS: tuple[OperationSpec, ...] = (
         api_contract_status="verified_in_plugin",
         notes="Discord 사용자와 PACA/Peak 토큰을 연결하고 로컬 암호화 저장소에 보관한다.",
     ),
-)
-
-
-OPERATIONS: tuple[OperationSpec, ...] = (
     OperationSpec(
         key="student.search",
         title="학생 통합 검색",
         domain="student",
         mode=READ,
-        endpoint=TBD_ENDPOINT,
-        notes="학생 카드의 첫 축. 실제 PACA/Peak 학생 검색 라우트와 응답 필드를 확인해야 한다.",
+        endpoint=EndpointSpec("paca", "GET", "/paca/students"),
+        needs_new_backend_api=False,
+        implementation_status="implemented",
+        api_contract_status="verified_in_plugin",
+        notes="academy_student_summary와 학생카드 생성에서 사용하는 PACA 학생 검색.",
     ),
     OperationSpec(
         key="student.detail",
         title="학생 상세 요약",
         domain="student",
         mode=READ,
-        endpoint=TBD_ENDPOINT,
-        notes="이름, 학년, 소속반, 연락처, 보호자, 재원 상태 같은 카드 기본 필드를 확인한다.",
+        endpoint=EndpointSpec("paca", "GET", "/paca/students/{id}"),
+        needs_new_backend_api=False,
+        implementation_status="implemented",
+        api_contract_status="verified_in_plugin",
+        notes="민감정보를 제거한 학생 카드/요약에만 노출한다.",
     ),
+    OperationSpec(
+        key="attendance.today_peak",
+        title="오늘 피크 출석 현황",
+        domain="attendance",
+        mode=READ,
+        endpoint=EndpointSpec("peak", "GET", "/peak/attendance/students"),
+        needs_new_backend_api=False,
+        implementation_status="implemented",
+        api_contract_status="verified_in_plugin",
+        notes="academy_attendance_day와 상담 후보 도구에서 사용하는 일자별 출석 조회.",
+    ),
+    OperationSpec(
+        key="peak.records.latest",
+        title="최근 운동 기록 조회",
+        domain="record",
+        mode=READ,
+        endpoint=EndpointSpec("peak", "GET", "/peak/records"),
+        needs_new_backend_api=False,
+        implementation_status="implemented",
+        api_contract_status="verified_in_plugin",
+        notes="학생 카드의 최근 기록, PB, AVG, 추세 그래프에 사용한다.",
+    ),
+    OperationSpec(
+        key="consultation.candidates",
+        title="상담 후보 추천",
+        domain="consultation",
+        mode=READ,
+        endpoint=EndpointSpec("peak", "GET", "/peak/attendance/students"),
+        needs_new_backend_api=False,
+        implementation_status="implemented",
+        api_contract_status="verified_in_plugin",
+        notes="현재는 최근 출결만 조합한 읽기 전용 후보 목록이다.",
+    ),
+)
+
+
+OPERATIONS: tuple[OperationSpec, ...] = (
     OperationSpec(
         key="attendance.student_month",
         title="학생 월별 출석 조회",
@@ -75,14 +114,6 @@ OPERATIONS: tuple[OperationSpec, ...] = (
         mode=READ,
         endpoint=TBD_ENDPOINT,
         notes="월별 출석률, 결석/지각 패턴, 최근 출석 추이를 학생 카드에 붙인다.",
-    ),
-    OperationSpec(
-        key="attendance.today_peak",
-        title="오늘 피크 출석 현황",
-        domain="attendance",
-        mode=READ,
-        endpoint=TBD_ENDPOINT,
-        notes="오늘 출석 현황은 런타임에서 조회된 적이 있지만, 이 플러그인에 API client는 아직 없다.",
     ),
     OperationSpec(
         key="attendance.mark_student",
@@ -111,14 +142,6 @@ OPERATIONS: tuple[OperationSpec, ...] = (
         requires_confirmation=True,
         requires_audit_log=True,
         notes="결제 반영은 금액/수단/대상 확인 버튼과 감사 로그 없이는 실행하지 않는다.",
-    ),
-    OperationSpec(
-        key="peak.records.latest",
-        title="최근 운동 기록 조회",
-        domain="record",
-        mode=READ,
-        endpoint=TBD_ENDPOINT,
-        notes="학생 카드의 운동 기록 요약을 위해 실제 Peak 기록 API를 확인한다.",
     ),
     OperationSpec(
         key="peak.student_stats",
@@ -163,14 +186,6 @@ OPERATIONS: tuple[OperationSpec, ...] = (
         notes="date 파라미터로 오전/오후/저녁반 배치와 출석 상태를 조회한다.",
     ),
     OperationSpec(
-        key="consultation.candidates",
-        title="상담 후보 추천",
-        domain="consultation",
-        mode=READ,
-        endpoint=TBD_ENDPOINT,
-        notes="출석, 미납, 상담 상태, 피크 기록 추세를 조합한 읽기 전용 분석이다.",
-    ),
-    OperationSpec(
         key="report.dashboard",
         title="운영 대시보드 요약",
         domain="report",
@@ -182,12 +197,12 @@ OPERATIONS: tuple[OperationSpec, ...] = (
 
 
 def all_operations() -> tuple[OperationSpec, ...]:
-    return OPERATIONS
+    return CONNECTED_APIS + OPERATIONS
 
 
 def find_operation(key: str) -> OperationSpec | None:
     clean = key.strip().lower()
-    return next((op for op in OPERATIONS if op.key == clean), None)
+    return next((op for op in all_operations() if op.key == clean), None)
 
 
 def grouped_operations() -> dict[str, list[OperationSpec]]:
@@ -202,11 +217,11 @@ def operations_payload(ops: Iterable[OperationSpec] = OPERATIONS) -> dict[str, o
     return {
         "connected_apis": [asdict(op) for op in CONNECTED_APIS],
         "operations": items,
-        "catalog_status": "roadmap",
+        "catalog_status": "partial_live",
         "write_policy": "쓰기 작업은 Discord 확인 버튼과 감사 로그가 붙기 전까지 실행하지 않는다.",
         "api_policy": (
-            "현재 플러그인에서 실제 구현된 API는 로그인 바인딩뿐이다. "
-            "operations는 학생 카드/운영 자동화를 위한 후보 목록이며, "
-            "각 기능은 PACA/Peak 백엔드 route와 응답 필드를 확인한 뒤 연결해야 한다."
+            "읽기 API 일부는 플러그인에서 연결됨. "
+            "operations는 아직 남은 학생 카드/운영 자동화 후보 목록이며, "
+            "쓰기 기능은 PACA/Peak 백엔드 route, Discord 확인 버튼, 감사 로그를 붙인 뒤 연결한다."
         ),
     }

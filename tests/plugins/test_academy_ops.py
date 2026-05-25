@@ -33,16 +33,16 @@ import plugins.academy_ops.server as auth_server_module
 def test_catalog_separates_connected_api_from_roadmap_candidates():
     payload = operations_payload()
 
-    assert payload["catalog_status"] == "roadmap"
-    assert "실제 구현된 API는 로그인 바인딩뿐" in payload["api_policy"]
+    assert payload["catalog_status"] == "partial_live"
+    assert "읽기 API 일부는 플러그인에서 연결됨" in payload["api_policy"]
     assert payload["connected_apis"][0]["key"] == "auth.login"
     assert payload["connected_apis"][0]["implementation_status"] == "implemented"
-    assert all(op["implementation_status"] == "planned" for op in payload["operations"])
-    assert all(op["api_contract_status"] == "unverified" for op in payload["operations"])
+    assert any(op["key"] == "student.search" for op in payload["connected_apis"])
+    assert any(op["implementation_status"] == "planned" for op in payload["operations"])
 
 
 def test_write_operations_require_confirmation_and_audit_log():
-    writes = [op for op in all_operations() if op.mode == "write"]
+    writes = [op for op in all_operations() if op.mode == "write" and op.key != "auth.login"]
 
     assert writes
     assert all(op.requires_confirmation for op in writes)
@@ -50,7 +50,8 @@ def test_write_operations_require_confirmation_and_audit_log():
 
 
 def test_connected_api_is_only_login_binding_for_now():
-    assert [op.key for op in CONNECTED_APIS] == ["auth.login"]
+    assert [op.key for op in CONNECTED_APIS][:1] == ["auth.login"]
+    assert "student.search" in [op.key for op in CONNECTED_APIS]
     assert CONNECTED_APIS[0].endpoint.path == "/paca/auth/login"
 
 
@@ -83,14 +84,15 @@ def test_consultation_candidates_are_read_only_composed_analysis():
     assert op is not None
     assert op.mode == "read"
     assert op.requires_confirmation is False
-    assert op.api_contract_status == "unverified"
+    assert op.api_contract_status == "verified_in_plugin"
 
 
 def test_academy_slash_command_returns_catalog_without_args():
     output = _academy_command("")
 
     assert "PACA/Peak 디스코드 운영 기능" in output
-    assert "현재 실제 연결된 건 PACA/Peak 로그인 바인딩" in output
+    assert "슬래시 메뉴" in output
+    assert "연결된 읽기 도구" in output
     assert "연동 후보" in output
     assert "확인 버튼" in output
 
@@ -126,6 +128,8 @@ def test_plugin_registers_command_and_tool():
 
     assert "academy" in manager._plugin_commands
     assert "academy_operations_catalog" in manager._plugin_tool_names
+    assert "academy_student_summary" in manager._plugin_tool_names
+    assert "academy_prepare_write_action" in manager._plugin_tool_names
 
 
 def test_login_link_uses_public_base_url_from_env(monkeypatch, tmp_path):

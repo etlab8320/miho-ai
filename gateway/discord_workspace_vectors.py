@@ -233,6 +233,8 @@ def index_rag_record(rag_dir: Path, record: dict[str, Any]) -> dict[str, Any]:
         "user_id": record.get("user_id") or "",
         "user_name": record.get("user_name") or "",
         "event_type": record.get("event_type") or "",
+        "thread_id": record.get("thread_id") or "",
+        "thread_name": record.get("thread_name") or "",
         "text": record.get("text") or "",
         "embedding_method": method,
         "embedding": vector,
@@ -255,6 +257,7 @@ def retrieve_rag_context(
     *,
     limit: int = 5,
     exclude_message_id: str | None = None,
+    allowed_thread_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Return top hybrid vector/keyword matches for a query."""
     query = str(query or "").strip()
@@ -275,6 +278,8 @@ def retrieve_rag_context(
         if not isinstance(item, dict):
             continue
         if exclude_message_id and str(item.get("id") or "") == exclude_message_id:
+            continue
+        if allowed_thread_ids is not None and not _allowed_thread_item(item, allowed_thread_ids):
             continue
         vector = item.get("embedding")
         text = str(item.get("text") or "")
@@ -320,3 +325,11 @@ def retrieve_rag_context(
         if len(deduped) >= limit:
             break
     return deduped
+
+
+def _allowed_thread_item(item: dict[str, Any], allowed_thread_ids: set[str]) -> bool:
+    thread_id = str(item.get("thread_id") or "")
+    event_type = str(item.get("event_type") or "")
+    if thread_id:
+        return thread_id in allowed_thread_ids
+    return event_type != "thread_message"

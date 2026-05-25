@@ -150,6 +150,7 @@ def test_student_card_service_maps_paca_to_peak_and_masks_sensitive_fields() -> 
     assert payload["records"]["items"][0]["samples"] == (237.0, 241.0, 245.0)
     assert payload["risk"]["level"] == "stable"
     assert "최근 출결 확인값 3건" in payload["risk"]["judgment"]
+    assert "최근 기록 확인값 1종목" in payload["risk"]["judgment"]
     assert "리듬이 흔들" not in payload["risk"]["judgment"]
 
     dumped = json.dumps(payload, ensure_ascii=False)
@@ -266,7 +267,7 @@ def test_student_card_single_recent_absence_is_still_stable() -> None:
 
     assert card.attendance.summary == {"present": 1, "late": 1, "absent": 1}
     assert card.risk.level == "stable"
-    assert "안정 범위" in card.risk.judgment
+    assert "최근 출결 확인값" in card.risk.judgment
     assert "리듬이 흔들" not in card.risk.judgment
     assert card.risk.recommended_actions == ["결석 1회는 위험 신호가 아니라 참고 항목으로만 표시합니다."]
     assert "컨디션" not in " ".join(card.risk.recommended_actions)

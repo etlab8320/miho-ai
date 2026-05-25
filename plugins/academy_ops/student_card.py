@@ -201,7 +201,7 @@ class AcademyStudentCardService:
     def _record_items(self, rows: list[dict[str, Any]]) -> list[RecordItem]:
         grouped: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
-            key = str(row.get("record_type_id") or row.get("record_type_name") or "")
+            key = _record_group_key(row)
             if key:
                 grouped.setdefault(key, []).append(row)
         items: list[RecordItem] = []
@@ -231,6 +231,7 @@ class AcademyStudentCardService:
                     samples=recent_samples,
                 )
             )
+        items.sort(key=lambda item: item.measured_at, reverse=True)
         return items[:6]
 
     def _risk_summary(
@@ -247,7 +248,7 @@ class AcademyStudentCardService:
         if missing_sources:
             reasons.append("일부 자료가 아직 연결되지 않았습니다.")
         actions = _recommended_actions(level, attendance)
-        judgment = _judgment_sentence(profile.name, level, attendance)
+        judgment = _judgment_sentence(attendance, records)
         return RiskSummary(level, reasons, actions, judgment)
 
 
@@ -308,12 +309,26 @@ def _recommended_actions(level: str, attendance: AttendanceSummary) -> list[str]
     return ["별도 경고 기준에 걸린 출결 항목이 없습니다."]
 
 
-def _judgment_sentence(name: str, level: str, attendance: AttendanceSummary) -> str:
-    if level == "danger":
-        return f"{name}은 최근 출결 확인값 기준으로 우선 확인이 필요합니다. {_attendance_fact(attendance)}"
-    if level == "caution":
-        return f"{name}은 최근 출결 확인값 기준으로 가볍게 확인하면 됩니다. {_attendance_fact(attendance)}"
-    return f"{name}은 최근 출결 확인값 기준으로 안정 범위입니다. {_attendance_fact(attendance)}"
+def _judgment_sentence(attendance: AttendanceSummary, records: list[RecordItem]) -> str:
+    parts = [_attendance_fact(attendance)]
+    if records:
+        parts.append(_records_fact(records))
+    return " ".join(parts)
+
+
+def _records_fact(records: list[RecordItem]) -> str:
+    down_count = sum(1 for item in records if item.trend == "down")
+    latest_names = ", ".join(item.event_name for item in records[:3])
+    tail = f" 하락 표시 {down_count}종목." if down_count else ""
+    return f"최근 기록 확인값 {len(records)}종목: {latest_names}.{tail}"
+
+
+def _record_group_key(row: dict[str, Any]) -> str:
+    record_type_id = str(row.get("record_type_id") or "").strip()
+    record_type_name = str(row.get("record_type_name") or "").strip()
+    if record_type_id and record_type_name:
+        return f"{record_type_id}:{record_type_name}"
+    return record_type_id or record_type_name
 
 
 def _to_int(value: Any) -> int:

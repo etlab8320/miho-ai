@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .catalog import OperationSpec, grouped_operations
+from .catalog import CONNECTED_APIS, OperationSpec, grouped_operations
 from .intent import IntentDraft
 
 
@@ -10,8 +10,13 @@ def format_catalog() -> str:
     lines = [
         "PACA/Peak 디스코드 운영 기능",
         "",
-        "현재 실제 연결된 건 PACA/Peak 로그인 바인딩이야.",
-        "아래 목록은 학생 카드와 운영 자동화에 필요한 연동 후보라서, 실제 PACA/Peak route 확인 후 붙여야 해.",
+        "슬래시 메뉴는 로그인/상태/후보 기능 확인용이야.",
+        "연결된 읽기 도구는 자연어로 물으면 미호가 맥락에 맞게 호출해.",
+        "",
+        "연결된 기능:",
+        *[f"- {op.domain}: {op.title}" for op in CONNECTED_APIS],
+        "",
+        "연동 후보:",
     ]
     for domain, ops in grouped_operations().items():
         titles = ", ".join(_title(op) for op in ops)

@@ -235,6 +235,44 @@ def test_thread_prompt_does_not_include_parent_or_sibling_messages(tmp_path):
     assert "형제 스레드 비밀" not in prompt
 
 
+def test_thread_prompt_can_retrieve_parent_channel_common_memory(tmp_path):
+    parent = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="channel-7",
+        chat_name="parent",
+        chat_type="group",
+        user_id="u1",
+        user_name="ET",
+        guild_id="guild-1",
+    )
+    thread = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="thread-1",
+        chat_name="First Thread",
+        chat_type="thread",
+        user_id="u1",
+        user_name="ET",
+        thread_id="thread-1",
+        guild_id="guild-1",
+        parent_chat_id="channel-7",
+    )
+
+    with patch.dict("os.environ", {"MIHO_HOME": str(tmp_path), "OPENAI_API_KEY": ""}):
+        record_turn_and_build_prompt(
+            source=parent,
+            text="학원 업무 공통 규칙: 결제 반영은 확인 버튼 없이는 실행하지 않는다.",
+            message_id="m-parent",
+        )
+        prompt = record_turn_and_build_prompt(
+            source=thread,
+            text="결제 반영 안전 규칙 다시 확인해줘.",
+            message_id="m-thread",
+        )
+
+    assert "Retrieved Relevant Memory" in prompt
+    assert "확인 버튼 없이는 실행하지 않는다" in prompt
+
+
 def test_parent_channel_rag_receives_child_thread_events(tmp_path):
     thread = SessionSource(
         platform=Platform.DISCORD,

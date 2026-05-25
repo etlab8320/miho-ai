@@ -238,6 +238,47 @@ def _write_rag_record(
     )
 
 
+def _retrieve_workspace_context(
+    workspace: DiscordWorkspace,
+    *,
+    source: Any,
+    text: str,
+    message_id: str,
+) -> list[dict[str, Any]]:
+    retrieved = retrieve_rag_context(
+        workspace.rag_dir,
+        text,
+        exclude_message_id=message_id or None,
+    )
+    thread_id = str(getattr(source, "thread_id", "") or "")
+    if not workspace.thread_dir or not thread_id:
+        return retrieved
+    parent_retrieved = retrieve_rag_context(
+        workspace.channel_rag_dir,
+        text,
+        limit=3,
+        exclude_message_id=message_id or None,
+        allowed_thread_ids={thread_id},
+    )
+    return _merge_retrieved(retrieved, parent_retrieved)
+
+
+def _merge_retrieved(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in sorted(
+        [entry for group in groups for entry in group],
+        key=lambda entry: float(entry.get("score") or 0.0),
+        reverse=True,
+    ):
+        key = f"{item.get('role')}:{''.join(str(item.get('text') or '').split()).lower()}"
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
 def record_turn_and_build_prompt(
     *,
     source: Any,
@@ -285,10 +326,11 @@ def record_turn_and_build_prompt(
     except (OSError, UnicodeDecodeError):
         context_seed = ""
     recent = _recent_messages(workspace.rag_dir / "messages.jsonl")
-    retrieved = retrieve_rag_context(
-        workspace.rag_dir,
-        text,
-        exclude_message_id=record["message_id"] or None,
+    retrieved = _retrieve_workspace_context(
+        workspace,
+        source=source,
+        text=text,
+        message_id=record["message_id"],
     )
     top_score = max((float(item.get("score") or 0.0) for item in retrieved), default=0.0)
     scope = "thread" if workspace.thread_dir else "channel"

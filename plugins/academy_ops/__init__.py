@@ -16,6 +16,12 @@ from .formatting import (
     format_login_link,
 )
 from .intent import draft_intent
+from .academy_query_tools import (
+    _attendance_day_tool_handler,
+    _consultation_candidates_tool_handler,
+    _student_summary_tool_handler,
+    _write_action_draft_tool_handler,
+)
 from .student_card_tool import _student_card_image_tool_handler
 
 
@@ -136,5 +142,79 @@ def register(ctx: Any) -> None:
             "Use for natural-language requests asking for a student card or student overview. "
             "Excludes phone numbers, tuition, discounts, payment details, and internal memos. "
             "Returns a MEDIA:<path> tag for Discord image delivery."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_student_summary",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "student_query": {"type": "string", "description": "학생 이름, 학교, 또는 PACA 검색어."},
+                "period_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60,
+                    "default": 14,
+                    "description": "출결을 집계할 최근 일수. 기본값은 최근 2주.",
+                },
+                "today": {"type": "string", "description": "기준 날짜. YYYY-MM-DD 형식."},
+            },
+            "required": ["student_query"],
+            "additionalProperties": False,
+        },
+        handler=_student_summary_tool_handler,
+        description=(
+            "Return safe structured PACA/Peak student overview data without creating an image. "
+            "Use for natural-language student overview, 상담 포인트, or student-card planning requests. "
+            "The assistant should write persona commentary from the returned facts, not from a fixed template."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_attendance_day",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "조회 날짜. YYYY-MM-DD 형식."},
+            },
+            "additionalProperties": False,
+        },
+        handler=_attendance_day_tool_handler,
+        description="Return a safe Peak attendance summary for one date, grouped by slot.",
+    )
+    ctx.register_tool(
+        name="academy_consultation_candidates",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "today": {"type": "string", "description": "기준 날짜. YYYY-MM-DD 형식."},
+                "period_days": {"type": "integer", "minimum": 1, "maximum": 30, "default": 14},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 30, "default": 10},
+            },
+            "additionalProperties": False,
+        },
+        handler=_consultation_candidates_tool_handler,
+        description=(
+            "Return read-only consultation candidates from recent Peak attendance signals. "
+            "Does not use payment data or private memos."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_prepare_write_action",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "request": {"type": "string", "description": "사용자가 반영하려는 학원 업무 원문."},
+            },
+            "required": ["request"],
+            "additionalProperties": False,
+        },
+        handler=_write_action_draft_tool_handler,
+        description=(
+            "Draft a guarded PACA/Peak write action without mutating data. "
+            "Use for payment, attendance, or record update requests before showing confirmation UI."
         ),
     )
