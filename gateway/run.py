@@ -7593,6 +7593,15 @@ class GatewayRunner:
                 return self._telegram_topic_root_lobby_message()
             return None
 
+        try:
+            from gateway.forge_preflight import project_target_question_for
+
+            _project_target_question = project_target_question_for(event.text)
+        except Exception:
+            _project_target_question = None
+        if _project_target_question:
+            return _project_target_question
+
         # ── Claim this session before any await ───────────────────────
         # Between here and _run_agent registering the real AIAgent, there
         # are numerous await points (hooks, vision enrichment, STT,
