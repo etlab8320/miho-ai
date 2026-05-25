@@ -1,7 +1,8 @@
+import json
 import sys
 from types import ModuleType, SimpleNamespace
 
-from gateway.discord_workspace_vectors import embed_text
+from gateway.discord_workspace_vectors import embed_text, retrieve_rag_context
 
 
 def test_embed_text_uses_local_fallback_without_openai_key(monkeypatch):
@@ -81,3 +82,228 @@ def test_voyage_api_key_is_available_in_miho_settings():
     assert info["password"] is True
     assert info["category"] == "tool"
     assert "discord_workspace_rag" in info["tools"]
+
+
+def test_retrieve_rag_context_uses_cosine_for_external_vectors(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    vector_path = rag_dir / "vectors.jsonl"
+    vector_path.write_text(
+        json.dumps({
+            "id": "m1",
+            "role": "user",
+            "user_name": "Max",
+            "text": "PACA Peak 로그인 연동 기준",
+            "embedding_method": "voyage-4-large",
+            "embedding": [100.0, 0.0],
+        }, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "gateway.discord_workspace_vectors.embed_text",
+        lambda text, input_type=None: ([10.0, 0.0], "voyage-4-large"),
+    )
+
+    matches = retrieve_rag_context(rag_dir, "PACA 로그인", limit=1)
+
+    assert matches
+    assert 0 < matches[0]["score"] <= 1.0
+    assert matches[0]["semantic_score"] == 1.0
+
+
+def test_retrieve_rag_context_matches_compacted_korean_keyword(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    vector_path = rag_dir / "vectors.jsonl"
+    rows = [
+        {
+            "id": "m1",
+            "role": "user",
+            "user_name": "Max",
+            "text": "학생 카드 디자인을 HTML 이미지로 만든다.",
+            "embedding_method": "voyage-4-large",
+            "embedding": [0.0, 1.0],
+        },
+        {
+            "id": "m2",
+            "role": "user",
+            "user_name": "Max",
+            "text": "점심 메뉴를 정한다.",
+            "embedding_method": "voyage-4-large",
+            "embedding": [0.0, 1.0],
+        },
+    ]
+    vector_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "gateway.discord_workspace_vectors.embed_text",
+        lambda text, input_type=None: ([1.0, 0.0], "voyage-4-large"),
+    )
+
+    matches = retrieve_rag_context(rag_dir, "학생카드", limit=2)
+
+    assert [item["id"] for item in matches] == ["m1"]
+    assert matches[0]["keyword_score"] > 0.6
+
+
+def test_retrieve_rag_context_ignores_semantic_when_vector_dimensions_differ(
+    monkeypatch,
+    tmp_path,
+):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    vector_path = rag_dir / "vectors.jsonl"
+    vector_path.write_text(
+        json.dumps({
+            "id": "m1",
+            "role": "user",
+            "user_name": "Max",
+            "text": "학생카드 기준",
+            "embedding_method": "voyage-4-large",
+            "embedding": [1.0, 0.0, 0.0],
+        }, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "gateway.discord_workspace_vectors.embed_text",
+        lambda text, input_type=None: ([1.0, 0.0], "local-hash-v1"),
+    )
+
+    matches = retrieve_rag_context(rag_dir, "학생카드", limit=1)
+
+    assert matches
+    assert matches[0]["semantic_score"] == 0.0
+    assert matches[0]["keyword_score"] > 0.0
+
+
+def test_retrieve_rag_context_deduplicates_repeated_text(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    vector_path = rag_dir / "vectors.jsonl"
+    rows = [
+        {
+            "id": "m1",
+            "role": "user",
+            "text": "박지안 학생카드 줘",
+            "embedding_method": "voyage-4-large",
+            "embedding": [1.0, 0.0],
+        },
+        {
+            "id": "m2",
+            "role": "user",
+            "text": "박지안 학생카드줘",
+            "embedding_method": "voyage-4-large",
+            "embedding": [1.0, 0.0],
+        },
+    ]
+    vector_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "gateway.discord_workspace_vectors.embed_text",
+        lambda text, input_type=None: ([1.0, 0.0], "voyage-4-large"),
+    )
+
+    matches = retrieve_rag_context(rag_dir, "박지안 학생카드", limit=5)
+
+    assert [item["id"] for item in matches] == ["m1"]
+
+
+def test_retrieve_rag_context_filters_weak_partial_matches(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    vector_path = rag_dir / "vectors.jsonl"
+    rows = [
+        {
+            "id": "m1",
+            "role": "user",
+            "text": "박지안 학생카드 줘",
+            "embedding_method": "voyage-4-large",
+            "embedding": [0.0, 1.0],
+        },
+        {
+            "id": "m2",
+            "role": "user",
+            "text": "김동하 학생카드 줘",
+            "embedding_method": "voyage-4-large",
+            "embedding": [0.0, 1.0],
+        },
+    ]
+    vector_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "gateway.discord_workspace_vectors.embed_text",
+        lambda text, input_type=None: ([1.0, 0.0], "voyage-4-large"),
+    )
+
+    matches = retrieve_rag_context(rag_dir, "박지안 학생카드", limit=5)
+
+    assert [item["id"] for item in matches] == ["m1"]
+
+
+def test_retrieve_rag_context_scans_recent_records_only(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    vector_path = rag_dir / "vectors.jsonl"
+    rows = [
+        {
+            "id": f"m{idx}",
+            "role": "user",
+            "text": f"학생카드 기록 {idx}",
+            "embedding_method": "voyage-4-large",
+            "embedding": [1.0, 0.0],
+        }
+        for idx in range(4)
+    ]
+    vector_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MIHO_DISCORD_RAG_MAX_SCAN_RECORDS", "2")
+    monkeypatch.setattr(
+        "gateway.discord_workspace_vectors.embed_text",
+        lambda text, input_type=None: ([1.0, 0.0], "voyage-4-large"),
+    )
+
+    matches = retrieve_rag_context(rag_dir, "학생카드", limit=4)
+
+    assert [item["id"] for item in matches] == ["m2", "m3"]
+
+
+def test_retrieve_rag_context_skips_corrupt_embedding_rows(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    vector_path = rag_dir / "vectors.jsonl"
+    rows = [
+        {
+            "id": "bad",
+            "role": "user",
+            "text": "학생카드 손상 데이터",
+            "embedding_method": "voyage-4-large",
+            "embedding": ["not-a-number"],
+        },
+        {
+            "id": "good",
+            "role": "user",
+            "text": "학생카드 정상 데이터",
+            "embedding_method": "voyage-4-large",
+            "embedding": [1.0, 0.0],
+        },
+    ]
+    vector_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "gateway.discord_workspace_vectors.embed_text",
+        lambda text, input_type=None: ([1.0, 0.0], "voyage-4-large"),
+    )
+
+    matches = retrieve_rag_context(rag_dir, "학생카드", limit=5)
+
+    assert [item["id"] for item in matches] == ["good"]

@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from unittest.mock import patch
 
 from gateway.config import Platform
@@ -61,3 +62,24 @@ def test_memory_rebuild_recreates_vectors(tmp_path):
     lines = vector_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0])["text"] == "KBO 프리뷰는 선발투수부터 본다."
+
+
+def test_memory_promote_writes_owner_profile_event(tmp_path):
+    source = _source()
+
+    with patch.dict("os.environ", {"MIHO_HOME": str(tmp_path)}):
+        output = run_memory_command(
+            source,
+            "promote 미호는 스레드 RAG와 장기기억 Vault를 분리해서 관리한다.",
+        )
+
+    assert "장기기억으로 승격" in output
+    db_path = tmp_path / "memories" / "owner_profile" / "timeline.db"
+    assert db_path.exists()
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT category, content, source FROM profile_events"
+        ).fetchone()
+    assert row[0] == "discord_memory"
+    assert "장기기억 Vault" in row[1]
+    assert "thread/thread-9" in row[2]

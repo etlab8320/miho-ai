@@ -7,3 +7,4 @@ commands:
   - academy
 tools:
   - academy_operations_catalog
+  - academy_student_card_image

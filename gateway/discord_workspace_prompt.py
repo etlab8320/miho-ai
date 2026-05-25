@@ -6,6 +6,19 @@ from pathlib import Path
 from typing import Any
 
 
+_MAX_CONTEXT_SEED_CHARS = 1200
+_MAX_RETRIEVED_ITEMS = 4
+_MAX_RETRIEVED_CHARS = 420
+_MAX_RECENT_CHARS = 360
+
+
+def _compact_body(value: Any, limit: int) -> str:
+    body = " ".join(str(value or "").split())
+    if len(body) <= limit:
+        return body
+    return body[: limit - 1].rstrip() + "…"
+
+
 def build_workspace_prompt(
     *,
     workspace_active_dir: Path,
@@ -23,6 +36,8 @@ def build_workspace_prompt(
         f"- Workspace: `{workspace_active_dir}`",
         f"- RAG index: `{rag_dir / 'index.json'}`",
         "- Treat this as the persistent channel/thread memory for this Discord context.",
+        "- Use only directly relevant memory; do not restate unrelated retrieved context.",
+        "- When a durable user preference, correction, decision, or business fact appears, save it with the owner_profile or memory tool without asking the user to do it manually.",
     ]
     if getattr(source, "thread_id", None):
         lines.append(f"- Thread ID: `{source.thread_id}`")
@@ -30,25 +45,32 @@ def build_workspace_prompt(
     lines.append(f"- Channel ID: `{channel_id}`")
 
     if context_seed:
-        lines.extend(["", "### Durable Context Seed", context_seed[:1800]])
+        lines.extend([
+            "",
+            "### Durable Context Seed",
+            _compact_body(context_seed, _MAX_CONTEXT_SEED_CHARS),
+        ])
 
     if retrieved:
         lines.extend(["", "### Retrieved Relevant Memory"])
-        for item in retrieved:
+        omitted = max(0, len(retrieved) - _MAX_RETRIEVED_ITEMS)
+        for item in retrieved[:_MAX_RETRIEVED_ITEMS]:
             role = item.get("role") or "memory"
             who = item.get("user_name") or item.get("user_id") or role
-            body = item.get("text") or ""
+            body = _compact_body(item.get("text"), _MAX_RETRIEVED_CHARS)
             if body:
                 score = item.get("score")
                 suffix = f" ({score:.2f})" if isinstance(score, float) else ""
                 lines.append(f"- [{role}:{who}]{suffix} {body}")
+        if omitted:
+            lines.append(f"- ({omitted} more retrieved item(s) omitted by prompt budget)")
 
     if recent:
         lines.extend(["", "### Recent Thread Messages"])
         for item in recent[-max_recent:]:
             role = item.get("role") or "user"
             who = item.get("user_name") or item.get("user_id") or role
-            body = item.get("text") or ""
+            body = _compact_body(item.get("text"), _MAX_RECENT_CHARS)
             if body:
                 lines.append(f"- [{role}:{who}] {body}")
 

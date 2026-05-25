@@ -1,14 +1,14 @@
-"""Academy operations plugin for PACA/Peak Discord slash workflows."""
+"""Academy operations plugin for PACA/Peak Discord workflows."""
 
 from __future__ import annotations
 
-from contextvars import ContextVar
 import json
 from typing import Any
 
 from .auth_flow import LINK_TTL_SECONDS, create_login_link, resolve_auth_base_url
 from .auth_store import delete_binding, get_binding
 from .catalog import operations_payload
+from .context import CHANNEL_ID, DISCORD_USER_ID, GUILD_ID, capture_gateway_context
 from .formatting import (
     format_binding_status,
     format_catalog,
@@ -16,10 +16,7 @@ from .formatting import (
     format_login_link,
 )
 from .intent import draft_intent
-
-_DISCORD_USER_ID: ContextVar[str] = ContextVar("academy_ops_discord_user_id", default="")
-_GUILD_ID: ContextVar[str] = ContextVar("academy_ops_guild_id", default="")
-_CHANNEL_ID: ContextVar[str] = ContextVar("academy_ops_channel_id", default="")
+from .student_card_tool import _student_card_image_tool_handler
 
 
 def _catalog_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
@@ -49,13 +46,13 @@ def _academy_command(raw_args: str = "") -> str:
 
 
 def _login_command() -> str:
-    discord_user_id = _DISCORD_USER_ID.get()
+    discord_user_id = DISCORD_USER_ID.get()
     if not discord_user_id:
         return "디스코드 사용자 정보를 확인하지 못했어. 디스코드에서 `/academy login`으로 다시 실행해줘."
     link = create_login_link(
         discord_user_id=discord_user_id,
-        guild_id=_GUILD_ID.get(),
-        channel_id=_CHANNEL_ID.get(),
+        guild_id=GUILD_ID.get(),
+        channel_id=CHANNEL_ID.get(),
     )
     base_url = resolve_auth_base_url()
     return format_login_link(
@@ -66,7 +63,7 @@ def _login_command() -> str:
 
 
 def _status_command() -> str:
-    discord_user_id = _DISCORD_USER_ID.get()
+    discord_user_id = DISCORD_USER_ID.get()
     if not discord_user_id:
         return "디스코드 사용자 정보를 확인하지 못했어."
     binding = get_binding(discord_user_id)
@@ -76,7 +73,7 @@ def _status_command() -> str:
 
 
 def _logout_command() -> str:
-    discord_user_id = _DISCORD_USER_ID.get()
+    discord_user_id = DISCORD_USER_ID.get()
     if not discord_user_id:
         return "디스코드 사용자 정보를 확인하지 못했어."
     if delete_binding(discord_user_id):
@@ -85,13 +82,7 @@ def _logout_command() -> str:
 
 
 def _capture_gateway_context(event: Any = None, **kwargs: Any) -> dict[str, str]:
-    source = getattr(event, "source", None)
-    command = event.get_command() if event is not None and hasattr(event, "get_command") else ""
-    if command != "academy":
-        return {"action": "allow"}
-    _DISCORD_USER_ID.set(str(getattr(source, "user_id", "") or ""))
-    _GUILD_ID.set(str(getattr(source, "guild_id", "") or ""))
-    _CHANNEL_ID.set(str(getattr(source, "chat_id", "") or ""))
+    capture_gateway_context(event)
     return {"action": "allow"}
 
 
@@ -113,4 +104,37 @@ def register(ctx: Any) -> None:
         },
         handler=_catalog_tool_handler,
         description="Return the PACA/Peak Discord operation catalog and safety policy.",
+    )
+    ctx.register_tool(
+        name="academy_student_card_image",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "student_query": {
+                    "type": "string",
+                    "description": "학생 이름, 학교, 또는 PACA 검색어.",
+                },
+                "period_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60,
+                    "default": 14,
+                    "description": "출결을 집계할 최근 일수. 기본값은 최근 2주.",
+                },
+                "today": {
+                    "type": "string",
+                    "description": "기준 날짜. YYYY-MM-DD 형식.",
+                },
+            },
+            "required": ["student_query"],
+            "additionalProperties": False,
+        },
+        handler=_student_card_image_tool_handler,
+        description=(
+            "Create a safe PACA/Peak student-card PNG from live academy data. "
+            "Use for natural-language requests asking for a student card or student overview. "
+            "Excludes phone numbers, tuition, discounts, payment details, and internal memos. "
+            "Returns a MEDIA:<path> tag for Discord image delivery."
+        ),
     )

@@ -11,6 +11,7 @@ from gateway.config import Platform
 from gateway.discord_workspace import ensure_workspace
 from gateway.discord_workspace_vectors import index_rag_record, retrieve_rag_context
 from gateway.session import SessionSource
+from miho_cli.owner_profile import append_profile_event
 
 
 def _workspace_for_source(source: SessionSource):
@@ -117,6 +118,32 @@ def memory_rebuild(source: SessionSource) -> str:
     return f"기억 재색인 완료: {len(messages)}개 메시지"
 
 
+def _profile_source(source: SessionSource) -> str:
+    guild = getattr(source, "guild_id", "") or "direct"
+    channel = getattr(source, "parent_chat_id", None) or source.chat_id
+    thread = getattr(source, "thread_id", None)
+    if thread:
+        return f"discord:guild/{guild}/channel/{channel}/thread/{thread}"
+    return f"discord:guild/{guild}/channel/{channel}"
+
+
+def memory_promote(source: SessionSource, content: str) -> str:
+    if source.platform != Platform.DISCORD:
+        return "이 기억 승격은 Discord 채널/스레드에서만 쓸 수 있어."
+    content = content.strip()
+    if not content:
+        return "사용법: `/memory promote 오래 남길 사실이나 결정`"
+    result = append_profile_event(
+        category="discord_memory",
+        title=str(getattr(source, "chat_name", None) or "Discord memory"),
+        content=content,
+        source=_profile_source(source),
+    )
+    if not result.get("success"):
+        return f"장기기억 저장 실패: {result.get('error') or 'unknown error'}"
+    return "장기기억으로 승격했어. 필요할 때 owner_profile 타임라인에서 다시 꺼낼 수 있어."
+
+
 def run_memory_command(source: SessionSource, raw_args: str) -> str:
     try:
         tokens = shlex.split(raw_args or "")
@@ -130,4 +157,6 @@ def run_memory_command(source: SessionSource, raw_args: str) -> str:
         return memory_search(source, rest)
     if action in {"rebuild", "reindex", "재색인"}:
         return memory_rebuild(source)
-    return "사용법: `/memory status`, `/memory search 검색어`, `/memory rebuild`"
+    if action in {"promote", "pin", "승격", "고정"}:
+        return memory_promote(source, rest)
+    return "사용법: `/memory status`, `/memory search 검색어`, `/memory rebuild`, `/memory promote 내용`"
