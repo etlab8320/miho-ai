@@ -71,7 +71,7 @@ html, body {{
 .layout {{
   height: 100%;
   display: grid;
-  grid-template-rows: 246px 132px 292px 432px 46px;
+  grid-template-rows: 246px 176px 292px 388px 46px;
   gap: 21px;
 }}
 .hero {{
@@ -141,21 +141,33 @@ h1 {{
 .risk strong {{ display: block; margin-top: 9px; font-size: 54px; line-height: .9; }}
 .judgment {{
   display: grid;
-  grid-template-columns: 140px 1fr;
-  align-items: center;
-  gap: 22px;
-  padding: 22px 28px;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 24px;
+  padding: 24px 28px;
   border-radius: 8px;
   background: var(--ink);
   color: oklch(97% 0.006 220);
+  overflow: hidden;
 }}
 .judgment-label {{
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding-right: 18px;
+  border-right: 1px solid oklch(58% 0.055 194 / .45);
   color: oklch(82% 0.08 185);
-  font-size: 24px;
+  font-size: 23px;
+  line-height: 1.12;
 }}
 .judgment-copy {{
-  font-size: 32px;
-  line-height: 1.28;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  font-size: 28px;
+  line-height: 1.25;
+  text-wrap: pretty;
 }}
 .top-grid {{
   display: grid;

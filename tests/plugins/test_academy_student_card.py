@@ -202,8 +202,34 @@ def test_student_card_html_limits_record_rows_to_prevent_footer_overlap() -> Non
     assert "종목3" in html
     assert "종목4" not in html
     assert "외 3개" in html
-    assert "grid-template-rows: 246px 132px 292px 432px 46px" in html
+    assert "grid-template-rows: 246px 176px 292px 388px 46px" in html
     assert "overflow: hidden" in html
+
+
+def test_student_card_judgment_band_keeps_long_copy_inside_card() -> None:
+    card = AcademyStudentCardService(FakeAcademyClient()).build(
+        "김민준",
+        today=date(2026, 5, 25),
+        period_days=14,
+    )
+    card = replace(
+        card,
+        risk=replace(
+            card.risk,
+            judgment=(
+                "김민준은 최근 2주 출결과 기록 흐름을 같이 보면 안정 범위에 있지만, "
+                "결석 1회와 지각 1회가 있어 다음 수업에서 컨디션과 등원 루틴만 "
+                "짧게 확인하면 됩니다."
+            ),
+        ),
+    )
+
+    html = render_student_card_html(card)
+
+    assert "grid-template-columns: 132px minmax(0, 1fr)" in html
+    assert "align-items: center;" in html
+    assert "font-size: 28px;" in html
+    assert "text-wrap: pretty;" in html
 
 
 def test_student_card_html_centers_attendance_metrics() -> None:
