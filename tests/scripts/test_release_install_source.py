@@ -21,6 +21,17 @@ def test_release_installers_use_miho_ai_github_source():
         assert "NousResearch/miho-agent" not in text
 
 
+def test_installers_show_miho_ai_branding():
+    installer_files = [
+        REPO_ROOT / "scripts" / "install.sh",
+        REPO_ROOT / "scripts" / "install.ps1",
+    ]
+    for path in installer_files:
+        text = path.read_text(encoding="utf-8")
+        assert "Miho AI" in text
+        assert "An open source AI agent by Nous Research." not in text
+
+
 def test_update_source_defaults_to_main_release_branch():
     from miho_cli.update_source import DEFAULT_UPDATE_BRANCH, install_script_url
 

@@ -166,9 +166,9 @@ print_banner() {
     echo ""
     echo -e "${MAGENTA}${BOLD}"
     echo "┌─────────────────────────────────────────────────────────┐"
-    echo "│             ⚕ Miho Agent Installer                    │"
+    echo "│             ⚕ Miho AI Installer                       │"
     echo "├─────────────────────────────────────────────────────────┤"
-    echo "│  An open source AI agent by Nous Research.              │"
+    echo "│  Miho AI local agent installer.                         │"
     echo "└─────────────────────────────────────────────────────────┘"
     echo -e "${NC}"
 }

@@ -67,6 +67,35 @@ def test_detect_concurrent_excludes_self_pid(_winp, tmp_path):
 
 
 @patch.object(cli_main, "_is_windows", return_value=True)
+def test_detect_concurrent_excludes_launcher_parent_pid(_winp, tmp_path):
+    """Windows console-script launchers keep miho.exe alive as our parent.
+
+    `miho update` must not report that launcher as a different process, or
+    every normal Windows update blocks itself before the quarantine path can
+    replace the shim.
+    """
+    scripts_dir = tmp_path
+    shim = scripts_dir / "miho.exe"
+    shim.write_bytes(b"")
+    launcher_pid = os.getpid() + 10
+
+    procs = [_make_proc(launcher_pid, str(shim), "miho.exe")]
+
+    class FakeCurrentProcess:
+        def parents(self):
+            return [SimpleNamespace(pid=launcher_pid)]
+
+    fake_psutil = types.SimpleNamespace(
+        Process=lambda pid: FakeCurrentProcess(),
+        process_iter=lambda attrs: iter(procs),
+    )
+    with patch.dict(sys.modules, {"psutil": fake_psutil}):
+        result = cli_main._detect_concurrent_miho_instances(scripts_dir)
+
+    assert result == []
+
+
+@patch.object(cli_main, "_is_windows", return_value=True)
 def test_detect_concurrent_finds_other_miho_process(_winp, tmp_path):
     scripts_dir = tmp_path
     shim = scripts_dir / "miho.exe"

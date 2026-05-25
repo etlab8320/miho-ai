@@ -19,7 +19,11 @@ def _ensure_discord_mock():
     discord_mod.DMChannel = type("DMChannel", (), {})
     discord_mod.Thread = type("Thread", (), {})
     discord_mod.ForumChannel = type("ForumChannel", (), {})
-    discord_mod.ui = SimpleNamespace(View=object, button=lambda *a, **k: (lambda fn: fn), Button=object)
+    class FakeView:
+        def __init__(self, *args, **kwargs):
+            self.children = []
+
+    discord_mod.ui = SimpleNamespace(View=FakeView, button=lambda *a, **k: (lambda fn: fn), Button=object)
     discord_mod.ButtonStyle = SimpleNamespace(success=1, primary=2, secondary=2, danger=3, green=1, grey=2, blurple=2, red=3)
     discord_mod.Color = SimpleNamespace(orange=lambda: 1, green=lambda: 2, blue=lambda: 3, red=lambda: 4, purple=lambda: 5)
     discord_mod.Interaction = object
@@ -43,6 +47,32 @@ def _ensure_discord_mock():
 _ensure_discord_mock()
 
 from plugins.platforms.discord.adapter import DiscordAdapter  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_send_update_available_renders_button_prompt():
+    adapter = DiscordAdapter(PlatformConfig(enabled=True, token="***"))
+
+    sent_msg = SimpleNamespace(id=1234)
+    channel = SimpleNamespace(send=AsyncMock(return_value=sent_msg))
+    adapter._client = SimpleNamespace(
+        get_channel=lambda _chat_id: channel,
+        fetch_channel=AsyncMock(),
+    )
+
+    result = await adapter.send_update_available(
+        "555",
+        current_version="0.15.6",
+        behind=2,
+        session_key="discord:555",
+        confirm_id="1",
+    )
+
+    assert result.success is True
+    assert result.message_id == "1234"
+    kwargs = channel.send.await_args.kwargs
+    assert kwargs["embed"] is not None
+    assert kwargs["view"] is not None
 
 
 @pytest.mark.asyncio

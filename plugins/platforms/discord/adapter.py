@@ -4323,6 +4323,44 @@ class DiscordAdapter(BasePlatformAdapter):
         except Exception as e:
             return SendResult(success=False, error=str(e))
 
+    async def send_update_available(
+        self,
+        chat_id: str,
+        current_version: str,
+        behind: int,
+        session_key: str,
+        confirm_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a Discord button prompt when a Miho update is available."""
+        if not self._client or not DISCORD_AVAILABLE:
+            return SendResult(success=False, error="Not connected")
+        try:
+            target_id = metadata.get("thread_id") if metadata and metadata.get("thread_id") else chat_id
+            channel = self._client.get_channel(int(target_id))
+            if not channel:
+                channel = await self._client.fetch_channel(int(target_id))
+
+            embed = discord.Embed(
+                title="Miho 업데이트가 있어",
+                description=(
+                    f"현재 버전은 `{current_version}`이고, 최신 main보다 "
+                    f"`{int(behind)}`개 커밋 뒤에 있어.\n\n"
+                    "지금 업데이트하면 게이트웨이가 잠깐 재시작될 수 있어."
+                ),
+                color=discord.Color.blue(),
+            )
+            view = UpdateAvailableView(
+                session_key=session_key,
+                confirm_id=confirm_id,
+                allowed_user_ids=self._allowed_user_ids,
+                allowed_role_ids=self._allowed_role_ids,
+            )
+            msg = await channel.send(embed=embed, view=view)
+            return SendResult(success=True, message_id=str(msg.id))
+        except Exception as e:
+            return SendResult(success=False, error=str(e))
+
     async def send_model_picker(
         self,
         chat_id: str,
@@ -5116,7 +5154,7 @@ def _define_discord_view_classes() -> None:
     lazy install sets DISCORD_AVAILABLE=True but leaves the classes
     undefined, causing NameError on the first button interaction.
     """
-    global ExecApprovalView, SlashConfirmView, UpdatePromptView, ModelPickerView, ClarifyChoiceView
+    global ExecApprovalView, SlashConfirmView, UpdateAvailableView, UpdatePromptView, ModelPickerView, ClarifyChoiceView
 
     class ExecApprovalView(discord.ui.View):
         """
@@ -5401,6 +5439,86 @@ def _define_discord_view_classes() -> None:
             self, interaction: discord.Interaction, button: discord.ui.Button
         ):
             await self._respond(interaction, "n", discord.Color.red(), "No")
+
+        async def on_timeout(self):
+            self.resolved = True
+            for child in self.children:
+                child.disabled = True
+
+    class UpdateAvailableView(discord.ui.View):
+        """Two-button prompt for starting a detected Miho update."""
+
+        def __init__(
+            self,
+            session_key: str,
+            confirm_id: str,
+            allowed_user_ids: set,
+            allowed_role_ids: Optional[set] = None,
+        ):
+            super().__init__(timeout=300)
+            self.session_key = session_key
+            self.confirm_id = confirm_id
+            self.allowed_user_ids = allowed_user_ids
+            self.allowed_role_ids = allowed_role_ids or set()
+            self.resolved = False
+
+        def _check_auth(self, interaction: discord.Interaction) -> bool:
+            return _component_check_auth(
+                interaction, self.allowed_user_ids, self.allowed_role_ids,
+            )
+
+        async def _resolve(
+            self,
+            interaction: discord.Interaction,
+            choice: str,
+            color: discord.Color,
+            label: str,
+        ):
+            if self.resolved:
+                await interaction.response.send_message(
+                    "이미 처리된 업데이트 알림이야.", ephemeral=True,
+                )
+                return
+            if not self._check_auth(interaction):
+                await interaction.response.send_message(
+                    "이 업데이트를 실행할 권한이 없어.", ephemeral=True,
+                )
+                return
+
+            self.resolved = True
+            embed = interaction.message.embeds[0] if interaction.message.embeds else None
+            if embed:
+                embed.color = color
+                embed.set_footer(text=f"{label} · {interaction.user.display_name}")
+
+            for child in self.children:
+                child.disabled = True
+
+            await interaction.response.edit_message(embed=embed, view=self)
+
+            try:
+                from tools import slash_confirm as _slash_confirm_mod
+                result_text = await _slash_confirm_mod.resolve(
+                    self.session_key,
+                    self.confirm_id,
+                    choice,
+                )
+                if result_text:
+                    await interaction.followup.send(result_text)
+            except Exception as exc:
+                logger.error("Discord update-available resolve failed: %s", exc, exc_info=True)
+
+        @discord.ui.button(label="업데이트 하기", style=discord.ButtonStyle.green)
+        async def update_now(
+            self, interaction: discord.Interaction, button: discord.ui.Button,
+        ):
+            await self._resolve(interaction, "once", discord.Color.green(), "업데이트 시작")
+
+        @discord.ui.button(label="나중에", style=discord.ButtonStyle.grey)
+        async def later(
+            self, interaction: discord.Interaction, button: discord.ui.Button,
+        ):
+            await self._resolve(interaction, "cancel", discord.Color.blue(), "나중에")
 
         async def on_timeout(self):
             self.resolved = True

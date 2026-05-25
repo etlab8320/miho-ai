@@ -7659,6 +7659,16 @@ def _detect_concurrent_miho_instances(
 
     if exclude_pid is None:
         exclude_pid = os.getpid()
+    excluded_pids = {exclude_pid}
+    try:
+        current_proc = psutil.Process(exclude_pid)
+        excluded_pids.update(
+            int(parent.pid)
+            for parent in current_proc.parents()
+            if getattr(parent, "pid", None) is not None
+        )
+    except Exception:
+        pass
 
     # Resolve every shim path to its canonical form once for cheap comparison.
     shim_paths: set[str] = set()
@@ -7683,7 +7693,7 @@ def _detect_concurrent_miho_instances(
             continue
         pid = info.get("pid")
         exe = info.get("exe")
-        if not exe or pid is None or pid == exclude_pid:
+        if not exe or pid is None or int(pid) in excluded_pids:
             continue
         try:
             exe_norm = str(Path(exe).resolve()).lower()

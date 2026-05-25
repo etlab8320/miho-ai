@@ -4242,6 +4242,12 @@ class GatewayRunner:
                 skip_targets=skip_home_targets,
             )
 
+        try:
+            from gateway.update_notifier import schedule_update_available_notifications
+            schedule_update_available_notifications(self)
+        except Exception as exc:
+            logger.debug("Update-available notification scheduling failed: %s", exc)
+
         # Automatically continue fresh sessions that were interrupted by the
         # previous gateway restart/shutdown.  The resume_pending flag is cleared
         # by the normal successful-turn path, so a failed auto-resume remains
