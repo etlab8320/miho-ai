@@ -8,7 +8,15 @@ from typing import Any
 from .auth_flow import LINK_TTL_SECONDS, create_login_link, resolve_auth_base_url
 from .auth_store import delete_binding, get_binding
 from .catalog import operations_payload
-from .context import CHANNEL_ID, DISCORD_USER_ID, GUILD_ID, capture_gateway_context
+from .context import (
+    CHANNEL_ID,
+    DISCORD_USER_ID,
+    GUILD_ID,
+    capture_gateway_context,
+    current_event_context,
+    current_gateway_context,
+    set_gateway_context,
+)
 from .date_parser import parse_academy_date
 from .formatting import (
     format_binding_status,
@@ -17,6 +25,7 @@ from .formatting import (
     format_login_link,
 )
 from .intent import draft_intent
+from .plan_commentary import schedule_plan_commentary
 from .academy_query_tools import (
     _attendance_day_tool_handler,
     _capability_status_tool_handler,
@@ -76,6 +85,11 @@ def _quick_command(raw_args: str) -> str:
         payload = json.loads(raw)
         if not payload.get("ok"):
             return str(payload.get("message") or "운동계획서를 조회하지 못했어.")
+        schedule_plan_commentary(
+            gateway=current_gateway_context(),
+            event=current_event_context(),
+            payload=payload,
+        )
         return _format_plan_quick_response(payload)
     return "바로 처리할 수 있는 학원 업무를 찾지 못했어."
 
@@ -143,6 +157,7 @@ def _logout_command() -> str:
 
 def _capture_gateway_context(event: Any = None, **kwargs: Any) -> dict[str, str]:
     capture_gateway_context(event)
+    set_gateway_context(kwargs.get("gateway"))
     discord_user_id = DISCORD_USER_ID.get()
     command = quick_command_for(str(getattr(event, "text", "") or "")) if get_binding(discord_user_id) else ""
     if command:
@@ -158,6 +173,12 @@ def register(ctx: Any) -> None:
         args_hint="[요청]",
     )
     ctx.register_hook("pre_gateway_dispatch", _capture_gateway_context)
+    ctx.register_auxiliary_task(
+        key="academy_plan_commentary",
+        display_name="Academy plan commentary",
+        description="Short Korean commentary for Peak workout-plan facts",
+        defaults={"provider": "auto", "model": "", "timeout": 12},
+    )
     ctx.register_tool(
         name="academy_operations_catalog",
         toolset="academy_ops",

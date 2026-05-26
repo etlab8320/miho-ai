@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date
+from types import SimpleNamespace
 
 from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
@@ -11,6 +13,11 @@ from gateway.session import SessionSource
 from plugins.academy_ops import _academy_command, _capture_gateway_context
 from plugins.academy_ops.academy_query_tools import _plan_by_date_tool_handler
 from plugins.academy_ops.auth_store import AcademyBinding, save_binding
+from plugins.academy_ops.plan_commentary import (
+    plan_commentary_facts,
+    plan_commentary_messages,
+    schedule_plan_commentary,
+)
 from plugins.academy_ops.plan_lookup import extract_trainer_query, plan_lookup_for_day
 from plugins.academy_ops.quick_router import classify_quick_operation, quick_command_for
 
@@ -144,3 +151,68 @@ def test_academy_quick_plan_formats_tool_payload(monkeypatch) -> None:
     assert "2026-05-25 박성준 강사 운동계획서" in output
     assert "완료: 1/2" in output
     assert "- cc스쿼트 (미완료)" in output
+
+
+def test_plan_commentary_prompt_uses_payload_without_category_rules() -> None:
+    payload = json.loads(
+        _plan_by_date_tool_handler(
+            {"request": "2026-05-25 박성준 운동계획서좀 줘"},
+            client=PlanClient(),
+        )
+    )
+
+    facts = plan_commentary_facts(payload)
+    messages = plan_commentary_messages(facts)
+    prompt_text = "\n".join(message["content"] for message in messages)
+
+    assert facts["exercises"][0] == {"name": "20m왕복달리기", "note": "측정", "completed": True}
+    assert "20m왕복달리기" in prompt_text
+    assert "측정" in prompt_text
+    assert "스피드" not in prompt_text
+    assert "점프" not in prompt_text
+    assert "근력" not in prompt_text
+
+
+def test_schedule_plan_commentary_sends_followup_comment() -> None:
+    sent = []
+
+    class Adapter:
+        async def send(self, chat_id, content, metadata=None):
+            sent.append((chat_id, content, metadata))
+
+    class Gateway:
+        adapters = {"discord": Adapter()}
+
+        def _thread_metadata_for_source(self, source, reply_to_message_id=None):
+            return {"thread_id": source.thread_id, "reply": reply_to_message_id}
+
+        def _reply_anchor_for_event(self, event):
+            return "msg-1"
+
+    async def fake_caller(payload):
+        assert payload["plans"][0]["instructor_name"] == "박성준"
+        return "운동명과 메모 기준으로 왕복달리기 측정 위주였어."
+
+    async def run_case():
+        source = SimpleNamespace(platform="discord", chat_id="thread-1", thread_id="thread-1")
+        event = SimpleNamespace(source=source)
+        payload = {
+            "plans": [
+                {
+                    "instructor_name": "박성준",
+                    "exercises": [{"name": "20m왕복달리기", "note": "측정", "completed": True}],
+                }
+            ]
+        }
+        assert schedule_plan_commentary(gateway=Gateway(), event=event, payload=payload, caller=fake_caller)
+        await asyncio.sleep(0.01)
+
+    asyncio.run(run_case())
+
+    assert sent == [
+        (
+            "thread-1",
+            "미호 코멘트: 운동명과 메모 기준으로 왕복달리기 측정 위주였어.",
+            {"thread_id": "thread-1", "reply": "msg-1"},
+        )
+    ]
