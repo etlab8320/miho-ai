@@ -9,7 +9,7 @@ from typing import Any
 
 from .academy_api import AcademyApiClient, AcademyApiError
 from .auth_store import decrypt_token, get_binding
-from .context import current_discord_user_id
+from .context import current_discord_user_id, infer_student_query_from_current_request
 from .paca_client import DEFAULT_PACA_BASE_URL
 from .student_card import (
     AcademyClient,
@@ -24,7 +24,7 @@ def _student_card_image_tool_handler(
     **kwargs: Any,
 ) -> str:
     payload = args or {}
-    student_query = str(payload.get("student_query") or "").strip()
+    student_query = str(payload.get("student_query") or "").strip() or infer_student_query_from_current_request()
     period_days = _int_arg(payload.get("period_days"), default=14)
     today = _date_arg(payload.get("today"))
     if not student_query:

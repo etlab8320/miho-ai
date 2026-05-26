@@ -9,15 +9,45 @@ from typing import Any
 
 from .academy_api import AcademyApiClient, AcademyApiError
 from .auth_store import decrypt_token, get_binding
-from .context import current_discord_user_id
+from .catalog import OperationSpec, find_operation
+from .context import current_discord_user_id, infer_student_query_from_current_request
+from .date_parser import parse_academy_date
 from .intent import draft_intent
 from .paca_client import DEFAULT_PACA_BASE_URL
+from .quick_router import classify_quick_operation
+from .staff_attendance import staff_attendance_for_day
 from .student_card import AcademyClient, AcademyStudentCardService, StudentCardError
+
+
+def _capability_status_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
+    request = str((args or {}).get("request") or "").strip()
+    if not request:
+        return _json_error("확인할 학원 업무 요청을 알려줘.")
+    operation_key = classify_quick_operation(request)
+    draft = draft_intent(request) if not operation_key else None
+    op = find_operation(operation_key) if operation_key else draft.operation
+    if op is None:
+        return _json_error("요청을 처리할 학원 업무를 찾지 못했어.")
+    return _json_ok(
+        {
+            "operation": "capability.status",
+            "request": request,
+            "operation_key": op.key,
+            "title": op.title,
+            "domain": op.domain,
+            "mode": op.mode,
+            "implementation_status": op.implementation_status,
+            "api_contract_status": op.api_contract_status,
+            "can_execute_now": _can_execute_now(op),
+            "recommended_tool": _recommended_tool(op),
+            "message": _capability_message(op),
+        }
+    )
 
 
 def _student_summary_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
     payload = args or {}
-    query = str(payload.get("student_query") or "").strip()
+    query = str(payload.get("student_query") or "").strip() or infer_student_query_from_current_request()
     if not query:
         return _json_error("학생 이름이나 검색어를 알려줘.")
     client_or_error = _resolve_client(kwargs.get("client"))
@@ -59,6 +89,27 @@ def _attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwargs: A
             "summary": summary,
             "slots": slots,
             "message": _attendance_message(target_day, summary),
+        }
+    )
+
+
+def _staff_attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    payload = args or {}
+    target_day = parse_academy_date(payload.get("date") or payload.get("request"))
+    client_or_error = _resolve_client(kwargs.get("client"))
+    if isinstance(client_or_error, str):
+        return _json_error(client_or_error)
+    try:
+        attendance = staff_attendance_for_day(client_or_error, target_day)
+    except AcademyApiError as exc:
+        return _json_error(str(exc))
+    return _json_ok(
+        {
+            "operation": "staff.attendance_day",
+            "date": attendance["date"],
+            "summary": attendance["summary"],
+            "instructors": attendance["instructors"],
+            "message": _staff_attendance_message(attendance),
         }
     )
 
@@ -252,6 +303,38 @@ def _assistant_guidance() -> dict[str, Any]:
         "use_fields": ["card.risk", "card.attendance", "card.records", "card.missing_sources"],
         "instruction": "도구의 사실 필드를 보고 미호 말투로 짧은 종합 판단을 작성해.",
     }
+
+
+def _can_execute_now(op: OperationSpec) -> bool:
+    return op.implementation_status == "implemented" and op.api_contract_status == "verified_in_plugin"
+
+
+def _recommended_tool(op: OperationSpec) -> str | None:
+    if op.key == "attendance.today_peak":
+        return "academy_attendance_day"
+    if op.key in {"student.search", "student.detail", "peak.records.latest"}:
+        return "academy_student_summary"
+    if op.key == "consultation.candidates":
+        return "academy_consultation_candidates"
+    if op.key == "staff.attendance_day":
+        return "academy_staff_attendance_day"
+    return None
+
+
+def _capability_message(op: OperationSpec) -> str:
+    if _can_execute_now(op):
+        tool = _recommended_tool(op)
+        if tool:
+            return f"{op.title}은 현재 연결된 도구로 조회할 수 있어. `{tool}`을 사용해."
+        return f"{op.title}은 현재 연결된 기능이야."
+    return f"{op.title}은 아직 연동 후보라서 실제 데이터로 처리하면 안 돼."
+
+
+def _staff_attendance_message(payload: dict[str, Any]) -> str:
+    names = [row["name"] for row in payload["instructors"] if row.get("name")]
+    if not names:
+        return f"{payload['date']} 출근 기록이 있는 강사는 없어."
+    return f"{payload['date']} 출근 강사: {', '.join(names)}."
 
 
 def _attendance_message(target_day: date, summary: dict[str, int]) -> str:

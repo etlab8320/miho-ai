@@ -7,8 +7,10 @@ commands:
   - academy
 tools:
   - academy_operations_catalog
+  - academy_capability_status
   - academy_student_card_image
   - academy_student_summary
   - academy_attendance_day
+  - academy_staff_attendance_day
   - academy_consultation_candidates
   - academy_prepare_write_action

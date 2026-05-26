@@ -9,6 +9,7 @@ from .auth_flow import LINK_TTL_SECONDS, create_login_link, resolve_auth_base_ur
 from .auth_store import delete_binding, get_binding
 from .catalog import operations_payload
 from .context import CHANNEL_ID, DISCORD_USER_ID, GUILD_ID, capture_gateway_context
+from .date_parser import parse_academy_date
 from .formatting import (
     format_binding_status,
     format_catalog,
@@ -18,10 +19,13 @@ from .formatting import (
 from .intent import draft_intent
 from .academy_query_tools import (
     _attendance_day_tool_handler,
+    _capability_status_tool_handler,
     _consultation_candidates_tool_handler,
+    _staff_attendance_day_tool_handler,
     _student_summary_tool_handler,
     _write_action_draft_tool_handler,
 )
+from .quick_router import quick_command_for
 from .student_card_tool import _student_card_image_tool_handler
 
 
@@ -40,6 +44,8 @@ def _academy_command(raw_args: str = "") -> str:
         return format_catalog()
     subcommand, _, remainder = text.partition(" ")
     normalized = subcommand.lower().strip()
+    if normalized == "quick":
+        return _quick_command(remainder)
     if normalized == "login":
         return _login_command()
     if normalized == "status":
@@ -49,6 +55,21 @@ def _academy_command(raw_args: str = "") -> str:
     if normalized == "link":
         return _login_command()
     return format_intent_preview(draft_intent(text))
+
+
+def _quick_command(raw_args: str) -> str:
+    operation_key, _, request = raw_args.strip().partition(" ")
+    if operation_key == "staff.attendance_day":
+        target_day = parse_academy_date(request)
+        raw = _staff_attendance_day_tool_handler({"date": target_day.isoformat()})
+        payload = json.loads(raw)
+        if not payload.get("ok"):
+            return str(payload.get("message") or "강사 출근 목록을 조회하지 못했어.")
+        names = [row["name"] for row in payload.get("instructors", []) if row.get("name")]
+        if not names:
+            return f"{payload['date']} 출근 기록이 있는 강사는 없어."
+        return f"{payload['date']} 출근 강사: {', '.join(names)}."
+    return "바로 처리할 수 있는 학원 업무를 찾지 못했어."
 
 
 def _login_command() -> str:
@@ -89,6 +110,10 @@ def _logout_command() -> str:
 
 def _capture_gateway_context(event: Any = None, **kwargs: Any) -> dict[str, str]:
     capture_gateway_context(event)
+    discord_user_id = DISCORD_USER_ID.get()
+    command = quick_command_for(str(getattr(event, "text", "") or "")) if get_binding(discord_user_id) else ""
+    if command:
+        return {"action": "rewrite", "text": command}
     return {"action": "allow"}
 
 
@@ -110,6 +135,28 @@ def register(ctx: Any) -> None:
         },
         handler=_catalog_tool_handler,
         description="Return the PACA/Peak Discord operation catalog and safety policy.",
+    )
+    ctx.register_tool(
+        name="academy_capability_status",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "request": {
+                    "type": "string",
+                    "description": "사용자의 PACA/Peak 학원 업무 요청 원문.",
+                },
+            },
+            "required": ["request"],
+            "additionalProperties": False,
+        },
+        handler=_capability_status_tool_handler,
+        description=(
+            "Classify a natural-language PACA/Peak academy request against connected tools. "
+            "Use before file, terminal, or generic catalog exploration when a request is about "
+            "staff, instructors, teachers, payments, plans, schedules, or unsupported academy data. "
+            "Returns whether the request can be answered from live tools now."
+        ),
     )
     ctx.register_tool(
         name="academy_student_card_image",
@@ -182,6 +229,29 @@ def register(ctx: Any) -> None:
         },
         handler=_attendance_day_tool_handler,
         description="Return a safe Peak attendance summary for one date, grouped by slot.",
+    )
+    ctx.register_tool(
+        name="academy_staff_attendance_day",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "조회 날짜. YYYY-MM-DD, 오늘, 어제, 그제 등.",
+                },
+                "request": {
+                    "type": "string",
+                    "description": "원문 요청. date가 없으면 여기에서 날짜 표현을 읽는다.",
+                },
+            },
+            "additionalProperties": False,
+        },
+        handler=_staff_attendance_day_tool_handler,
+        description=(
+            "Return PACA instructor attendance for one day from live instructor attendance records. "
+            "Use for teacher/staff/instructor work-attendance questions."
+        ),
     )
     ctx.register_tool(
         name="academy_consultation_candidates",

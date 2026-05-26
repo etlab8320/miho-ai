@@ -7,11 +7,17 @@ from datetime import date
 
 from plugins.academy_ops.academy_query_tools import (
     _attendance_day_tool_handler,
+    _capability_status_tool_handler,
     _consultation_candidates_tool_handler,
+    _staff_attendance_day_tool_handler,
     _student_summary_tool_handler,
     _write_action_draft_tool_handler,
 )
+from plugins.academy_ops import _capture_gateway_context
 from plugins.academy_ops.student_card import AcademyStudentCardService
+from gateway.config import Platform
+from gateway.platforms.base import MessageEvent
+from gateway.session import SessionSource
 from tests.plugins.test_academy_student_card import FakeAcademyClient
 
 
@@ -39,6 +45,30 @@ def test_student_summary_tool_returns_safe_structured_card_data() -> None:
     assert "민감 메모" not in dumped
 
 
+def test_student_summary_tool_infers_query_from_discord_request() -> None:
+    _capture_gateway_context(
+        MessageEvent(
+            text="고준희 학생 요약해줘",
+            source=SessionSource(
+                platform=Platform.DISCORD,
+                user_id="discord-user-1",
+                chat_id="channel-1",
+                guild_id="guild-1",
+            ),
+        )
+    )
+
+    result = _payload(
+        _student_summary_tool_handler(
+            {"period_days": 3, "today": "2026-05-25"},
+            client=FakeAcademyClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["card"]["profile"]["name"] == "김민준"
+
+
 def test_attendance_day_tool_summarizes_peak_slots_without_sensitive_fields() -> None:
     result = _payload(
         _attendance_day_tool_handler(
@@ -52,6 +82,62 @@ def test_attendance_day_tool_summarizes_peak_slots_without_sensitive_fields() ->
     assert result["summary"] == {"present": 1, "late": 0, "absent": 0, "unknown": 0}
     assert result["slots"]["evening"][0]["student_id"] == 501
     assert "attendance_status" in result["slots"]["evening"][0]
+
+
+def test_capability_status_routes_staff_attendance_to_live_tool() -> None:
+    result = _payload(
+        _capability_status_tool_handler(
+            {"request": "어제 출근 한 강사 목록좀 줘"},
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["operation"] == "capability.status"
+    assert result["operation_key"] == "staff.attendance_day"
+    assert result["can_execute_now"] is True
+    assert result["recommended_tool"] == "academy_staff_attendance_day"
+
+
+def test_staff_attendance_day_tool_reads_live_shape_without_sensitive_fields() -> None:
+    class StaffClient(FakeAcademyClient):
+        def list_paca_instructors(self, *, status: str = "active") -> list[dict]:
+            return [
+                {"id": 1, "name": "박성준", "phone": "010-1111-2222", "salary_type": "per_class"},
+                {"id": 2, "name": "오철민", "phone": "010-3333-4444", "salary_type": "hourly"},
+            ]
+
+        def get_paca_instructor_attendance(self, instructor_id: int, *, year: int, month: int) -> list[dict]:
+            rows = {
+                1: [
+                    {
+                        "work_date": "2026-05-25",
+                        "time_slot": "evening",
+                        "attendance_status": "present",
+                    }
+                ],
+                2: [
+                    {
+                        "work_date": "2026-05-24",
+                        "time_slot": "evening",
+                        "attendance_status": "present",
+                    }
+                ],
+            }
+            return rows[instructor_id]
+
+    result = _payload(
+        _staff_attendance_day_tool_handler(
+            {"date": "2026-05-25"},
+            client=StaffClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["operation"] == "staff.attendance_day"
+    assert result["summary"]["worked"] == 1
+    assert [row["name"] for row in result["instructors"]] == ["박성준"]
+    dumped = json.dumps(result, ensure_ascii=False)
+    assert "010-" not in dumped
 
 
 def test_consultation_candidates_use_read_only_attendance_signals() -> None:

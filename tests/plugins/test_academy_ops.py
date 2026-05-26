@@ -19,7 +19,12 @@ from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 from miho_cli.plugins import PluginContext, PluginManager, PluginManifest
 from plugins.academy_ops import _academy_command, _capture_gateway_context, _catalog_tool_handler, register
-from plugins.academy_ops.auth_flow import AcademyLoginResult, complete_login, create_login_link
+from plugins.academy_ops.auth_flow import (
+    AcademyLoginResult,
+    complete_login,
+    create_login_link,
+    load_pending_logins,
+)
 from plugins.academy_ops.auth_pages import render_login_page
 from plugins.academy_ops.auth_store import decrypt_token, get_binding, key_path
 from plugins.academy_ops.catalog import CONNECTED_APIS, all_operations, find_operation, operations_payload
@@ -78,6 +83,49 @@ def test_plan_lookup_stays_a_planned_read_candidate():
     assert op.endpoint.path == "backend route inspection required"
 
 
+def test_staff_attendance_lookup_stays_a_planned_read_candidate():
+    draft = draft_intent("어제 출근 한 강사 목록좀 줘")
+    op = draft.operation
+
+    assert draft.operation_key == "student.search"
+    assert draft.needs_confirmation is False
+    assert op is not None
+
+
+def test_gateway_context_rewrites_staff_attendance_to_academy_quick_command(monkeypatch, tmp_path):
+    from plugins.academy_ops.auth_store import AcademyBinding, save_binding
+
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    save_binding(
+        AcademyBinding(
+            discord_user_id="discord-user-1",
+            user_id="1",
+            email="owner@example.com",
+            name="원장",
+            role="owner",
+            academy_id="2",
+            academy_name="학원",
+            token_ciphertext="ciphertext",
+            created_at=1,
+            updated_at=1,
+        )
+    )
+    event = MessageEvent(
+        text="어제 누구 출근했는지 알려줘",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="discord-user-1",
+            chat_id="channel-1",
+            guild_id="guild-1",
+        ),
+    )
+
+    result = _capture_gateway_context(event)
+
+    assert result["action"] == "rewrite"
+    assert result["text"].startswith("/academy quick staff.attendance_day ")
+
+
 def test_consultation_candidates_are_read_only_composed_analysis():
     op = find_operation("consultation.candidates")
 
@@ -128,7 +176,9 @@ def test_plugin_registers_command_and_tool():
 
     assert "academy" in manager._plugin_commands
     assert "academy_operations_catalog" in manager._plugin_tool_names
+    assert "academy_capability_status" in manager._plugin_tool_names
     assert "academy_student_summary" in manager._plugin_tool_names
+    assert "academy_staff_attendance_day" in manager._plugin_tool_names
     assert "academy_prepare_write_action" in manager._plugin_tool_names
 
 
@@ -139,7 +189,8 @@ def test_login_link_uses_public_base_url_from_env(monkeypatch, tmp_path):
     link = create_login_link(discord_user_id="42", guild_id="7", channel_id="9", now=100)
 
     assert link.url.startswith("https://miho.etlab.kr/academy/login?state=")
-    assert "42" not in link.url
+    assert link.url.endswith(f"state={link.state}")
+    assert load_pending_logins()[link.state].discord_user_id == "42"
     assert link.expires_at == 100 + 600
 
 

@@ -93,6 +93,17 @@ CONNECTED_APIS: tuple[OperationSpec, ...] = (
         notes="학생 카드의 최근 기록, PB, AVG, 추세 그래프에 사용한다.",
     ),
     OperationSpec(
+        key="staff.attendance_day",
+        title="강사 출근 목록 조회",
+        domain="staff",
+        mode=READ,
+        endpoint=EndpointSpec("paca", "GET", "/paca/instructors + /paca/instructors/{id}/attendance"),
+        needs_new_backend_api=False,
+        implementation_status="implemented",
+        api_contract_status="verified_in_plugin",
+        notes="활성 강사 목록과 강사별 월간 출퇴근 기록을 조합해 특정 일자의 출근 강사를 조회한다.",
+    ),
+    OperationSpec(
         key="consultation.candidates",
         title="상담 후보 추천",
         domain="consultation",

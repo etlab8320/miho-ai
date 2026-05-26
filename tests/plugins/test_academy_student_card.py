@@ -371,3 +371,27 @@ def test_gateway_context_is_captured_for_non_slash_academy_tool_requests() -> No
     )
 
     assert json.loads(output)["ok"] is True
+
+
+def test_student_card_tool_infers_query_from_discord_request_when_args_empty() -> None:
+    _capture_gateway_context(
+        MessageEvent(
+            text="고준희 학생카드좀줘봐",
+            source=SessionSource(
+                platform=Platform.DISCORD,
+                user_id="discord-user-9",
+                chat_id="channel-9",
+                guild_id="guild-9",
+            ),
+        )
+    )
+
+    output = _student_card_image_tool_handler(
+        {},
+        client=FakeAcademyClient(),
+        renderer=FakeRenderer(Path("/tmp/student-card.png")),
+    )
+    payload = json.loads(output)
+
+    assert payload["ok"] is True
+    assert payload["card"]["profile"]["name"] == "김민준"
