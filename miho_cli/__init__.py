@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sys
 
-__version__ = "0.15.17"
+__version__ = "0.15.18"
 __release_date__ = "2026.5.26"
 
 
