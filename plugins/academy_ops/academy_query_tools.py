@@ -158,6 +158,10 @@ def _consultation_candidates_tool_handler(args: dict[str, Any] | None = None, **
     if isinstance(client_or_error, str):
         return _json_error(client_or_error)
     try:
+        server_lookup = getattr(client_or_error, "get_consultation_candidates", None)
+        if callable(server_lookup):
+            result = server_lookup(today=target_day, attendance_days=period_days, limit=limit)
+            return _json_ok(_server_consultation_candidates_payload(result, target_day, period_days))
         candidates = _consultation_candidates(client_or_error, target_day, period_days, limit)
     except AcademyApiError as exc:
         return _json_error(str(exc))
@@ -172,6 +176,26 @@ def _consultation_candidates_tool_handler(args: dict[str, Any] | None = None, **
             "assistant_guidance": academy_response_guidance(),
         }
     )
+
+
+def _server_consultation_candidates_payload(
+    result: dict[str, Any],
+    target_day: date,
+    period_days: int,
+) -> dict[str, Any]:
+    candidates = result.get("candidates") if isinstance(result.get("candidates"), list) else []
+    return {
+        "operation": "consultation.candidates",
+        "period_days": period_days,
+        "today": target_day.isoformat(),
+        "write_enabled": False,
+        "basis": f"PACA 서버가 최근 {period_days}일 출결과 Peak 최근 5개 기록을 조합한 읽기 전용 후보 목록이야.",
+        "period": result.get("period") if isinstance(result.get("period"), dict) else {},
+        "policy": result.get("policy") if isinstance(result.get("policy"), dict) else {},
+        "candidates": [item for item in candidates if isinstance(item, dict)],
+        "message": str(result.get("message") or f"상담 후보 {len(candidates)}명"),
+        "assistant_guidance": academy_response_guidance(),
+    }
 
 
 def _write_action_draft_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:

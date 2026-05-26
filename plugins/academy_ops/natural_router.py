@@ -102,7 +102,7 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "academy_assignment_by_date": {"purpose": "날짜별 반배치와 담당 강사 조회", "args": ["date", "time_slot"]},
     "academy_consultation_candidates": {
-        "purpose": "최근 출결 기반 상담 후보 추천",
+        "purpose": "재원생 중 상담이 필요한 학생 후보 추천. 최근 2주 출결과 최근 5개 실기기록 추세를 서버 API로 조회",
         "args": ["today", "period_days", "limit"],
     },
     "academy_student_summary": {"purpose": "학생 요약 텍스트 조회", "args": ["student_query", "today", "period_days"]},

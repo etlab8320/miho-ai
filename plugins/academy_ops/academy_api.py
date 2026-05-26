@@ -90,6 +90,17 @@ class AcademyApiClient:
                 break
         return rows
 
+    def get_consultation_candidates(self, *, today: date, attendance_days: int = 14, limit: int = 10) -> dict[str, Any]:
+        payload = self._get(
+            "/paca/consultation-candidates",
+            params={
+                "today": today.isoformat(),
+                "attendance_days": str(attendance_days),
+                "limit": str(limit),
+            },
+        )
+        return payload if isinstance(payload, dict) else {}
+
     def list_peak_students(self) -> list[dict[str, Any]]:
         payload = self._get("/peak/students")
         if isinstance(payload, list):

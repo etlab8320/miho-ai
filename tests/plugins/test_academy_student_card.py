@@ -297,6 +297,11 @@ def test_academy_api_client_parses_verified_route_shapes() -> None:
             return httpx.Response(200, json={"success": True, "slots": {"evening": []}})
         if request.url.path == "/peak/records":
             return httpx.Response(200, json={"success": True, "records": [{"id": 1}]})
+        if request.url.path == "/paca/consultation-candidates":
+            assert request.url.params["today"] == "2026-05-25"
+            assert request.url.params["attendance_days"] == "14"
+            assert request.url.params["limit"] == "5"
+            return httpx.Response(200, json={"message": "상담 후보 0명", "candidates": []})
         return httpx.Response(404)
 
     client = AcademyApiClient(
@@ -311,6 +316,7 @@ def test_academy_api_client_parses_verified_route_shapes() -> None:
     assert client.list_peak_students() == [{"id": 501, "paca_student_id": 101}]
     assert client.get_peak_attendance(date(2026, 5, 25))["success"] is True
     assert client.list_peak_records(501) == [{"id": 1}]
+    assert client.get_consultation_candidates(today=date(2026, 5, 25), attendance_days=14, limit=5)["candidates"] == []
     assert any("search=%EA%B9%80%EB%AF%BC%EC%A4%80" in url for url in seen)
     assert any("student_id=501" in url for url in seen)
 

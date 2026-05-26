@@ -152,11 +152,11 @@ CONNECTED_APIS: tuple[OperationSpec, ...] = (
         title="상담 후보 추천",
         domain="consultation",
         mode=READ,
-        endpoint=EndpointSpec("peak", "GET", "/peak/attendance/students"),
+        endpoint=EndpointSpec("paca", "GET", "/paca/consultation-candidates"),
         needs_new_backend_api=False,
         implementation_status="implemented",
         api_contract_status="verified_in_plugin",
-        notes="현재는 최근 출결만 조합한 읽기 전용 후보 목록이다.",
+        notes="PACA 서버가 재원생, 최근 2주 출결, Peak 최근 5개 기록 추세를 조합한 읽기 전용 후보 목록이다.",
     ),
     OperationSpec(
         key="academy.schedule_range",

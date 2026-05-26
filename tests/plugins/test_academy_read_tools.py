@@ -168,6 +168,48 @@ def test_consultation_candidates_use_read_only_attendance_signals() -> None:
     assert result["write_enabled"] is False
 
 
+def test_consultation_candidates_prefers_server_side_analysis() -> None:
+    class ServerCandidateClient(FakeAcademyClient):
+        def get_consultation_candidates(self, *, today: date, attendance_days: int = 14, limit: int = 10) -> dict:
+            assert today == date(2026, 5, 27)
+            assert attendance_days == 14
+            assert limit == 5
+            return {
+                "message": "상담 후보 1명",
+                "period": {
+                    "attendance_start_date": "2026-05-14",
+                    "end_date": "2026-05-27",
+                    "attendance_days": 14,
+                    "record_sample_size": 5,
+                },
+                "candidates": [
+                    {
+                        "student": {"paca_student_id": 10, "peak_student_id": 900, "name": "김민준"},
+                        "priority": "high",
+                        "score": 92,
+                        "reasons": ["최근 14일 안에 연속 결석 2회", "최근 5개 기록 기준 하락/정체 종목 2개"],
+                    }
+                ],
+            }
+
+        def list_peak_students(self) -> list[dict]:
+            raise AssertionError("server-side endpoint should avoid local fan-out")
+
+    result = _payload(
+        _consultation_candidates_tool_handler(
+            {"period_days": 14, "today": "2026-05-27", "limit": 5},
+            client=ServerCandidateClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["operation"] == "consultation.candidates"
+    assert result["message"] == "상담 후보 1명"
+    assert result["period"]["attendance_start_date"] == "2026-05-14"
+    assert result["candidates"][0]["student"]["peak_student_id"] == 900
+    assert "최근 14일 출결" in result["basis"]
+
+
 def test_write_action_draft_blocks_mutation_and_requires_confirmation() -> None:
     result = _payload(
         _write_action_draft_tool_handler(
