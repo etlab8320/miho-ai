@@ -9,6 +9,7 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import date
 from http.server import ThreadingHTTPServer
 from types import SimpleNamespace
 
@@ -124,6 +125,33 @@ def test_gateway_context_rewrites_staff_attendance_to_academy_quick_command(monk
 
     assert result["action"] == "rewrite"
     assert result["text"].startswith("/academy quick staff.attendance_day ")
+
+
+def test_academy_quick_staff_attendance_reads_korean_month_day(monkeypatch):
+    captured = {}
+    expected_date = f"{date.today().year}-05-24"
+
+    def fake_staff_attendance_day_tool(args):
+        captured.update(args)
+        return json.dumps(
+            {
+                "ok": True,
+                "date": args["date"],
+                "instructors": [{"name": "남유정"}],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(
+        academy_ops_module,
+        "_staff_attendance_day_tool_handler",
+        fake_staff_attendance_day_tool,
+    )
+
+    output = _academy_command("quick staff.attendance_day 5월 24일에 출근한 강사")
+
+    assert captured["date"] == expected_date
+    assert output == f"{expected_date} 출근 강사: 남유정."
 
 
 def test_consultation_candidates_are_read_only_composed_analysis():
