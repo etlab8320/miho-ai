@@ -64,7 +64,9 @@ from gateway.platforms.base import (
     cache_audio_from_url,
     cache_audio_from_bytes,
     cache_document_from_bytes,
+    cache_video_from_bytes,
     SUPPORTED_DOCUMENT_TYPES,
+    SUPPORTED_VIDEO_TYPES,
 )
 from tools.url_safety import is_safe_url
 
@@ -4810,6 +4812,38 @@ class DiscordAdapter(BasePlatformAdapter):
                     print(f"[Discord] Failed to cache audio attachment: {e}", flush=True)
                     media_urls.append(att.url)
                     media_types.append(content_type)
+            elif content_type.startswith("video/"):
+                try:
+                    ext = ""
+                    if att.filename:
+                        _, ext = os.path.splitext(att.filename)
+                        ext = ext.lower()
+                    if ext not in SUPPORTED_VIDEO_TYPES:
+                        video_mime_to_ext = {v: k for k, v in SUPPORTED_VIDEO_TYPES.items()}
+                        ext = video_mime_to_ext.get(content_type.lower(), ".mp4")
+                    if ext not in SUPPORTED_VIDEO_TYPES:
+                        ext = ".mp4"
+
+                    max_video_bytes = 100 * 1024 * 1024
+                    if att.size and att.size > max_video_bytes:
+                        logger.warning(
+                            "[Discord] Video too large (%s bytes), skipping: %s",
+                            att.size,
+                            att.filename,
+                        )
+                    else:
+                        raw_bytes = await self._cache_discord_document(att, ext)
+                        cached_path = cache_video_from_bytes(raw_bytes, ext=ext)
+                        media_urls.append(cached_path)
+                        media_types.append(SUPPORTED_VIDEO_TYPES.get(ext, content_type))
+                        logger.info("[Discord] Cached user video: %s", cached_path)
+                except Exception as e:
+                    logger.warning(
+                        "[Discord] Failed to cache video attachment %s: %s",
+                        att.filename,
+                        e,
+                        exc_info=True,
+                    )
             else:
                 # Document attachments: download, cache, and optionally inject text
                 ext = ""

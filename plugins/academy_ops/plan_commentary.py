@@ -6,6 +6,19 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable
 
+from .commentary_config import (
+    COMMENTARY_ERROR_MESSAGE,
+    COMMENTARY_EXTRA_BODY,
+    COMMENTARY_FALLBACK_MODELS,
+    COMMENTARY_FALLBACK_TIMEOUT_SECONDS,
+    COMMENTARY_MODEL,
+    COMMENTARY_OUTER_TIMEOUT_SECONDS,
+    COMMENTARY_PROVIDER,
+    COMMENTARY_TASK,
+    COMMENTARY_TIMEOUT_MESSAGE,
+    COMMENTARY_TIMEOUT_SECONDS,
+)
+
 
 logger = logging.getLogger(__name__)
 CommentaryCaller = Callable[[dict[str, Any]], Awaitable[str]]
@@ -58,15 +71,58 @@ async def generate_plan_commentary(payload: dict[str, Any]) -> str:
         return ""
     from agent.auxiliary_client import async_call_llm
 
-    response = await async_call_llm(
-        task="academy_plan_commentary",
-        messages=plan_commentary_messages(facts),
-        temperature=0.2,
-        max_tokens=180,
-        timeout=12,
-    )
+    messages = plan_commentary_messages(facts)
+    try:
+        response = await _call_plan_commentary_llm(
+            async_call_llm,
+            messages=messages,
+            model=COMMENTARY_MODEL,
+            timeout=COMMENTARY_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        response = await _fallback_plan_commentary(async_call_llm, messages)
     content = response.choices[0].message.content
     return str(content or "").strip()
+
+
+async def _fallback_plan_commentary(
+    async_call_llm: Any,
+    messages: list[dict[str, str]],
+) -> Any:
+    last_error: TimeoutError | None = None
+    for model in COMMENTARY_FALLBACK_MODELS:
+        try:
+            return await _call_plan_commentary_llm(
+                async_call_llm,
+                messages=messages,
+                model=model,
+                timeout=COMMENTARY_FALLBACK_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as exc:
+            last_error = exc
+            logger.info("academy plan commentary fallback timed out: %s", model)
+    if last_error is not None:
+        raise last_error
+    raise TimeoutError("academy plan commentary fallback timed out")
+
+
+async def _call_plan_commentary_llm(
+    async_call_llm: Any,
+    *,
+    messages: list[dict[str, str]],
+    model: str,
+    timeout: int,
+) -> Any:
+    return await async_call_llm(
+        task=COMMENTARY_TASK,
+        provider=COMMENTARY_PROVIDER,
+        model=model,
+        messages=messages,
+        temperature=0.2,
+        max_tokens=180,
+        timeout=timeout,
+        extra_body=COMMENTARY_EXTRA_BODY,
+    )
 
 
 def schedule_plan_commentary(
@@ -98,15 +154,39 @@ async def _send_commentary(
     if adapter is None or source is None:
         return
     try:
-        commentary = await asyncio.wait_for(caller(payload), timeout=15)
+        commentary = await asyncio.wait_for(caller(payload), timeout=COMMENTARY_OUTER_TIMEOUT_SECONDS)
+    except TimeoutError as exc:
+        logger.info(
+            "academy plan commentary skipped: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        await _send_commentary_notice(gateway, adapter, source, event, COMMENTARY_TIMEOUT_MESSAGE)
+        return
     except Exception as exc:
-        logger.info("academy plan commentary skipped: %s", exc)
+        logger.info(
+            "academy plan commentary skipped: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        await _send_commentary_notice(gateway, adapter, source, event, COMMENTARY_ERROR_MESSAGE)
         return
     text = commentary.strip()
     if not text:
         return
     metadata = gateway._thread_metadata_for_source(source, gateway._reply_anchor_for_event(event))
     await adapter.send(source.chat_id, f"미호 코멘트: {text}", metadata=metadata)
+
+
+async def _send_commentary_notice(
+    gateway: Any,
+    adapter: Any,
+    source: Any,
+    event: Any,
+    message: str,
+) -> None:
+    metadata = gateway._thread_metadata_for_source(source, gateway._reply_anchor_for_event(event))
+    await adapter.send(source.chat_id, message, metadata=metadata)
 
 
 def _log_task_failure(task: asyncio.Task) -> None:

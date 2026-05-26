@@ -13,19 +13,17 @@ from .context import (
     DISCORD_USER_ID,
     GUILD_ID,
     capture_gateway_context,
-    current_event_context,
-    current_gateway_context,
     set_gateway_context,
 )
-from .date_parser import parse_academy_date
+from .commentary_config import plan_commentary_aux_defaults
 from .formatting import (
     format_binding_status,
     format_catalog,
-    format_intent_preview,
     format_login_link,
 )
-from .intent import draft_intent
-from .plan_commentary import schedule_plan_commentary
+from .fast_model_routing import route_bound_academy_session_to_fast_model
+from .natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
+from .thread_context import academy_context_key
 from .academy_query_tools import (
     _attendance_day_tool_handler,
     _capability_status_tool_handler,
@@ -35,7 +33,14 @@ from .academy_query_tools import (
     _student_summary_tool_handler,
     _write_action_draft_tool_handler,
 )
-from .quick_router import quick_command_for
+from .academy_calendar_tool import (
+    _academy_schedule_range_tool_handler,
+    _consultation_schedule_range_tool_handler,
+)
+from .assignment_tool import _assignment_by_date_tool_handler
+from .attendance_calendar_tool import _student_attendance_calendar_image_tool_handler
+from .staff_schedule_tool import _staff_schedule_day_tool_handler
+from .student_attendance_tool import register_student_attendance_tool
 from .student_card_tool import _student_card_image_tool_handler
 
 
@@ -55,7 +60,7 @@ def _academy_command(raw_args: str = "") -> str:
     subcommand, _, remainder = text.partition(" ")
     normalized = subcommand.lower().strip()
     if normalized == "quick":
-        return _quick_command(remainder)
+        return "빠른 문장 가로채기는 꺼져 있어. 일반 문장으로 요청하면 미호가 판단해서 필요한 도구를 호출할게."
     if normalized == "login":
         return _login_command()
     if normalized == "status":
@@ -64,59 +69,7 @@ def _academy_command(raw_args: str = "") -> str:
         return _logout_command()
     if normalized == "link":
         return _login_command()
-    return format_intent_preview(draft_intent(text))
-
-
-def _quick_command(raw_args: str) -> str:
-    operation_key, _, request = raw_args.strip().partition(" ")
-    if operation_key == "staff.attendance_day":
-        target_day = parse_academy_date(request)
-        raw = _staff_attendance_day_tool_handler({"date": target_day.isoformat()})
-        payload = json.loads(raw)
-        if not payload.get("ok"):
-            return str(payload.get("message") or "강사 출근 목록을 조회하지 못했어.")
-        names = [row["name"] for row in payload.get("instructors", []) if row.get("name")]
-        if not names:
-            return f"{payload['date']} 출근 기록이 있는 강사는 없어."
-        return f"{payload['date']} 출근 강사: {', '.join(names)}."
-    if operation_key == "plan.by_date":
-        target_day = parse_academy_date(request)
-        raw = _plan_by_date_tool_handler({"date": target_day.isoformat(), "request": request})
-        payload = json.loads(raw)
-        if not payload.get("ok"):
-            return str(payload.get("message") or "운동계획서를 조회하지 못했어.")
-        schedule_plan_commentary(
-            gateway=current_gateway_context(),
-            event=current_event_context(),
-            payload=payload,
-        )
-        return _format_plan_quick_response(payload)
-    return "바로 처리할 수 있는 학원 업무를 찾지 못했어."
-
-
-def _format_plan_quick_response(payload: dict[str, Any]) -> str:
-    plans = [plan for plan in payload.get("plans", []) if isinstance(plan, dict)]
-    if not plans:
-        return str(payload.get("message") or f"{payload.get('date', '')} 운동계획서를 찾지 못했어.")
-    plan = plans[0]
-    lines = [
-        f"{payload['date']} {plan['instructor_name']} 강사 운동계획서",
-        f"시간대: {_slot_label(str(plan.get('time_slot') or ''))}",
-        f"계획 ID: {plan['id']}",
-        f"완료: {plan['completed_count']}/{len(plan.get('exercises') or [])}",
-    ]
-    exercises = [item for item in plan.get("exercises", []) if isinstance(item, dict)]
-    if exercises:
-        lines.append("운동 목록")
-        for exercise in exercises:
-            status = "완료" if exercise.get("completed") else "미완료"
-            note = f" - {exercise['note']}" if exercise.get("note") else ""
-            lines.append(f"- {exercise['name']} ({status}){note}")
-    return "\n".join(lines)
-
-
-def _slot_label(value: str) -> str:
-    return {"morning": "오전반", "afternoon": "오후반", "evening": "저녁반"}.get(value, value or "시간대 미지정")
+    return format_catalog()
 
 
 def _login_command() -> str:
@@ -157,11 +110,30 @@ def _logout_command() -> str:
 
 def _capture_gateway_context(event: Any = None, **kwargs: Any) -> dict[str, str]:
     capture_gateway_context(event)
-    set_gateway_context(kwargs.get("gateway"))
+    gateway = kwargs.get("gateway")
+    set_gateway_context(gateway)
     discord_user_id = DISCORD_USER_ID.get()
-    command = quick_command_for(str(getattr(event, "text", "") or "")) if get_binding(discord_user_id) else ""
-    if command:
-        return {"action": "rewrite", "text": command}
+    route_bound_academy_session_to_fast_model(
+        gateway=gateway,
+        event=event,
+        has_binding=bool(discord_user_id and get_binding(discord_user_id)),
+    )
+    return {"action": "allow"}
+
+
+async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dict[str, str]:
+    _capture_gateway_context(event, **kwargs)
+    source = getattr(event, "source", None)
+    platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
+    discord_user_id = DISCORD_USER_ID.get()
+    if platform != "discord" or not discord_user_id or get_binding(discord_user_id) is None:
+        return {"action": "allow"}
+    route = await resolve_and_execute_academy_request(
+        str(getattr(event, "text", "") or ""),
+        context_key=academy_context_key(event),
+    )
+    if route == AcademyNaturalRoute.HANDLED:
+        return {"action": "respond", "text": route.response_text}
     return {"action": "allow"}
 
 
@@ -172,12 +144,12 @@ def register(ctx: Any) -> None:
         description="PACA/Peak 로그인 연결, 기능 카탈로그, 실행 전 미리보기",
         args_hint="[요청]",
     )
-    ctx.register_hook("pre_gateway_dispatch", _capture_gateway_context)
+    ctx.register_hook("pre_gateway_dispatch", _academy_pre_gateway_dispatch)
     ctx.register_auxiliary_task(
         key="academy_plan_commentary",
         display_name="Academy plan commentary",
         description="Short Korean commentary for Peak workout-plan facts",
-        defaults={"provider": "auto", "model": "", "timeout": 12},
+        defaults=plan_commentary_aux_defaults(),
     )
     ctx.register_tool(
         name="academy_operations_catalog",
@@ -196,20 +168,17 @@ def register(ctx: Any) -> None:
         schema={
             "type": "object",
             "properties": {
-                "request": {
+                "operation_key": {
                     "type": "string",
-                    "description": "사용자의 PACA/Peak 학원 업무 요청 원문.",
+                    "description": "LLM이 선택한 catalog operation key.",
                 },
             },
-            "required": ["request"],
+            "required": ["operation_key"],
             "additionalProperties": False,
         },
         handler=_capability_status_tool_handler,
         description=(
-            "Classify a natural-language PACA/Peak academy request against connected tools. "
-            "Use before file, terminal, or generic catalog exploration when a request is about "
-            "staff, instructors, teachers, payments, plans, schedules, or unsupported academy data. "
-            "Returns whether the request can be answered from live tools now."
+            "Return implementation status for a PACA/Peak catalog operation key selected by the LLM."
         ),
     )
     ctx.register_tool(
@@ -271,6 +240,28 @@ def register(ctx: Any) -> None:
             "The assistant should write persona commentary from the returned facts, not from a fixed template."
         ),
     )
+    register_student_attendance_tool(ctx)
+    ctx.register_tool(
+        name="academy_student_attendance_calendar_image",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "student_query": {"type": "string", "description": "학생 이름, 학교, 또는 PACA 검색어."},
+                "start_date": {"type": "string", "description": "조회 시작일. YYYY-MM-DD 형식."},
+                "end_date": {"type": "string", "description": "조회 종료일. YYYY-MM-DD 형식."},
+                "today": {"type": "string", "description": "기준일. 보통 라우터 기준일이며 YYYY-MM-DD 형식."},
+            },
+            "required": ["student_query", "start_date", "end_date"],
+            "additionalProperties": False,
+        },
+        handler=_student_attendance_calendar_image_tool_handler,
+        description=(
+            "Create a safe PACA attendance calendar PNG for one student over an explicit date range. "
+            "Use for requests asking to see student attendance as a calendar, image, card, or long date-by-date view. "
+            "No-class days are left unmarked. Returns a MEDIA:<path> tag for Discord image delivery."
+        ),
+    )
     ctx.register_tool(
         name="academy_attendance_day",
         toolset="academy_ops",
@@ -279,10 +270,14 @@ def register(ctx: Any) -> None:
             "properties": {
                 "date": {"type": "string", "description": "조회 날짜. YYYY-MM-DD 형식."},
             },
+            "required": ["date"],
             "additionalProperties": False,
         },
         handler=_attendance_day_tool_handler,
-        description="Return a safe Peak attendance summary for one date, grouped by slot.",
+        description=(
+            "Return a safe Peak attendance summary for one explicit date, grouped by slot. "
+            "Do not call with empty arguments; resolve natural-language dates to YYYY-MM-DD first."
+        ),
     )
     ctx.register_tool(
         name="academy_staff_attendance_day",
@@ -292,19 +287,47 @@ def register(ctx: Any) -> None:
             "properties": {
                 "date": {
                     "type": "string",
-                    "description": "조회 날짜. YYYY-MM-DD, 오늘, 어제, 그제 등.",
-                },
-                "request": {
-                    "type": "string",
-                    "description": "원문 요청. date가 없으면 여기에서 날짜 표현을 읽는다.",
+                    "description": "조회 날짜. LLM이 해석한 YYYY-MM-DD 형식.",
                 },
             },
+            "required": ["date"],
             "additionalProperties": False,
         },
         handler=_staff_attendance_day_tool_handler,
         description=(
             "Return PACA instructor attendance for one day from live instructor attendance records. "
-            "Use for teacher/staff/instructor work-attendance questions."
+            "Use for teacher/staff/instructor work-attendance questions. "
+            "Do not call with empty arguments; resolve natural-language dates to YYYY-MM-DD first."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_staff_schedule_day",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "조회 날짜. LLM이 해석한 YYYY-MM-DD 형식.",
+                },
+                "time_slot": {
+                    "type": "string",
+                    "description": "morning, afternoon, evening 중 하나.",
+                },
+                "include_owner": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "원장까지 포함할지 여부. 강사 질문은 기본 False, 사용자가 원장 포함을 명시하면 True.",
+                },
+            },
+            "required": ["date"],
+            "additionalProperties": False,
+        },
+        handler=_staff_schedule_day_tool_handler,
+        description=(
+            "Return Peak instructor schedule for one day from live assignment records. "
+            "Use for future, scheduled, should-work, assignment, or staff schedule questions. "
+            "Do not call with empty arguments; resolve natural-language dates to YYYY-MM-DD first."
         ),
     )
     ctx.register_tool(
@@ -313,17 +336,37 @@ def register(ctx: Any) -> None:
         schema={
             "type": "object",
             "properties": {
-                "date": {"type": "string", "description": "조회 날짜. YYYY-MM-DD, 오늘, 어제, 그제 등."},
-                "request": {"type": "string", "description": "원문 요청. 강사 이름과 날짜 표현을 읽는다."},
-                "trainer_query": {"type": "string", "description": "필터링할 강사 이름."},
+                "date": {"type": "string", "description": "조회 날짜. LLM이 해석한 YYYY-MM-DD 형식."},
+                "trainer_query": {"type": "string", "description": "LLM이 해석한 필터링할 강사 이름."},
                 "time_slot": {"type": "string", "description": "morning, afternoon, evening 중 하나."},
             },
+            "required": ["date"],
             "additionalProperties": False,
         },
         handler=_plan_by_date_tool_handler,
         description=(
             "Return Peak daily workout plans from live Peak plan records. "
-            "Use for teacher/trainer workout-plan questions."
+            "Use for teacher/trainer workout-plan questions. "
+            "Do not call with empty arguments; resolve natural-language dates to YYYY-MM-DD first."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_assignment_by_date",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "조회 날짜. YYYY-MM-DD 형식."},
+                "time_slot": {"type": "string", "description": "morning, afternoon, evening 중 하나."},
+            },
+            "required": ["date"],
+            "additionalProperties": False,
+        },
+        handler=_assignment_by_date_tool_handler,
+        description=(
+            "Return safe Peak class assignments for an explicit date and optional time slot. "
+            "The assistant must resolve natural-language dates into date before calling this tool. "
+            "Do not call with empty arguments. Excludes phone numbers and private notes."
         ),
     )
     ctx.register_tool(
@@ -345,14 +388,60 @@ def register(ctx: Any) -> None:
         ),
     )
     ctx.register_tool(
+        name="academy_schedule_range",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "start_date": {"type": "string", "description": "조회 시작일. YYYY-MM-DD 형식."},
+                "end_date": {"type": "string", "description": "조회 종료일. YYYY-MM-DD 형식."},
+            },
+            "required": ["start_date", "end_date"],
+            "additionalProperties": False,
+        },
+        handler=_academy_schedule_range_tool_handler,
+        description=(
+            "Return safe PACA business/academy calendar events for an explicit date range. "
+            "The assistant must resolve natural-language periods such as this week, next week, "
+            "or a month into start_date/end_date before calling this tool. "
+            "Do not call with empty arguments."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_consultation_schedule_range",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "start_date": {"type": "string", "description": "조회 시작일. YYYY-MM-DD 형식."},
+                "end_date": {"type": "string", "description": "조회 종료일. YYYY-MM-DD 형식."},
+                "new_registration_only": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "신규 등록 상담만 볼지 여부.",
+                },
+            },
+            "required": ["start_date", "end_date"],
+            "additionalProperties": False,
+        },
+        handler=_consultation_schedule_range_tool_handler,
+        description=(
+            "Return safe PACA consultation schedules for an explicit date range. "
+            "Excludes phone numbers, checklists, admin notes, and long inquiry text. "
+            "The assistant must resolve natural-language periods into start_date/end_date first. "
+            "Do not call with empty arguments."
+        ),
+    )
+    ctx.register_tool(
         name="academy_prepare_write_action",
         toolset="academy_ops",
         schema={
             "type": "object",
             "properties": {
                 "request": {"type": "string", "description": "사용자가 반영하려는 학원 업무 원문."},
+                "operation_key": {"type": "string", "description": "LLM이 선택한 쓰기 작업 catalog operation key."},
             },
-            "required": ["request"],
+            "required": ["operation_key"],
             "additionalProperties": False,
         },
         handler=_write_action_draft_tool_handler,

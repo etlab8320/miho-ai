@@ -159,6 +159,71 @@ class TestBusySessionAck:
         agent.interrupt.assert_called_once_with("Are you working?")
 
     @pytest.mark.asyncio
+    async def test_interrupt_mode_queues_when_subagents_are_active(self):
+        """Normal follow-ups must not cascade-interrupt active delegate_task children."""
+        runner, _sentinel = _make_runner()
+        runner._busy_input_mode = "interrupt"
+        adapter = _make_adapter()
+
+        event = _make_event(text="follow up while delegated work is running")
+        sk = build_session_key(event.source)
+
+        agent = MagicMock()
+        agent._active_children = [object()]
+        agent._active_children_lock = None
+        agent.get_activity_summary.return_value = {}
+        runner._running_agents[sk] = agent
+        runner.adapters[event.source.platform] = adapter
+
+        result = await runner._handle_active_session_busy_message(event, sk)
+
+        assert result is True
+        agent.interrupt.assert_not_called()
+        assert sk in adapter._pending_messages
+        content = adapter._send_with_retry.call_args.kwargs.get("content", "")
+        assert "Subagent working" in content
+
+    @pytest.mark.asyncio
+    async def test_priority_interrupt_queues_when_subagents_are_active(self):
+        """The pre-command fast path also protects active subagents."""
+        from gateway.run import GatewayRunner
+
+        runner, _sentinel = _make_runner()
+        runner._busy_input_mode = "interrupt"
+        adapter = _make_adapter()
+
+        event = _make_event(text="quick follow up")
+        sk = build_session_key(event.source)
+
+        agent = MagicMock()
+        agent._active_children = [object()]
+        agent._active_children_lock = None
+        runner._running_agents[sk] = agent
+        runner.adapters[event.source.platform] = adapter
+
+        result = await GatewayRunner._handle_message(runner, event)
+
+        assert result is None
+        agent.interrupt.assert_not_called()
+        assert sk in adapter._pending_messages
+
+    def test_queue_or_replace_pending_event_merges_text_followups(self):
+        from gateway.run import GatewayRunner
+
+        runner, _sentinel = _make_runner()
+        adapter = _make_adapter()
+        first = _make_event(text="first")
+        second = _make_event(text="second")
+        second.source = first.source
+        sk = build_session_key(first.source)
+        runner.adapters[first.source.platform] = adapter
+
+        GatewayRunner._queue_or_replace_pending_event(runner, sk, first)
+        GatewayRunner._queue_or_replace_pending_event(runner, sk, second)
+
+        assert adapter._pending_messages[sk].text == "first\nsecond"
+
+    @pytest.mark.asyncio
     async def test_queue_mode_suppresses_interrupt_and_updates_ack(self):
         """When busy_input_mode is 'queue', message is queued WITHOUT interrupt."""
         runner, sentinel = _make_runner()

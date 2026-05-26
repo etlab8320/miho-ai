@@ -10,8 +10,8 @@ from typing import Any, Protocol
 class AcademyClient(Protocol):
     def search_paca_students(self, query: str) -> list[dict[str, Any]]: ...
     def get_paca_student_detail(self, paca_student_id: int) -> dict[str, Any]: ...
+    def get_paca_student_attendance(self, paca_student_id: int, *, year_month: str) -> dict[str, Any]: ...
     def list_peak_students(self) -> list[dict[str, Any]]: ...
-    def get_peak_attendance(self, day: date) -> dict[str, Any]: ...
     def list_peak_records(self, peak_student_id: int) -> list[dict[str, Any]]: ...
 
 
@@ -122,7 +122,7 @@ class AcademyStudentCardService:
         if peak_id is None:
             missing_sources.append("Peak 학생 매핑")
 
-        attendance = self._attendance_summary(peak_id, target_day, period)
+        attendance = self._attendance_summary(paca_id, target_day, period)
         if peak_id is None:
             records: list[RecordItem] = []
         else:
@@ -163,20 +163,18 @@ class AcademyStudentCardService:
 
     def _attendance_summary(
         self,
-        peak_student_id: int | None,
+        paca_student_id: int,
         today: date,
         period_days: int,
     ) -> AttendanceSummary:
         counts = {"present": 0, "late": 0, "absent": 0}
         recent_absences: list[str] = []
         today_status = "unknown"
-        if peak_student_id is None:
-            return AttendanceSummary(today_status, counts, recent_absences)
-
         first_day = today - timedelta(days=period_days - 1)
+        attendance_rows = self._paca_attendance_rows_by_day(paca_student_id, first_day, today)
         for offset in range(period_days):
             day = first_day + timedelta(days=offset)
-            status = self._attendance_status_for_day(peak_student_id, day)
+            status = _attendance_status(attendance_rows.get(day.isoformat()))
             if status in counts:
                 counts[status] += 1
             if status == "absent":
@@ -185,18 +183,23 @@ class AcademyStudentCardService:
                 today_status = status
         return AttendanceSummary(today_status, counts, recent_absences[-5:])
 
-    def _attendance_status_for_day(self, peak_student_id: int, day: date) -> str:
-        payload = self._client.get_peak_attendance(day)
-        slots = payload.get("slots") if isinstance(payload, dict) else {}
-        if not isinstance(slots, dict):
-            return ""
-        for rows in slots.values():
-            if not isinstance(rows, list):
-                continue
-            for row in rows:
-                if isinstance(row, dict) and _to_int(row.get("student_id")) == peak_student_id:
-                    return str(row.get("attendance_status") or row.get("status") or "")
-        return ""
+    def _paca_attendance_rows_by_day(
+        self,
+        paca_student_id: int,
+        start_day: date,
+        end_day: date,
+    ) -> dict[str, dict[str, Any]]:
+        rows: dict[str, dict[str, Any]] = {}
+        for year_month in _year_months(start_day, end_day):
+            payload = self._client.get_paca_student_attendance(paca_student_id, year_month=year_month)
+            records = payload.get("records") if isinstance(payload, dict) else None
+            for row in records or []:
+                if not isinstance(row, dict):
+                    continue
+                day = str(row.get("date") or "")[:10]
+                if start_day.isoformat() <= day <= end_day.isoformat():
+                    rows[day] = row
+        return rows
 
     def _record_items(self, rows: list[dict[str, Any]]) -> list[RecordItem]:
         grouped: dict[str, list[dict[str, Any]]] = {}
@@ -329,6 +332,25 @@ def _record_group_key(row: dict[str, Any]) -> str:
     if record_type_id and record_type_name:
         return f"{record_type_id}:{record_type_name}"
     return record_type_id or record_type_name
+
+
+def _attendance_status(row: dict[str, Any] | None) -> str:
+    if not row:
+        return ""
+    return str(row.get("attendance_status") or row.get("status") or "")
+
+
+def _year_months(start_day: date, end_day: date) -> list[str]:
+    months: list[str] = []
+    cursor = date(start_day.year, start_day.month, 1)
+    last = date(end_day.year, end_day.month, 1)
+    while cursor <= last:
+        months.append(cursor.strftime("%Y-%m"))
+        if cursor.month == 12:
+            cursor = date(cursor.year + 1, 1, 1)
+        else:
+            cursor = date(cursor.year, cursor.month + 1, 1)
+    return months
 
 
 def _to_int(value: Any) -> int:

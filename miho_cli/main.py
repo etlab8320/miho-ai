@@ -6964,8 +6964,10 @@ def _update_via_zip(args):
         urlretrieve(zip_url, zip_path)
 
         print("→ Extracting...")
+        import stat as _stat
         with zipfile.ZipFile(zip_path, "r") as zf:
-            # Validate paths to prevent zip-slip (path traversal)
+            # Validate paths to prevent zip-slip and reject symlink entries before
+            # extractall() can materialize anything from an untrusted update ZIP.
             tmp_dir_real = os.path.realpath(tmp_dir)
             for member in zf.infolist():
                 member_path = os.path.realpath(os.path.join(tmp_dir, member.filename))
@@ -6975,6 +6977,11 @@ def _update_via_zip(args):
                 ):
                     raise ValueError(
                         f"Zip-slip detected: {member.filename} escapes extraction directory"
+                    )
+                mode = (member.external_attr >> 16) & 0o170000
+                if _stat.S_ISLNK(mode):
+                    raise ValueError(
+                        f"ZIP contains unsupported symlink member: {member.filename}"
                     )
             zf.extractall(tmp_dir)
 

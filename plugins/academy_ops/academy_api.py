@@ -59,6 +59,37 @@ class AcademyApiClient:
         attendances = payload.get("attendances") if isinstance(payload, dict) else None
         return [item for item in attendances or [] if isinstance(item, dict)]
 
+    def get_paca_academy_events(self, start_day: date, end_day: date) -> list[dict[str, Any]]:
+        payload = self._get(
+            "/paca/academy-events",
+            params={"start_date": start_day.isoformat(), "end_date": end_day.isoformat()},
+        )
+        events = payload.get("events") if isinstance(payload, dict) else None
+        return [item for item in events or [] if isinstance(item, dict)]
+
+    def list_paca_schedules(self, start_day: date, end_day: date) -> list[dict[str, Any]]:
+        payload = self._get(
+            "/paca/schedules",
+            params={"start_date": start_day.isoformat(), "end_date": end_day.isoformat()},
+        )
+        schedules = payload.get("schedules") if isinstance(payload, dict) else None
+        return [item for item in schedules or [] if isinstance(item, dict)]
+
+    def get_paca_student_attendance(self, paca_student_id: int, *, year_month: str) -> dict[str, Any]:
+        payload = self._get(f"/paca/students/{paca_student_id}/attendance", params={"year_month": year_month})
+        return payload if isinstance(payload, dict) else {}
+
+    def list_paca_consultations(self, *, limit: int = 100, max_pages: int = 10) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for page in range(1, max_pages + 1):
+            payload = self._get("/paca/consultations", params={"page": str(page), "limit": str(limit)})
+            consultations = payload.get("consultations") if isinstance(payload, dict) else None
+            rows.extend(item for item in consultations or [] if isinstance(item, dict))
+            pagination = payload.get("pagination") if isinstance(payload, dict) else {}
+            if not isinstance(pagination, dict) or page >= _to_int(pagination.get("totalPages")):
+                break
+        return rows
+
     def list_peak_students(self) -> list[dict[str, Any]]:
         payload = self._get("/peak/students")
         if isinstance(payload, list):
@@ -68,6 +99,13 @@ class AcademyApiClient:
 
     def get_peak_attendance(self, day: date) -> dict[str, Any]:
         payload = self._get("/peak/attendance/students", params={"date": day.isoformat()})
+        return payload if isinstance(payload, dict) else {}
+
+    def get_peak_assignments(self, day: date, *, time_slot: str = "") -> dict[str, Any]:
+        params = {"date": day.isoformat()}
+        if time_slot:
+            params["time_slot"] = time_slot
+        payload = self._get("/peak/assignments", params=params)
         return payload if isinstance(payload, dict) else {}
 
     def get_peak_plans(self, day: date, *, time_slot: str = "") -> dict[str, Any]:
@@ -108,3 +146,10 @@ class AcademyApiClient:
             return response.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise AcademyApiError("학원 서버 응답을 확인하지 못했어. 잠시 후 다시 시도해줘.") from exc
+
+
+def _to_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0

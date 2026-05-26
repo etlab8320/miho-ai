@@ -17,7 +17,15 @@ import logging
 import socket as _socket
 import time
 from typing import Any, Dict, List, Optional
-from xml.etree import ElementTree as ET
+
+try:
+    import defusedxml.ElementTree as ET
+
+    DEFUSEDXML_AVAILABLE = True
+except ImportError:
+    from xml.etree import ElementTree as ET  # type: ignore[no-redef]
+
+    DEFUSEDXML_AVAILABLE = False
 
 try:
     from aiohttp import web
@@ -50,6 +58,14 @@ MESSAGE_DEDUP_TTL_SECONDS = 300
 
 def check_wecom_callback_requirements() -> bool:
     return AIOHTTP_AVAILABLE and HTTPX_AVAILABLE
+
+
+def _parse_callback_xml(xml_text: str) -> Any:
+    if not DEFUSEDXML_AVAILABLE:
+        upper = xml_text.upper()
+        if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+            raise ValueError("Unsafe XML entity declarations are not supported")
+    return ET.fromstring(xml_text)
 
 
 class WecomCallbackAdapter(BasePlatformAdapter):
@@ -310,13 +326,13 @@ class WecomCallbackAdapter(BasePlatformAdapter):
         self, app: Dict[str, Any], body: str,
         msg_signature: str, timestamp: str, nonce: str,
     ) -> str:
-        root = ET.fromstring(body)
+        root = _parse_callback_xml(body)
         encrypt = root.findtext("Encrypt", default="")
         crypt = self._crypt_for_app(app)
         return crypt.decrypt(msg_signature, timestamp, nonce, encrypt).decode("utf-8")
 
     def _build_event(self, app: Dict[str, Any], xml_text: str) -> Optional[MessageEvent]:
-        root = ET.fromstring(xml_text)
+        root = _parse_callback_xml(xml_text)
         msg_type = (root.findtext("MsgType") or "").lower()
         # Silently acknowledge lifecycle events.
         if msg_type == "event":

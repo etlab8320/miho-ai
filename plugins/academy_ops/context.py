@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
-import re
 from typing import Any
 
 
@@ -38,16 +37,3 @@ def current_event_context() -> Any | None:
 
 def current_discord_user_id() -> str:
     return DISCORD_USER_ID.get().strip()
-
-
-def infer_student_query_from_current_request() -> str:
-    text = REQUEST_TEXT.get().strip()
-    for pattern in [
-        r"([가-힣]{2,5})\s*(?:학생\s*)?카드",
-        r"([가-힣]{2,5})\s*학생",
-        r"([가-힣]{2,5})\s*(?:요약|상담|출결)",
-    ]:
-        match = re.search(pattern, text)
-        if match:
-            return match.group(1)
-    return ""

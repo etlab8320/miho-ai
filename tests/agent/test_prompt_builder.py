@@ -18,6 +18,7 @@ from agent.prompt_builder import (
     build_skills_system_prompt,
     build_nous_subscription_prompt,
     build_context_files_prompt,
+    build_context_hooks_prompt,
     build_environment_hints,
     CONTEXT_FILE_MAX_CHARS,
     DEFAULT_AGENT_IDENTITY,
@@ -30,6 +31,48 @@ from agent.prompt_builder import (
     WSL_ENVIRONMENT_HINT,
 )
 from miho_cli.nous_subscription import NousFeatureState, NousSubscriptionFeatures
+
+
+def test_context_hooks_load_matching_configured_file(tmp_path, monkeypatch):
+    context_file = tmp_path / "profile.md"
+    context_file.write_text("---\ncreated: now\n---\n맥스체대 학생카드 기준", encoding="utf-8")
+    monkeypatch.setattr(
+        "miho_cli.config.load_config",
+        lambda: {
+            "context": {
+                "context_hooks": [
+                    {
+                        "path": str(context_file),
+                        "triggers": ["학생카드"],
+                        "max_chars": 4000,
+                    }
+                ]
+            }
+        },
+    )
+
+    result = build_context_hooks_prompt("박지안 학생카드 만들어줘")
+
+    assert "Context Hooks" in result
+    assert "맥스체대 학생카드 기준" in result
+    assert "created: now" not in result
+
+
+def test_context_hooks_do_not_match_discord_sender_prefix(tmp_path, monkeypatch):
+    context_file = tmp_path / "max.md"
+    context_file.write_text("맥스 전용 맥락", encoding="utf-8")
+    monkeypatch.setattr(
+        "miho_cli.config.load_config",
+        lambda: {
+            "context": {
+                "context_hooks": [
+                    {"path": str(context_file), "triggers": ["맥스"]}
+                ]
+            }
+        },
+    )
+
+    assert build_context_hooks_prompt("[맥스] 그냥 일반 질문") == ""
 
 
 # =========================================================================
@@ -1201,4 +1244,3 @@ class TestOpenAIModelExecutionGuidance:
 # =========================================================================
 # Budget warning history stripping
 # =========================================================================
-

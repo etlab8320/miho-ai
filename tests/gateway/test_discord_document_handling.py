@@ -87,9 +87,12 @@ class FakeThread:
 
 @pytest.fixture(autouse=True)
 def _redirect_cache(tmp_path, monkeypatch):
-    """Point document cache to tmp_path so tests never write to ~/.miho."""
+    """Point media caches to tmp_path so tests never write to ~/.miho."""
     monkeypatch.setattr(
         "gateway.platforms.base.DOCUMENT_CACHE_DIR", tmp_path / "doc_cache"
+    )
+    monkeypatch.setattr(
+        "gateway.platforms.base.VIDEO_CACHE_DIR", tmp_path / "video_cache"
     )
 
 
@@ -174,6 +177,24 @@ class TestIncomingDocumentHandling:
         assert os.path.exists(event.media_urls[0])
         assert event.media_types == ["application/pdf"]
         assert "[Content of" not in (event.text or "")
+
+    @pytest.mark.asyncio
+    async def test_mp4_video_cached(self, adapter):
+        """A Discord video/mp4 attachment should be downloaded and exposed as VIDEO."""
+        video_bytes = b"\x00\x00\x00\x18ftypmp42 fake mp4 content"
+
+        with _mock_aiohttp_download(video_bytes):
+            msg = make_message([
+                make_attachment(filename="jump.mp4", content_type="video/mp4")
+            ])
+            await adapter._handle_message(msg)
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.message_type == MessageType.VIDEO
+        assert len(event.media_urls) == 1
+        assert os.path.exists(event.media_urls[0])
+        assert event.media_urls[0].endswith(".mp4")
+        assert event.media_types == ["video/mp4"]
 
     @pytest.mark.asyncio
     async def test_txt_content_injected(self, adapter):
@@ -528,4 +549,3 @@ class TestAllowAnyAttachment:
         """Garbage in max_attachment_bytes config falls back to 32 MiB."""
         adapter.config.extra["max_attachment_bytes"] = "not-a-number"
         assert adapter._discord_max_attachment_bytes() == 32 * 1024 * 1024
-

@@ -383,6 +383,27 @@ class TestMediaDeliveryPathValidation:
         secret = tmp_path / "secrets.txt"
         secret.write_text("not for upload")
         self._patch_roots(monkeypatch, root)
+        monkeypatch.setenv("MIHO_MEDIA_TRUST_RECENT_FILES", "false")
+
+        assert BasePlatformAdapter.validate_media_delivery_path(str(secret)) is None
+
+    def test_allows_recent_agent_output_outside_safe_root(self, tmp_path, monkeypatch):
+        root = tmp_path / "media-cache"
+        root.mkdir()
+        report = tmp_path / "report.pdf"
+        report.write_bytes(b"%PDF-1.4")
+        self._patch_roots(monkeypatch, root)
+
+        assert BasePlatformAdapter.validate_media_delivery_path(str(report)) == str(report.resolve())
+
+    def test_recent_trust_rejects_sensitive_home_paths(self, tmp_path, monkeypatch):
+        root = tmp_path / "media-cache"
+        ssh_dir = tmp_path / ".ssh"
+        secret = ssh_dir / "id_rsa"
+        ssh_dir.mkdir()
+        secret.write_text("private key")
+        self._patch_roots(monkeypatch, root)
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
         assert BasePlatformAdapter.validate_media_delivery_path(str(secret)) is None
 
@@ -408,6 +429,7 @@ class TestMediaDeliveryPathValidation:
         safe.write_bytes(b"OggS")
         unsafe.write_bytes(b"OggS")
         self._patch_roots(monkeypatch, root)
+        monkeypatch.setenv("MIHO_MEDIA_TRUST_RECENT_FILES", "false")
 
         filtered = BasePlatformAdapter.filter_media_delivery_paths([
             (str(unsafe), False),

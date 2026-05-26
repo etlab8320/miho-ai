@@ -1,0 +1,30 @@
+"""Gateway pre-dispatch response hook tests."""
+
+from __future__ import annotations
+
+import pytest
+
+from gateway.config import Platform
+from gateway.platforms.base import MessageEvent
+from gateway.run import GatewayRunner
+from gateway.session import SessionSource
+
+
+@pytest.mark.asyncio
+async def test_pre_gateway_dispatch_respond_returns_plugin_text(monkeypatch) -> None:
+    async def fake_invoke_hook_async(*_: object, **__: object) -> list[dict[str, str]]:
+        return [{"action": "respond", "text": "빠른 응답"}]
+
+    monkeypatch.setattr("miho_cli.plugins.invoke_hook_async", fake_invoke_hook_async)
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner.session_store = object()
+    event = MessageEvent(
+        text="5월 학원일정 줘",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="u1",
+            chat_id="c1",
+        ),
+    )
+
+    assert await runner._handle_message(event) == "빠른 응답"

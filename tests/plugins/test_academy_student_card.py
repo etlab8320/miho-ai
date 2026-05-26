@@ -80,17 +80,25 @@ class FakeAcademyClient:
             }
         ]
 
+    def get_paca_student_attendance(self, paca_student_id: int, *, year_month: str) -> dict:
+        assert paca_student_id == 101
+        self.attendance_dates.append(year_month)
+        return {
+            "records": [
+                {"date": "2026-05-23", "time_slot": "evening", "attendance_status": "absent"},
+                {"date": "2026-05-24", "time_slot": "afternoon", "attendance_status": "late"},
+                {"date": "2026-05-25", "time_slot": "evening", "attendance_status": "present"},
+            ]
+        }
+
     def get_peak_attendance(self, day: date) -> dict:
-        self.attendance_dates.append(day.isoformat())
         status_by_day = {
             "2026-05-23": "absent",
             "2026-05-24": "late",
             "2026-05-25": "present",
         }
         status = status_by_day.get(day.isoformat())
-        rows = []
-        if status:
-            rows.append({"student_id": 501, "attendance_status": status})
+        rows = [{"student_id": 501, "attendance_status": status}] if status else []
         return {"success": True, "date": day.isoformat(), "slots": {"evening": rows}}
 
     def list_peak_records(self, peak_student_id: int) -> list[dict]:
@@ -254,9 +262,7 @@ def test_student_card_service_defaults_attendance_window_to_two_weeks() -> None:
 
     service.build("김민준", today=date(2026, 5, 25))
 
-    assert len(client.attendance_dates) == 14
-    assert client.attendance_dates[0] == "2026-05-12"
-    assert client.attendance_dates[-1] == "2026-05-25"
+    assert client.attendance_dates == ["2026-05"]
 
 
 def test_student_card_single_recent_absence_is_still_stable() -> None:
@@ -283,6 +289,8 @@ def test_academy_api_client_parses_verified_route_shapes() -> None:
             return httpx.Response(200, json=[{"id": 101, "name": "김민준"}])
         if request.url.path == "/paca/students/101":
             return httpx.Response(200, json={"student": {"id": 101, "name": "김민준"}})
+        if request.url.path == "/paca/students/101/attendance":
+            return httpx.Response(200, json={"records": [{"date": "2026-05-25", "attendance_status": "present"}]})
         if request.url.path == "/peak/students":
             return httpx.Response(200, json=[{"id": 501, "paca_student_id": 101}])
         if request.url.path == "/peak/attendance/students":
@@ -299,6 +307,7 @@ def test_academy_api_client_parses_verified_route_shapes() -> None:
 
     assert client.search_paca_students("김민준") == [{"id": 101, "name": "김민준"}]
     assert client.get_paca_student_detail(101)["student"]["id"] == 101
+    assert client.get_paca_student_attendance(101, year_month="2026-05")["records"][0]["attendance_status"] == "present"
     assert client.list_peak_students() == [{"id": 501, "paca_student_id": 101}]
     assert client.get_peak_attendance(date(2026, 5, 25))["success"] is True
     assert client.list_peak_records(501) == [{"id": 1}]
@@ -373,7 +382,7 @@ def test_gateway_context_is_captured_for_non_slash_academy_tool_requests() -> No
     assert json.loads(output)["ok"] is True
 
 
-def test_student_card_tool_infers_query_from_discord_request_when_args_empty() -> None:
+def test_student_card_tool_requires_llm_structured_query_when_args_empty() -> None:
     _capture_gateway_context(
         MessageEvent(
             text="고준희 학생카드좀줘봐",
@@ -393,5 +402,5 @@ def test_student_card_tool_infers_query_from_discord_request_when_args_empty() -
     )
     payload = json.loads(output)
 
-    assert payload["ok"] is True
-    assert payload["card"]["profile"]["name"] == "김민준"
+    assert payload["ok"] is False
+    assert "학생 이름" in payload["message"]

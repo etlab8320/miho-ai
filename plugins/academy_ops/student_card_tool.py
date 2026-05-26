@@ -9,7 +9,8 @@ from typing import Any
 
 from .academy_api import AcademyApiClient, AcademyApiError
 from .auth_store import decrypt_token, get_binding
-from .context import current_discord_user_id, infer_student_query_from_current_request
+from .context import current_discord_user_id
+from .response_guidance import academy_response_guidance
 from .paca_client import DEFAULT_PACA_BASE_URL
 from .student_card import (
     AcademyClient,
@@ -24,7 +25,7 @@ def _student_card_image_tool_handler(
     **kwargs: Any,
 ) -> str:
     payload = args or {}
-    student_query = str(payload.get("student_query") or "").strip() or infer_student_query_from_current_request()
+    student_query = str(payload.get("student_query") or "").strip()
     period_days = _int_arg(payload.get("period_days"), default=14)
     today = _date_arg(payload.get("today"))
     if not student_query:
@@ -70,11 +71,7 @@ def _student_card_image_tool_handler(
             "image_path": str(image_path),
             "media_tag": media_tag,
             "summary_text": card.risk.judgment,
-            "assistant_guidance": {
-                "persona_commentary": True,
-                "avoid_hardcoded_judgment": True,
-                "instruction": "이미지는 사실 기반 카드이고, 답변 문장은 card의 출결/기록/위험 신호를 보고 미호 말투로 작성해.",
-            },
+            "assistant_guidance": academy_response_guidance(),
             "missing_sources": card.missing_sources,
             "card": card.to_public_dict(),
         },

@@ -10,8 +10,13 @@ tools:
   - academy_capability_status
   - academy_student_card_image
   - academy_student_summary
+  - academy_student_attendance_range
   - academy_attendance_day
   - academy_staff_attendance_day
+  - academy_staff_schedule_day
   - academy_plan_by_date
+  - academy_assignment_by_date
+  - academy_schedule_range
+  - academy_consultation_schedule_range
   - academy_consultation_candidates
   - academy_prepare_write_action

@@ -324,11 +324,21 @@ function InlineContent({
                 <HighlightedText text={node.content} terms={highlightTerms} />
               </em>
             );
-          case "link":
+          case "link": {
+            const href = node.href.trim();
+            if (!/^(https?:|mailto:)/i.test(href)) {
+              return (
+                <HighlightedText
+                  key={i}
+                  text={node.text}
+                  terms={highlightTerms}
+                />
+              );
+            }
             return (
               <a
                 key={i}
-                href={node.href}
+                href={href}
                 target="_blank"
                 rel="noreferrer"
                 className="text-primary underline underline-offset-2 decoration-primary/30 hover:decoration-primary/60 transition-colors"
@@ -336,6 +346,7 @@ function InlineContent({
                 {node.text}
               </a>
             );
+          }
           case "br":
             return <br key={i} />;
         }

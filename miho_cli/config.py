@@ -1517,6 +1517,16 @@ DEFAULT_CONFIG = {
         "max_parallel_jobs": None,
     },
 
+    "gateway": {
+        # Extra host directories whose files may be delivered as native
+        # messaging-platform attachments.
+        "media_delivery_allow_dirs": [],
+        # Let freshly-created agent artifacts outside cache dirs be delivered,
+        # while hard-denying credential/system paths.
+        "trust_recent_files": True,
+        "trust_recent_files_seconds": 600,
+    },
+
     # Kanban multi-agent coordination — controls the dispatcher loop that
     # spawns workers for ready tasks. The dispatcher ticks every N seconds
     # (default 60), reclaims stale claims, promotes dependency-satisfied

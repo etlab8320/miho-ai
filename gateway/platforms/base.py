@@ -15,6 +15,7 @@ import re
 import socket as _socket
 import subprocess
 import sys
+import time
 import uuid
 from abc import ABC, abstractmethod
 from urllib.parse import urlsplit
@@ -817,6 +818,8 @@ SCREENSHOT_CACHE_DIR = get_miho_dir("cache/screenshots", "browser_screenshots")
 MEDIA_CACHE_DIR = get_miho_dir("cache/media", "media_cache")
 _MIHO_HOME = get_miho_home()
 MEDIA_DELIVERY_ALLOW_DIRS_ENV = "MIHO_MEDIA_ALLOW_DIRS"
+MEDIA_DELIVERY_TRUST_RECENT_ENV = "MIHO_MEDIA_TRUST_RECENT_FILES"
+MEDIA_DELIVERY_TRUST_RECENT_SECONDS_ENV = "MIHO_MEDIA_TRUST_RECENT_SECONDS"
 MEDIA_DELIVERY_SAFE_ROOTS = (
     IMAGE_CACHE_DIR,
     AUDIO_CACHE_DIR,
@@ -830,6 +833,29 @@ MEDIA_DELIVERY_SAFE_ROOTS = (
     _MIHO_HOME / "document_cache",
     _MIHO_HOME / "browser_screenshots",
     _MIHO_HOME / "media_cache",
+)
+_MEDIA_DELIVERY_TRUST_RECENT_DEFAULT_SECONDS = 600
+_MEDIA_DELIVERY_DENIED_PREFIXES = (
+    "/etc",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/root",
+    "/boot",
+    "/var/log",
+    "/var/lib",
+    "/var/run",
+)
+_MEDIA_DELIVERY_DENIED_HOME_SUBPATHS = (
+    ".ssh",
+    ".aws",
+    ".gnupg",
+    ".kube",
+    ".docker",
+    ".config",
+    ".azure",
+    ".gcloud",
+    "Library/Keychains",
 )
 
 
@@ -846,6 +872,51 @@ def _media_delivery_allowed_roots() -> List[Path]:
             if root.is_absolute():
                 roots.append(root)
     return roots
+
+
+def _media_delivery_recency_seconds() -> float:
+    raw = os.environ.get(MEDIA_DELIVERY_TRUST_RECENT_ENV, "1").strip().lower()
+    if raw in {"0", "false", "no", "off", ""}:
+        return 0.0
+    try:
+        custom = os.environ.get(MEDIA_DELIVERY_TRUST_RECENT_SECONDS_ENV, "").strip()
+        if custom:
+            return max(0.0, float(custom))
+    except (TypeError, ValueError):
+        pass
+    return float(_MEDIA_DELIVERY_TRUST_RECENT_DEFAULT_SECONDS)
+
+
+def _media_delivery_denied_paths() -> List[Path]:
+    denied = [Path(p) for p in _MEDIA_DELIVERY_DENIED_PREFIXES]
+    home = Path.home()
+    for subpath in _MEDIA_DELIVERY_DENIED_HOME_SUBPATHS:
+        denied.append(home / subpath)
+    denied.append(_MIHO_HOME / ".env")
+    denied.append(_MIHO_HOME / "auth.json")
+    denied.append(_MIHO_HOME / "credentials")
+    return denied
+
+
+def _path_under_denied_prefix(resolved: Path) -> bool:
+    for denied in _media_delivery_denied_paths():
+        try:
+            resolved_denied = denied.expanduser().resolve(strict=False)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if _path_is_within(resolved, resolved_denied) or resolved == resolved_denied:
+            return True
+    return False
+
+
+def _file_is_recently_produced(resolved: Path, window_seconds: float) -> bool:
+    if window_seconds <= 0:
+        return False
+    try:
+        mtime = resolved.stat().st_mtime
+    except OSError:
+        return False
+    return (time.time() - mtime) <= window_seconds
 
 
 def _path_is_within(path: Path, root: Path) -> bool:
@@ -883,6 +954,9 @@ def validate_media_delivery_path(path: str) -> Optional[str]:
     except (OSError, RuntimeError, ValueError):
         return None
 
+    if expanded.is_symlink():
+        return None
+
     if not resolved.is_file():
         return None
 
@@ -892,6 +966,11 @@ def validate_media_delivery_path(path: str) -> Optional[str]:
         except (OSError, RuntimeError, ValueError):
             continue
         if _path_is_within(resolved, resolved_root):
+            return str(resolved)
+
+    window = _media_delivery_recency_seconds()
+    if window > 0 and not _path_under_denied_prefix(resolved):
+        if _file_is_recently_produced(resolved, window):
             return str(resolved)
 
     return None

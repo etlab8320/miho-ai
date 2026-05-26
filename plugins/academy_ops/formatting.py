@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from .catalog import CONNECTED_APIS, OperationSpec, grouped_operations
-from .intent import IntentDraft
 
 
 def format_catalog() -> str:
@@ -27,28 +26,6 @@ def format_catalog() -> str:
             "쓰기 작업은 확인 버튼과 감사 로그가 붙기 전까지 실행하지 않아.",
         ]
     )
-    return "\n".join(lines)
-
-
-def format_intent_preview(draft: IntentDraft) -> str:
-    op = draft.operation
-    if op is None:
-        return "요청을 처리할 기능을 찾지 못했어."
-
-    lines = [
-        draft.message,
-        "",
-        f"- 기능: {op.title}",
-        f"- 모드: {'쓰기' if op.mode == 'write' else '읽기'}",
-        f"- 구현 상태: {_status_label(op.implementation_status)}",
-        f"- API 계약: {_contract_label(op.api_contract_status)}",
-        f"- 후보 API: {op.endpoint.service} {op.endpoint.method} {op.endpoint.path}",
-    ]
-    if op.requires_confirmation:
-        lines.append("- 확인: 디스코드 버튼 승인 필요")
-    if op.requires_audit_log:
-        lines.append("- 로그: 감사 로그 필요")
-    lines.append(f"- 새 API 필요: {_needs_api_label(op.needs_new_backend_api)}")
     return "\n".join(lines)
 
 

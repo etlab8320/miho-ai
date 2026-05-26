@@ -172,23 +172,24 @@ def test_bot_bypass_does_not_leak_to_other_platforms(monkeypatch):
 
 
 # -----------------------------------------------------------------------------
-# DISCORD_ALLOWED_ROLES gateway-layer bypass (#7871)
+# DISCORD_ALLOWED_ROLES gateway-layer trust boundary
 # -----------------------------------------------------------------------------
 
 
-def test_discord_role_config_bypasses_gateway_allowlist(monkeypatch):
-    """When DISCORD_ALLOWED_ROLES is set, _is_user_authorized must trust
-    the adapter's pre-filter and authorize. Without this, role-only setups
-    (DISCORD_ALLOWED_ROLES populated, DISCORD_ALLOWED_USERS empty) would
-    hit the 'no allowlists configured' branch and get rejected.
+def test_discord_role_config_alone_does_not_bypass_gateway_allowlist(monkeypatch):
+    """Gateway auth must not trust DISCORD_ALLOWED_ROLES by itself.
+
+    Role membership is adapter-scoped Discord metadata. Once a message reaches
+    the shared gateway layer, a configured role env var alone must not turn into
+    a platform-wide allow-all path.
     """
     runner = _make_bare_runner()
 
     monkeypatch.setenv("DISCORD_ALLOWED_ROLES", "1493705176387948674")
-    # Note: DISCORD_ALLOWED_USERS is NOT set — the entire point.
+    # Note: DISCORD_ALLOWED_USERS is NOT set -- the entire point.
 
     source = _make_discord_human_source(user_id="999888777")
-    assert runner._is_user_authorized(source) is True
+    assert runner._is_user_authorized(source) is False
 
 
 def test_discord_role_config_still_authorizes_alongside_users(monkeypatch):
@@ -201,8 +202,8 @@ def test_discord_role_config_still_authorizes_alongside_users(monkeypatch):
     monkeypatch.setenv("DISCORD_ALLOWED_ROLES", "1493705176387948674")
     monkeypatch.setenv("DISCORD_ALLOWED_USERS", "100200300")
 
-    # User on the user allowlist, no role → still authorized at gateway
-    # level via the role bypass (adapter already approved them).
+    # User on the user allowlist still authorizes through the normal user-id
+    # path. The role env var must not be required or trusted globally.
     source = _make_discord_human_source(user_id="100200300")
     assert runner._is_user_authorized(source) is True
 

@@ -3,25 +3,11 @@
 from __future__ import annotations
 
 from datetime import date
-import re
 from typing import Any, Protocol
 
 
 class PlanLookupClient(Protocol):
     def get_peak_plans(self, day: date, *, time_slot: str = "") -> dict[str, Any]: ...
-
-
-def extract_trainer_query(text: str) -> str:
-    compact = " ".join(text.strip().split())
-    patterns = [
-        r"([가-힣]{2,5})\s*(?:강사|선생님|선생|쌤)?\s*(?:의\s*)?(?:운동\s*계획서?|수업\s*계획서?|계획서)",
-        r"(?:강사|선생님|선생|쌤)\s*([가-힣]{2,5})",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, compact)
-        if match:
-            return match.group(1)
-    return ""
 
 
 def plan_lookup_for_day(

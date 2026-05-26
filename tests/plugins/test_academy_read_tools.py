@@ -45,7 +45,7 @@ def test_student_summary_tool_returns_safe_structured_card_data() -> None:
     assert "민감 메모" not in dumped
 
 
-def test_student_summary_tool_infers_query_from_discord_request() -> None:
+def test_student_summary_tool_requires_llm_structured_query() -> None:
     _capture_gateway_context(
         MessageEvent(
             text="고준희 학생 요약해줘",
@@ -65,8 +65,8 @@ def test_student_summary_tool_infers_query_from_discord_request() -> None:
         )
     )
 
-    assert result["ok"] is True
-    assert result["card"]["profile"]["name"] == "김민준"
+    assert result["ok"] is False
+    assert "학생 이름" in result["message"]
 
 
 def test_attendance_day_tool_summarizes_peak_slots_without_sensitive_fields() -> None:
@@ -87,7 +87,7 @@ def test_attendance_day_tool_summarizes_peak_slots_without_sensitive_fields() ->
 def test_capability_status_routes_staff_attendance_to_live_tool() -> None:
     result = _payload(
         _capability_status_tool_handler(
-            {"request": "어제 출근 한 강사 목록좀 줘"},
+            {"operation_key": "staff.attendance_day"},
         )
     )
 
@@ -171,7 +171,7 @@ def test_consultation_candidates_use_read_only_attendance_signals() -> None:
 def test_write_action_draft_blocks_mutation_and_requires_confirmation() -> None:
     result = _payload(
         _write_action_draft_tool_handler(
-            {"request": "홍길동 학원비 카드 결제 납부 완료"}
+            {"operation_key": "payment.mark_paid", "request": "홍길동 학원비 카드 결제 납부 완료"}
         )
     )
 

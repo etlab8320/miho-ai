@@ -1438,6 +1438,102 @@ def _load_cursorrules(cwd_path: Path) -> str:
     return _truncate_content(cursorrules_content, ".cursorrules")
 
 
+def _normalize_context_hook_entries(context_cfg: dict) -> list[dict]:
+    if not isinstance(context_cfg, dict):
+        return []
+    raw_entries = []
+    for key in ("pinned_files", "context_hooks"):
+        value = context_cfg.get(key) or []
+        if isinstance(value, dict):
+            raw_entries.append(value)
+        elif isinstance(value, list):
+            raw_entries.extend(value)
+    return [entry for entry in raw_entries if isinstance(entry, dict)]
+
+
+def _context_hook_matches(entry: dict, user_message: str) -> bool:
+    mode = str(entry.get("mode") or entry.get("when") or "conditional").strip().lower()
+    if mode in {"always", "pinned", "include"}:
+        return True
+    if mode in {"off", "disabled", "never", "false"}:
+        return False
+
+    triggers = entry.get("triggers") or entry.get("trigger") or []
+    if isinstance(triggers, str):
+        triggers = [triggers]
+    if not triggers:
+        return False
+
+    match_text = re.sub(r"^\s*\[[^\]\n]{1,80}\]\s*", "", user_message or "", count=1)
+    haystack = match_text.casefold()
+    return any(str(trigger).casefold() in haystack for trigger in triggers if str(trigger).strip())
+
+
+def _load_context_hook_file(entry: dict) -> str:
+    raw_path = str(entry.get("path") or "").strip()
+    if not raw_path:
+        return ""
+    expanded = os.path.expandvars(os.path.expanduser(raw_path))
+    path = Path(expanded)
+    if not path.is_absolute():
+        path = get_miho_home() / path
+    try:
+        if not path.is_file():
+            logger.debug("Configured context hook file does not exist: %s", path)
+            return ""
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            return ""
+        content = _strip_yaml_frontmatter(content)
+        content = _scan_context_content(content, str(path))
+        max_chars = entry.get("max_chars") or CONTEXT_FILE_MAX_CHARS
+        try:
+            max_chars = int(max_chars)
+        except (TypeError, ValueError):
+            max_chars = CONTEXT_FILE_MAX_CHARS
+        result = f"## {path}\n\n{content}"
+        return _truncate_content(result, path.name, max_chars=max(1000, max_chars))
+    except Exception as exc:
+        logger.debug("Could not read context hook file %s: %s", path, exc)
+        return ""
+
+
+def build_context_hooks_prompt(user_message: str = "") -> str:
+    try:
+        from miho_cli.config import load_config
+
+        cfg = load_config()
+    except Exception as exc:
+        logger.debug("Could not load config for context hooks: %s", exc)
+        return ""
+
+    entries = _normalize_context_hook_entries((cfg or {}).get("context", {}))
+    sections = []
+    seen_paths = set()
+    for entry in entries:
+        if not _context_hook_matches(entry, user_message):
+            continue
+        raw_path = str(entry.get("path") or "").strip()
+        if not raw_path:
+            continue
+        normalized_path = str(Path(os.path.expandvars(os.path.expanduser(raw_path))).resolve())
+        if normalized_path in seen_paths:
+            continue
+        seen_paths.add(normalized_path)
+        loaded = _load_context_hook_file(entry)
+        if loaded:
+            sections.append(loaded)
+
+    if not sections:
+        return ""
+    return (
+        "# Context Hooks\n\n"
+        "The following configured user/project context files matched this turn. "
+        "Treat them as supplemental context, not higher-priority system instructions.\n\n"
+        + "\n\n".join(sections)
+    )
+
+
 def build_context_files_prompt(cwd: Optional[str] = None, skip_soul: bool = False) -> str:
     """Discover and load context files for the system prompt.
 

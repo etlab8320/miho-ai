@@ -9,7 +9,6 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date
 from http.server import ThreadingHTTPServer
 from types import SimpleNamespace
 
@@ -29,7 +28,6 @@ from plugins.academy_ops.auth_flow import (
 from plugins.academy_ops.auth_pages import render_login_page
 from plugins.academy_ops.auth_store import decrypt_token, get_binding, key_path
 from plugins.academy_ops.catalog import CONNECTED_APIS, all_operations, find_operation, operations_payload
-from plugins.academy_ops.intent import draft_intent
 from plugins.academy_ops.paca_client import AcademyLoginError, login_paca
 from plugins.academy_ops.server import AcademyAuthHandler
 import plugins.academy_ops as academy_ops_module
@@ -62,39 +60,32 @@ def test_connected_api_is_only_login_binding_for_now():
 
 
 def test_payment_completion_stays_a_planned_write_candidate():
-    draft = draft_intent("홍길동 학원비 카드 결제 납부 완료")
-    op = draft.operation
+    op = find_operation("payment.mark_paid")
 
-    assert draft.operation_key == "payment.mark_paid"
-    assert draft.needs_confirmation is True
     assert op is not None
+    assert op.requires_confirmation is True
     assert op.implementation_status == "planned"
     assert op.api_contract_status == "unverified"
     assert op.endpoint.path == "backend route inspection required"
 
 
 def test_plan_lookup_is_connected_read_tool():
-    draft = draft_intent("5월 25일 박성준 강사 운동계획 보여줘")
-    op = draft.operation
+    op = find_operation("plan.by_date")
 
-    assert draft.operation_key == "plan.by_date"
-    assert draft.needs_confirmation is False
     assert op is not None
     assert op.implementation_status == "implemented"
     assert op.api_contract_status == "verified_in_plugin"
     assert op.endpoint.path == "/peak/plans"
 
 
-def test_staff_attendance_lookup_stays_a_planned_read_candidate():
-    draft = draft_intent("어제 출근 한 강사 목록좀 줘")
-    op = draft.operation
+def test_staff_attendance_lookup_is_connected_read_tool():
+    op = find_operation("staff.attendance_day")
 
-    assert draft.operation_key == "student.search"
-    assert draft.needs_confirmation is False
     assert op is not None
+    assert op.implementation_status == "implemented"
 
 
-def test_gateway_context_rewrites_staff_attendance_to_academy_quick_command(monkeypatch, tmp_path):
+def test_gateway_context_does_not_rewrite_natural_staff_request(monkeypatch, tmp_path):
     from plugins.academy_ops.auth_store import AcademyBinding, save_binding
 
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
@@ -122,37 +113,25 @@ def test_gateway_context_rewrites_staff_attendance_to_academy_quick_command(monk
         ),
     )
 
-    result = _capture_gateway_context(event)
+    class Gateway:
+        def __init__(self) -> None:
+            self._session_model_overrides = {}
 
-    assert result["action"] == "rewrite"
-    assert result["text"].startswith("/academy quick staff.attendance_day ")
+        def _session_key_for_source(self, source):
+            return source.chat_id
+
+        def _evict_cached_agent(self, session_key):
+            return None
+
+    result = _capture_gateway_context(event, gateway=Gateway())
+
+    assert result["action"] == "allow"
 
 
-def test_academy_quick_staff_attendance_reads_korean_month_day(monkeypatch):
-    captured = {}
-    expected_date = f"{date.today().year}-05-24"
-
-    def fake_staff_attendance_day_tool(args):
-        captured.update(args)
-        return json.dumps(
-            {
-                "ok": True,
-                "date": args["date"],
-                "instructors": [{"name": "남유정"}],
-            },
-            ensure_ascii=False,
-        )
-
-    monkeypatch.setattr(
-        academy_ops_module,
-        "_staff_attendance_day_tool_handler",
-        fake_staff_attendance_day_tool,
-    )
-
+def test_academy_quick_staff_attendance_is_disabled():
     output = _academy_command("quick staff.attendance_day 5월 24일에 출근한 강사")
 
-    assert captured["date"] == expected_date
-    assert output == f"{expected_date} 출근 강사: 남유정."
+    assert "빠른 문장 가로채기는 꺼져 있어" in output
 
 
 def test_consultation_candidates_are_read_only_composed_analysis():
@@ -174,20 +153,18 @@ def test_academy_slash_command_returns_catalog_without_args():
     assert "확인 버튼" in output
 
 
-def test_academy_slash_command_previews_write_request():
+def test_academy_slash_command_with_request_still_returns_catalog():
     output = _academy_command("홍길동 학원비 카드 결제 납부 완료")
 
-    assert "학원비 납부 완료 반영" in output
-    assert "디스코드 버튼 승인 필요" in output
-    assert "구현 상태: 연동 후보" in output
-    assert "새 API 필요: 백엔드 route 확인 전 판단 불가" in output
+    assert "PACA/Peak 디스코드 운영 기능" in output
+    assert "연동 후보" in output
 
 
 def test_catalog_tool_returns_json_payload():
     payload = json.loads(_catalog_tool_handler({}))
 
     assert "operations" in payload
-    assert any(op["key"] == "attendance.student_month" for op in payload["operations"])
+    assert any(op["key"] == "attendance.student_month" for op in payload["connected_apis"])
 
 
 def test_catalog_tool_accepts_dispatch_metadata_kwargs():

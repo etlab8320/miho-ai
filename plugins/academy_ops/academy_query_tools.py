@@ -10,29 +10,24 @@ from typing import Any
 from .academy_api import AcademyApiClient, AcademyApiError
 from .auth_store import decrypt_token, get_binding
 from .catalog import OperationSpec, find_operation
-from .context import current_discord_user_id, infer_student_query_from_current_request
-from .date_parser import parse_academy_date
-from .intent import draft_intent
+from .context import current_discord_user_id
 from .paca_client import DEFAULT_PACA_BASE_URL
-from .plan_lookup import extract_trainer_query, plan_lookup_for_day
-from .quick_router import classify_quick_operation
+from .plan_lookup import plan_lookup_for_day
+from .response_guidance import academy_response_guidance
 from .staff_attendance import staff_attendance_for_day
 from .student_card import AcademyClient, AcademyStudentCardService, StudentCardError
 
 
 def _capability_status_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
-    request = str((args or {}).get("request") or "").strip()
-    if not request:
-        return _json_error("확인할 학원 업무 요청을 알려줘.")
-    operation_key = classify_quick_operation(request)
-    draft = draft_intent(request) if not operation_key else None
-    op = find_operation(operation_key) if operation_key else draft.operation
+    operation_key = str((args or {}).get("operation_key") or "").strip()
+    if not operation_key:
+        return _json_error("확인할 학원 업무 키를 operation_key로 지정해줘.")
+    op = find_operation(operation_key)
     if op is None:
         return _json_error("요청을 처리할 학원 업무를 찾지 못했어.")
     return _json_ok(
         {
             "operation": "capability.status",
-            "request": request,
             "operation_key": op.key,
             "title": op.title,
             "domain": op.domain,
@@ -48,7 +43,7 @@ def _capability_status_tool_handler(args: dict[str, Any] | None = None, **_: Any
 
 def _student_summary_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
     payload = args or {}
-    query = str(payload.get("student_query") or "").strip() or infer_student_query_from_current_request()
+    query = str(payload.get("student_query") or "").strip()
     if not query:
         return _json_error("학생 이름이나 검색어를 알려줘.")
     client_or_error = _resolve_client(kwargs.get("client"))
@@ -74,7 +69,9 @@ def _student_summary_tool_handler(args: dict[str, Any] | None = None, **kwargs: 
 
 def _attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
     payload = args or {}
-    target_day = _date_arg(payload.get("date")) or date.today()
+    target_day = _date_arg(payload.get("date"))
+    if target_day is None:
+        return _json_error("조회 날짜를 YYYY-MM-DD로 지정해줘.")
     client_or_error = _resolve_client(kwargs.get("client"))
     if isinstance(client_or_error, str):
         return _json_error(client_or_error)
@@ -90,13 +87,16 @@ def _attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwargs: A
             "summary": summary,
             "slots": slots,
             "message": _attendance_message(target_day, summary),
+            "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
         }
     )
 
 
 def _staff_attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
     payload = args or {}
-    target_day = parse_academy_date(payload.get("date") or payload.get("request"))
+    target_day = _date_arg(payload.get("date"))
+    if target_day is None:
+        return _json_error("조회 날짜를 YYYY-MM-DD로 지정해줘.")
     client_or_error = _resolve_client(kwargs.get("client"))
     if isinstance(client_or_error, str):
         return _json_error(client_or_error)
@@ -111,15 +111,17 @@ def _staff_attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwa
             "summary": attendance["summary"],
             "instructors": attendance["instructors"],
             "message": _staff_attendance_message(attendance),
+            "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
         }
     )
 
 
 def _plan_by_date_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
     payload = args or {}
-    request = str(payload.get("request") or "").strip()
-    target_day = parse_academy_date(payload.get("date") or request)
-    trainer_query = str(payload.get("trainer_query") or "").strip() or extract_trainer_query(request)
+    target_day = _date_arg(payload.get("date"))
+    if target_day is None:
+        return _json_error("조회 날짜를 YYYY-MM-DD로 지정해줘.")
+    trainer_query = str(payload.get("trainer_query") or "").strip()
     time_slot = str(payload.get("time_slot") or "").strip()
     client_or_error = _resolve_client(kwargs.get("client"))
     if isinstance(client_or_error, str):
@@ -142,6 +144,7 @@ def _plan_by_date_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any
             "summary": plans["summary"],
             "plans": plans["plans"],
             "message": _plan_message(plans),
+            "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
         }
     )
 
@@ -166,16 +169,17 @@ def _consultation_candidates_tool_handler(args: dict[str, Any] | None = None, **
             "write_enabled": False,
             "basis": "최근 출결만 사용한 읽기 전용 후보 목록이야. 결제/상담 메모는 아직 섞지 않았어.",
             "candidates": candidates,
+            "assistant_guidance": academy_response_guidance(),
         }
     )
 
 
 def _write_action_draft_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
-    request = str((args or {}).get("request") or "").strip()
-    if not request:
-        return _json_error("반영하려는 학원 업무 내용을 알려줘.")
-    draft = draft_intent(request)
-    op = draft.operation
+    payload = args or {}
+    operation_key = str(payload.get("operation_key") or "").strip()
+    if not operation_key:
+        return _json_error("반영하려는 학원 업무 키를 operation_key로 지정해줘.")
+    op = find_operation(operation_key)
     if op is None:
         return _json_error("요청을 처리할 학원 업무를 찾지 못했어.")
     fields = _confirmation_fields(op.domain)
@@ -191,11 +195,11 @@ def _write_action_draft_tool_handler(args: dict[str, Any] | None = None, **_: An
             "blocked_reason": "쓰기 작업은 Discord 확인 버튼과 감사 로그가 붙기 전까지 실행하지 않아.",
             "confirmation_fields": fields,
             "audit_preview": {
-                "request": request,
+                "request": str(payload.get("request") or ""),
                 "operation_key": op.key,
                 "status": "draft_only",
             },
-            "message": draft.message,
+            "message": "쓰기 작업은 아직 초안만 만들고 실제 반영은 하지 않아.",
         }
     )
 
@@ -329,12 +333,9 @@ def _resolve_client(injected: Any = None) -> AcademyClient | str:
 
 
 def _assistant_guidance() -> dict[str, Any]:
-    return {
-        "persona_commentary": True,
-        "avoid_hardcoded_judgment": True,
-        "use_fields": ["card.risk", "card.attendance", "card.records", "card.missing_sources"],
-        "instruction": "도구의 사실 필드를 보고 미호 말투로 짧은 종합 판단을 작성해.",
-    }
+    guidance = academy_response_guidance()
+    guidance["use_fields"] = ["card.risk", "card.attendance", "card.records", "card.missing_sources"]
+    return guidance
 
 
 def _can_execute_now(op: OperationSpec) -> bool:
@@ -344,14 +345,20 @@ def _can_execute_now(op: OperationSpec) -> bool:
 def _recommended_tool(op: OperationSpec) -> str | None:
     if op.key == "attendance.today_peak":
         return "academy_attendance_day"
+    if op.key == "attendance.student_month":
+        return "academy_student_attendance_range"
     if op.key in {"student.search", "student.detail", "peak.records.latest"}:
         return "academy_student_summary"
     if op.key == "consultation.candidates":
         return "academy_consultation_candidates"
     if op.key == "staff.attendance_day":
         return "academy_staff_attendance_day"
+    if op.key == "staff.schedule_day":
+        return "academy_staff_schedule_day"
     if op.key == "plan.by_date":
         return "academy_plan_by_date"
+    if op.key == "assignment.by_date":
+        return "academy_assignment_by_date"
     return None
 
 
@@ -386,7 +393,7 @@ def _plan_message(payload: dict[str, Any]) -> str:
 def _attendance_message(target_day: date, summary: dict[str, int]) -> str:
     return (
         f"{target_day.isoformat()} 출석 요약: 출석 {summary['present']}명, "
-        f"지각 {summary['late']}명, 결석 {summary['absent']}명, 미확인 {summary['unknown']}명."
+        f"지각 {summary['late']}명, 결석 {summary['absent']}명, 미체크 {summary['unknown']}명."
     )
 
 

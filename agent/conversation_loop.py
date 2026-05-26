@@ -61,6 +61,7 @@ from agent.nous_rate_guard import (
     record_nous_rate_limit,
 )
 from agent.process_bootstrap import _install_safe_stdio
+from agent.prompt_builder import build_context_hooks_prompt
 from agent.prompt_caching import apply_anthropic_cache_control
 from agent.retry_utils import jittered_backoff
 from agent.trajectory import has_incomplete_scratchpad
@@ -567,6 +568,12 @@ def run_conversation(
             _plugin_user_context = "\n\n".join(_ctx_parts)
     except Exception as exc:
         logger.warning("pre_llm_call hook failed: %s", exc)
+
+    _pinned_context = build_context_hooks_prompt(original_user_message)
+    if _pinned_context:
+        _plugin_user_context = (
+            (_plugin_user_context + "\n\n") if _plugin_user_context else ""
+        ) + _pinned_context
 
     # Main conversation loop
     api_call_count = 0
