@@ -322,6 +322,29 @@ def test_run_job_script_python_still_runs_via_python(miho_env):
     assert output.startswith("python ")
 
 
+def test_run_job_script_passes_safe_arguments(miho_env):
+    """Discord-created watchdogs may include simple argv after the script."""
+    from cron.scheduler import _run_job_script
+
+    script_path = miho_env / "scripts" / "args.py"
+    script_path.write_text(
+        "import sys\n"
+        "print('|'.join(sys.argv[1:]))\n"
+    )
+
+    ok, output = _run_job_script("args.py --emit-alert-only 'server red'")
+    assert ok is True
+    assert output == "--emit-alert-only|server red"
+
+
+def test_run_job_script_with_args_still_blocks_path_traversal(miho_env):
+    from cron.scheduler import _run_job_script
+
+    ok, output = _run_job_script("../../etc/passwd --emit-alert-only")
+    assert ok is False
+    assert "outside the scripts directory" in output
+
+
 def test_run_job_script_path_traversal_still_blocked(miho_env):
     """Security regression: shell-script support must NOT loosen containment."""
     from cron.scheduler import _run_job_script
