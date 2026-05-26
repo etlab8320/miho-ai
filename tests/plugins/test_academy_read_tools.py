@@ -13,6 +13,7 @@ from plugins.academy_ops.academy_query_tools import (
     _student_summary_tool_handler,
     _write_action_draft_tool_handler,
 )
+from plugins.academy_ops.student_context_tool import _student_context_tool_handler
 from plugins.academy_ops import _capture_gateway_context
 from plugins.academy_ops.student_card import AcademyStudentCardService
 from gateway.config import Platform
@@ -67,6 +68,36 @@ def test_student_summary_tool_requires_llm_structured_query() -> None:
 
     assert result["ok"] is False
     assert "학생 이름" in result["message"]
+
+
+def test_student_context_tool_returns_class_days_without_guessing() -> None:
+    class ContextClient(FakeAcademyClient):
+        def get_student_context(self, query: str, *, today: date, period_days: int = 14) -> dict:
+            assert query == "서하"
+            assert today == date(2026, 5, 27)
+            assert period_days == 14
+            return {
+                "student": {"paca_student_id": 7, "peak_student_id": 77, "name": "이서하"},
+                "schedule": [
+                    {"weekday": "일", "time_slot": "afternoon", "time_slot_label": "오후반"},
+                    {"weekday": "수", "time_slot": "evening", "time_slot_label": "저녁반"},
+                ],
+                "recent_attendance": [],
+                "message": "이서하 수업 요일: 일 오후반, 수 저녁반",
+            }
+
+    result = _payload(
+        _student_context_tool_handler(
+            {"student_query": "서하", "today": "2026-05-27", "period_days": 14},
+            client=ContextClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["operation"] == "student.context"
+    assert result["message"] == "이서하 수업 요일: 일 오후반, 수 저녁반"
+    assert result["student"]["peak_student_id"] == 77
+    assert result["assistant_guidance"]["avoid_hardcoded_judgment"] is True
 
 
 def test_attendance_day_tool_summarizes_peak_slots_without_sensitive_fields() -> None:

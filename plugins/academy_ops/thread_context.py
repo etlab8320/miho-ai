@@ -11,6 +11,7 @@ STUDENT_CONTEXT_TOOLS = {
     "academy_student_attendance_range",
     "academy_student_summary",
     "academy_student_card_image",
+    "academy_student_context",
 }
 CONTEXT_TTL = timedelta(minutes=30)
 _CONTEXTS: dict[str, dict[str, Any]] = {}

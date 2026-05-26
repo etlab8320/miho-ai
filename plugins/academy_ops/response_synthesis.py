@@ -73,7 +73,18 @@ def compact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     for key in ("operation", "date", "start_date", "end_date", "summary", "message"):
         if key in payload:
             keep[key] = payload[key]
-    for key in ("schedules", "consultations", "instructors", "plans", "slots", "absence_dates", "attendance"):
+    for key in (
+        "schedules",
+        "consultations",
+        "instructors",
+        "plans",
+        "slots",
+        "absence_dates",
+        "attendance",
+        "schedule",
+        "recent_attendance",
+        "records",
+    ):
         value = payload.get(key)
         if isinstance(value, list):
             keep[key] = value[:45]

@@ -211,6 +211,44 @@ async def test_attendance_image_followup_forces_calendar_tool_after_llm_decision
 
 
 @pytest.mark.asyncio
+async def test_natural_router_can_route_student_followup_to_context_tool() -> None:
+    async def resolver(_: list[dict[str, str]]) -> object:
+        return _Response(
+            json.dumps(
+                {
+                    "action": "execute",
+                    "tool": "academy_student_context",
+                    "args": {"student_query": "서하"},
+                    "confidence": 0.95,
+                }
+            )
+        )
+
+    def handler(args: dict, **_: object) -> str:
+        return json.dumps(
+            {
+                "ok": True,
+                "operation": "student.context",
+                "student": {"name": "이서하"},
+                "schedule": [{"weekday": "일", "time_slot_label": "오후반"}],
+                "message": "이서하 수업 요일: 일 오후반",
+            },
+            ensure_ascii=False,
+        )
+
+    route = await resolve_and_execute_academy_request(
+        "서하 나오는 요일이 언제야?",
+        resolver=resolver,
+        handlers={"academy_student_context": handler},
+        today="2026-05-26",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.HANDLED
+    assert route.response_text == "이서하 수업 요일: 일 오후반"
+
+
+@pytest.mark.asyncio
 async def test_polite_synthesis_falls_back_without_retry(monkeypatch) -> None:
     calls = 0
 

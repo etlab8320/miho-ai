@@ -42,6 +42,7 @@ from .attendance_calendar_tool import _student_attendance_calendar_image_tool_ha
 from .staff_schedule_tool import _staff_schedule_day_tool_handler
 from .student_attendance_tool import register_student_attendance_tool
 from .student_card_tool import _student_card_image_tool_handler
+from .student_context_tool import _student_context_tool_handler
 
 
 def _catalog_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
@@ -238,6 +239,33 @@ def register(ctx: Any) -> None:
             "Return safe structured PACA/Peak student overview data without creating an image. "
             "Use for natural-language student overview, 상담 포인트, or student-card planning requests. "
             "The assistant should write persona commentary from the returned facts, not from a fixed template."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_student_context",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "student_query": {"type": "string", "description": "학생 이름, 부분 이름, 또는 PACA 학생 ID."},
+                "period_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60,
+                    "default": 14,
+                    "description": "최근 출석 컨텍스트를 조회할 일수. 기본값은 최근 2주.",
+                },
+                "today": {"type": "string", "description": "기준 날짜. YYYY-MM-DD 형식."},
+            },
+            "required": ["student_query"],
+            "additionalProperties": False,
+        },
+        handler=_student_context_tool_handler,
+        description=(
+            "Return fast read-only PACA/Peak context for one student: class days, time slots, "
+            "recent attendance days, PACA/Peak id mapping, and recent record summaries. "
+            "Use for student follow-up questions such as which days the student attends. "
+            "Never guess if the API says multiple students matched."
         ),
     )
     register_student_attendance_tool(ctx)

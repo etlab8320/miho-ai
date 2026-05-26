@@ -31,6 +31,7 @@ from .commentary_config import (
 from .staff_schedule_tool import _staff_schedule_day_tool_handler
 from .student_attendance_tool import _student_attendance_range_tool_handler
 from .student_card_tool import _student_card_image_tool_handler
+from .student_context_tool import _student_context_tool_handler
 from .response_commentary import append_summary_comment_or_fallback
 from .response_focus import focused_response
 from .response_synthesis import compact_payload, synthesize_or_fallback
@@ -68,6 +69,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_consultation_candidates": _consultation_candidates_tool_handler,
     "academy_student_summary": _student_summary_tool_handler,
     "academy_student_card_image": _student_card_image_tool_handler,
+    "academy_student_context": _student_context_tool_handler,
 }
 
 TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -107,6 +109,10 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "academy_student_summary": {"purpose": "학생 요약 텍스트 조회", "args": ["student_query", "today", "period_days"]},
     "academy_student_card_image": {"purpose": "학생 카드를 이미지로 생성", "args": ["student_query", "today", "period_days"]},
+    "academy_student_context": {
+        "purpose": "특정 학생의 수업 요일, 시간대, 최근 출석 요일, PACA/Peak ID 매핑, 최근 기록 컨텍스트 조회. 학생 후속 질문이나 어떤 학생 관련 질문인지 모호한 읽기 질문에 우선 사용",
+        "args": ["student_query", "today", "period_days"],
+    },
 }
 
 

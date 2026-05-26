@@ -184,6 +184,7 @@ def test_plugin_registers_command_and_tool():
     assert "academy_operations_catalog" in manager._plugin_tool_names
     assert "academy_capability_status" in manager._plugin_tool_names
     assert "academy_student_summary" in manager._plugin_tool_names
+    assert "academy_student_context" in manager._plugin_tool_names
     assert "academy_staff_attendance_day" in manager._plugin_tool_names
     assert "academy_plan_by_date" in manager._plugin_tool_names
     assert "academy_prepare_write_action" in manager._plugin_tool_names

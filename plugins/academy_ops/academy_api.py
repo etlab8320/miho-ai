@@ -101,6 +101,17 @@ class AcademyApiClient:
         )
         return payload if isinstance(payload, dict) else {}
 
+    def get_student_context(self, query: str, *, today: date, period_days: int = 14) -> dict[str, Any]:
+        payload = self._get(
+            "/paca/student-context",
+            params={
+                "q": query.strip(),
+                "today": today.isoformat(),
+                "period_days": str(period_days),
+            },
+        )
+        return payload if isinstance(payload, dict) else {}
+
     def list_peak_students(self) -> list[dict[str, Any]]:
         payload = self._get("/peak/students")
         if isinstance(payload, list):
@@ -150,6 +161,8 @@ class AcademyApiClient:
             raise AcademyApiError("학원 계정 연결이 만료된 것 같아. `/academy login`으로 다시 연결해줘.")
         if response.status_code == 404:
             raise AcademyApiError("학원 서버에서 필요한 조회 경로를 찾지 못했어.")
+        if response.status_code == 409:
+            raise AcademyApiError(_conflict_message(response))
         if response.status_code >= 500:
             raise AcademyApiError("학원 서버가 잠시 불안정해. 잠시 후 다시 시도해줘.")
         try:
@@ -164,3 +177,19 @@ def _to_int(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _conflict_message(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return "학생이 여러 명 검색됐어. 이름이나 학교를 조금 더 정확히 알려줘."
+    message = str(payload.get("message") or "학생이 여러 명 검색됐어. 이름이나 학교를 조금 더 정확히 알려줘.")
+    candidates = payload.get("candidates") if isinstance(payload, dict) else []
+    names = []
+    for item in candidates if isinstance(candidates, list) else []:
+        if isinstance(item, dict):
+            label = " ".join(str(item.get(key) or "").strip() for key in ("name", "school", "grade") if item.get(key))
+            if label:
+                names.append(label)
+    return f"{message} 후보: {', '.join(names[:5])}" if names else message
