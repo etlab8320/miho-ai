@@ -14,6 +14,7 @@ from .context import current_discord_user_id, infer_student_query_from_current_r
 from .date_parser import parse_academy_date
 from .intent import draft_intent
 from .paca_client import DEFAULT_PACA_BASE_URL
+from .plan_lookup import extract_trainer_query, plan_lookup_for_day
 from .quick_router import classify_quick_operation
 from .staff_attendance import staff_attendance_for_day
 from .student_card import AcademyClient, AcademyStudentCardService, StudentCardError
@@ -110,6 +111,37 @@ def _staff_attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwa
             "summary": attendance["summary"],
             "instructors": attendance["instructors"],
             "message": _staff_attendance_message(attendance),
+        }
+    )
+
+
+def _plan_by_date_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    payload = args or {}
+    request = str(payload.get("request") or "").strip()
+    target_day = parse_academy_date(payload.get("date") or request)
+    trainer_query = str(payload.get("trainer_query") or "").strip() or extract_trainer_query(request)
+    time_slot = str(payload.get("time_slot") or "").strip()
+    client_or_error = _resolve_client(kwargs.get("client"))
+    if isinstance(client_or_error, str):
+        return _json_error(client_or_error)
+    try:
+        plans = plan_lookup_for_day(
+            client_or_error,
+            target_day,
+            trainer_query=trainer_query,
+            time_slot=time_slot,
+        )
+    except AcademyApiError as exc:
+        return _json_error(str(exc))
+    return _json_ok(
+        {
+            "operation": "plan.by_date",
+            "date": plans["date"],
+            "trainer_query": trainer_query,
+            "time_slot": time_slot,
+            "summary": plans["summary"],
+            "plans": plans["plans"],
+            "message": _plan_message(plans),
         }
     )
 
@@ -318,6 +350,8 @@ def _recommended_tool(op: OperationSpec) -> str | None:
         return "academy_consultation_candidates"
     if op.key == "staff.attendance_day":
         return "academy_staff_attendance_day"
+    if op.key == "plan.by_date":
+        return "academy_plan_by_date"
     return None
 
 
@@ -337,11 +371,27 @@ def _staff_attendance_message(payload: dict[str, Any]) -> str:
     return f"{payload['date']} 출근 강사: {', '.join(names)}."
 
 
+def _plan_message(payload: dict[str, Any]) -> str:
+    plans = payload["plans"]
+    if not plans:
+        target = payload.get("trainer_query") or "강사"
+        return f"{payload['date']} {target} 운동계획서를 찾지 못했어."
+    plan = plans[0]
+    return (
+        f"{payload['date']} {plan['instructor_name']} 강사 운동계획서: "
+        f"{_slot_label(plan['time_slot'])}, 완료 {plan['completed_count']}/{len(plan['exercises'])}."
+    )
+
+
 def _attendance_message(target_day: date, summary: dict[str, int]) -> str:
     return (
         f"{target_day.isoformat()} 출석 요약: 출석 {summary['present']}명, "
         f"지각 {summary['late']}명, 결석 {summary['absent']}명, 미확인 {summary['unknown']}명."
     )
+
+
+def _slot_label(value: str) -> str:
+    return {"morning": "오전반", "afternoon": "오후반", "evening": "저녁반"}.get(value, value or "시간대 미지정")
 
 
 def _confirmation_fields(domain: str) -> list[str]:

@@ -12,5 +12,6 @@ tools:
   - academy_student_summary
   - academy_attendance_day
   - academy_staff_attendance_day
+  - academy_plan_by_date
   - academy_consultation_candidates
   - academy_prepare_write_action

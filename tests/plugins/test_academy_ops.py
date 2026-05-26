@@ -73,15 +73,16 @@ def test_payment_completion_stays_a_planned_write_candidate():
     assert op.endpoint.path == "backend route inspection required"
 
 
-def test_plan_lookup_stays_a_planned_read_candidate():
+def test_plan_lookup_is_connected_read_tool():
     draft = draft_intent("5월 25일 박성준 강사 운동계획 보여줘")
     op = draft.operation
 
     assert draft.operation_key == "plan.by_date"
     assert draft.needs_confirmation is False
     assert op is not None
-    assert op.implementation_status == "planned"
-    assert op.endpoint.path == "backend route inspection required"
+    assert op.implementation_status == "implemented"
+    assert op.api_contract_status == "verified_in_plugin"
+    assert op.endpoint.path == "/peak/plans"
 
 
 def test_staff_attendance_lookup_stays_a_planned_read_candidate():
@@ -207,6 +208,7 @@ def test_plugin_registers_command_and_tool():
     assert "academy_capability_status" in manager._plugin_tool_names
     assert "academy_student_summary" in manager._plugin_tool_names
     assert "academy_staff_attendance_day" in manager._plugin_tool_names
+    assert "academy_plan_by_date" in manager._plugin_tool_names
     assert "academy_prepare_write_action" in manager._plugin_tool_names
 
 

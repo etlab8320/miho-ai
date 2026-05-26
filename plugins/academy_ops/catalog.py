@@ -104,6 +104,17 @@ CONNECTED_APIS: tuple[OperationSpec, ...] = (
         notes="활성 강사 목록과 강사별 월간 출퇴근 기록을 조합해 특정 일자의 출근 강사를 조회한다.",
     ),
     OperationSpec(
+        key="plan.by_date",
+        title="날짜별 운동계획 조회",
+        domain="plan",
+        mode=READ,
+        endpoint=EndpointSpec("peak", "GET", "/peak/plans"),
+        needs_new_backend_api=False,
+        implementation_status="implemented",
+        api_contract_status="verified_in_plugin",
+        notes="date, time_slot 파라미터로 일일 운동계획과 강사 배치를 조회한다.",
+    ),
+    OperationSpec(
         key="consultation.candidates",
         title="상담 후보 추천",
         domain="consultation",
@@ -179,14 +190,6 @@ OPERATIONS: tuple[OperationSpec, ...] = (
         requires_confirmation=True,
         requires_audit_log=True,
         notes="학생, 날짜, 종목, 값을 확인한 뒤 batch upsert로 반영한다.",
-    ),
-    OperationSpec(
-        key="plan.by_date",
-        title="날짜별 운동계획 조회",
-        domain="plan",
-        mode=READ,
-        endpoint=TBD_ENDPOINT,
-        notes="date, time_slot 파라미터로 일일 운동계획과 강사 배치를 조회한다.",
     ),
     OperationSpec(
         key="assignment.by_date",

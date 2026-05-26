@@ -70,6 +70,13 @@ class AcademyApiClient:
         payload = self._get("/peak/attendance/students", params={"date": day.isoformat()})
         return payload if isinstance(payload, dict) else {}
 
+    def get_peak_plans(self, day: date, *, time_slot: str = "") -> dict[str, Any]:
+        params = {"date": day.isoformat()}
+        if time_slot:
+            params["time_slot"] = time_slot
+        payload = self._get("/peak/plans", params=params)
+        return payload if isinstance(payload, dict) else {}
+
     def list_peak_records(self, peak_student_id: int) -> list[dict[str, Any]]:
         payload = self._get("/peak/records", params={"student_id": str(peak_student_id)})
         if isinstance(payload, list):

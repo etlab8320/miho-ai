@@ -21,6 +21,7 @@ from .academy_query_tools import (
     _attendance_day_tool_handler,
     _capability_status_tool_handler,
     _consultation_candidates_tool_handler,
+    _plan_by_date_tool_handler,
     _staff_attendance_day_tool_handler,
     _student_summary_tool_handler,
     _write_action_draft_tool_handler,
@@ -69,7 +70,39 @@ def _quick_command(raw_args: str) -> str:
         if not names:
             return f"{payload['date']} 출근 기록이 있는 강사는 없어."
         return f"{payload['date']} 출근 강사: {', '.join(names)}."
+    if operation_key == "plan.by_date":
+        target_day = parse_academy_date(request)
+        raw = _plan_by_date_tool_handler({"date": target_day.isoformat(), "request": request})
+        payload = json.loads(raw)
+        if not payload.get("ok"):
+            return str(payload.get("message") or "운동계획서를 조회하지 못했어.")
+        return _format_plan_quick_response(payload)
     return "바로 처리할 수 있는 학원 업무를 찾지 못했어."
+
+
+def _format_plan_quick_response(payload: dict[str, Any]) -> str:
+    plans = [plan for plan in payload.get("plans", []) if isinstance(plan, dict)]
+    if not plans:
+        return str(payload.get("message") or f"{payload.get('date', '')} 운동계획서를 찾지 못했어.")
+    plan = plans[0]
+    lines = [
+        f"{payload['date']} {plan['instructor_name']} 강사 운동계획서",
+        f"시간대: {_slot_label(str(plan.get('time_slot') or ''))}",
+        f"계획 ID: {plan['id']}",
+        f"완료: {plan['completed_count']}/{len(plan.get('exercises') or [])}",
+    ]
+    exercises = [item for item in plan.get("exercises", []) if isinstance(item, dict)]
+    if exercises:
+        lines.append("운동 목록")
+        for exercise in exercises:
+            status = "완료" if exercise.get("completed") else "미완료"
+            note = f" - {exercise['note']}" if exercise.get("note") else ""
+            lines.append(f"- {exercise['name']} ({status}){note}")
+    return "\n".join(lines)
+
+
+def _slot_label(value: str) -> str:
+    return {"morning": "오전반", "afternoon": "오후반", "evening": "저녁반"}.get(value, value or "시간대 미지정")
 
 
 def _login_command() -> str:
@@ -251,6 +284,25 @@ def register(ctx: Any) -> None:
         description=(
             "Return PACA instructor attendance for one day from live instructor attendance records. "
             "Use for teacher/staff/instructor work-attendance questions."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_plan_by_date",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "조회 날짜. YYYY-MM-DD, 오늘, 어제, 그제 등."},
+                "request": {"type": "string", "description": "원문 요청. 강사 이름과 날짜 표현을 읽는다."},
+                "trainer_query": {"type": "string", "description": "필터링할 강사 이름."},
+                "time_slot": {"type": "string", "description": "morning, afternoon, evening 중 하나."},
+            },
+            "additionalProperties": False,
+        },
+        handler=_plan_by_date_tool_handler,
+        description=(
+            "Return Peak daily workout plans from live Peak plan records. "
+            "Use for teacher/trainer workout-plan questions."
         ),
     )
     ctx.register_tool(
