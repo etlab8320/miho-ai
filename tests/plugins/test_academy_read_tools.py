@@ -188,6 +188,14 @@ def test_consultation_candidates_prefers_server_side_analysis() -> None:
                         "priority": "high",
                         "score": 92,
                         "reasons": ["최근 14일 안에 연속 결석 2회", "최근 5개 기록 기준 하락/정체 종목 2개"],
+                        "signals": {
+                            "records": {
+                                "problem_records": [
+                                    {"event_name": "제자리멀리뛰기", "trend": "declining"},
+                                    {"event_name": "10m왕복달리기", "trend": "plateau"},
+                                ]
+                            }
+                        },
                     }
                 ],
             }
@@ -204,7 +212,12 @@ def test_consultation_candidates_prefers_server_side_analysis() -> None:
 
     assert result["ok"] is True
     assert result["operation"] == "consultation.candidates"
-    assert result["message"] == "상담 후보 1명"
+    assert "상담 후보 1명" in result["message"]
+    assert "김민준" in result["message"]
+    assert "최근 14일 안에 연속 결석 2회" in result["message"]
+    assert "제자리멀리뛰기(하락)" in result["message"]
+    assert "10m왕복달리기(정체)" in result["message"]
+    assert result["assistant_guidance"]["instruction"].startswith("반환된 API 사실만")
     assert result["period"]["attendance_start_date"] == "2026-05-14"
     assert result["candidates"][0]["student"]["peak_student_id"] == 900
     assert "최근 14일 출결" in result["basis"]

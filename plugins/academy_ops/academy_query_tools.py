@@ -10,6 +10,7 @@ from typing import Any
 from .academy_api import AcademyApiClient, AcademyApiError
 from .auth_store import decrypt_token, get_binding
 from .catalog import OperationSpec, find_operation
+from .consultation_candidate_format import consultation_candidates_message
 from .context import current_discord_user_id
 from .paca_client import DEFAULT_PACA_BASE_URL
 from .plan_lookup import plan_lookup_for_day
@@ -173,7 +174,8 @@ def _consultation_candidates_tool_handler(args: dict[str, Any] | None = None, **
             "write_enabled": False,
             "basis": "최근 출결만 사용한 읽기 전용 후보 목록이야. 결제/상담 메모는 아직 섞지 않았어.",
             "candidates": candidates,
-            "assistant_guidance": academy_response_guidance(),
+            "message": consultation_candidates_message(candidates, period_days),
+            "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
         }
     )
 
@@ -193,8 +195,8 @@ def _server_consultation_candidates_payload(
         "period": result.get("period") if isinstance(result.get("period"), dict) else {},
         "policy": result.get("policy") if isinstance(result.get("policy"), dict) else {},
         "candidates": [item for item in candidates if isinstance(item, dict)],
-        "message": str(result.get("message") or f"상담 후보 {len(candidates)}명"),
-        "assistant_guidance": academy_response_guidance(),
+        "message": consultation_candidates_message(candidates, period_days),
+        "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
     }
 
 
