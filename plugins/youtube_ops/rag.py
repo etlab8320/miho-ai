@@ -43,12 +43,20 @@ def _summary_record(summary: SummaryResult) -> dict[str, Any]:
             f"Video ID: {summary.video_id}",
             f"Original title: {summary.metadata.title}",
             f"Channel: {summary.metadata.channel}",
+            f"Published: {summary.metadata.published_at or 'unknown'}",
             f"Tags: {', '.join(summary.tags)}",
             f"Topic: {summary.topic}",
+            f"One-line: {summary.one_line_summary}",
             "Summary:",
             *summary.summary_lines,
             "Important points:",
             *summary.important_points,
+            "Miho judgment:",
+            summary.miho_judgment,
+            "User-context help:",
+            *summary.profile_help,
+            "Conclusion:",
+            summary.conclusion,
         ]
     )
     return {

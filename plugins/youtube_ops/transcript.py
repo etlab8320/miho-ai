@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import html
+import shutil
 import subprocess
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
@@ -24,18 +25,20 @@ def fetch_video_metadata(video_id: str) -> VideoMetadata:
     endpoint = "https://www.youtube.com/oembed?format=json&url=" + quote(
         canonical_url(video_id), safe=""
     )
+    base = VideoMetadata(video_id=video_id)
     try:
         with urlopen(endpoint, timeout=OEMBED_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError):
-        return VideoMetadata(video_id=video_id)
+        return _fetch_metadata_with_ytdlp(video_id, base)
     if not isinstance(payload, dict):
-        return VideoMetadata(video_id=video_id)
-    return VideoMetadata(
+        return _fetch_metadata_with_ytdlp(video_id, base)
+    base = VideoMetadata(
         video_id=video_id,
         title=_clean(payload.get("title")),
         channel=_clean(payload.get("author_name")),
     )
+    return _fetch_metadata_with_ytdlp(video_id, base)
 
 
 def fetch_transcript(video_id: str, languages: list[str] | None = None) -> list[TranscriptSegment]:
@@ -103,6 +106,31 @@ def _fetch_with_ytdlp(video_id: str) -> list[TranscriptSegment]:
     except (HTTPError, URLError, TimeoutError, OSError) as exc:
         raise YouTubeFetchError("yt-dlp 자막 파일을 내려받지 못했어.") from exc
     return parse_vtt_transcript(vtt)
+
+
+def _fetch_metadata_with_ytdlp(video_id: str, base: VideoMetadata) -> VideoMetadata:
+    if shutil.which("yt-dlp") is None:
+        return base
+    command = ["yt-dlp", "--skip-download", "--dump-json", "--no-warnings", canonical_url(video_id)]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=12)
+    except (OSError, subprocess.TimeoutExpired):
+        return base
+    if result.returncode != 0:
+        return base
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return base
+    if not isinstance(payload, dict):
+        return base
+    return VideoMetadata(
+        video_id=video_id,
+        title=base.title or _clean(payload.get("title")),
+        channel=base.channel or _clean(payload.get("channel") or payload.get("uploader")),
+        duration=_format_duration(payload.get("duration")) or base.duration,
+        published_at=_format_upload_date(payload.get("upload_date") or payload.get("release_date")),
+    )
 
 
 def parse_vtt_transcript(vtt: str) -> list[TranscriptSegment]:
@@ -194,6 +222,25 @@ def _dedupe_segments(segments: list[TranscriptSegment]) -> list[TranscriptSegmen
 
 def _clean(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _format_upload_date(value: object) -> str:
+    text = re.sub(r"\D", "", str(value or ""))
+    if len(text) != 8:
+        return ""
+    return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+
+
+def _format_duration(value: object) -> str:
+    try:
+        total = int(float(str(value)))
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return ""
+    minutes, seconds = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
 
 
 def _plain_error(exc: Exception) -> str:

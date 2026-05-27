@@ -88,6 +88,30 @@ def test_summary_covers_every_transcript_chunk() -> None:
     assert result.coverage["processed_chunk_count"] == result.coverage["chunk_count"]
     assert result.short_title == "RAG 검색 방식의 진화"
     assert "하이브리드검색" in result.tags
+    assert result.one_line_summary == "키워드와 의미 검색을 함께 봐야 한다."
+    assert result.miho_judgment == ""
+
+
+def test_heuristic_summary_groups_short_caption_fragments() -> None:
+    from plugins.youtube_ops.models import TranscriptSegment, VideoMetadata
+    from plugins.youtube_ops.summary import summarize_transcript
+
+    result = summarize_transcript(
+        metadata=VideoMetadata(video_id="Ghj69GLDiqI", title="AI 개발 구조", channel="채널"),
+        segments=[
+            TranscriptSegment(start=0, text="AI가 코드를"),
+            TranscriptSegment(start=2, text="만들어 줘도"),
+            TranscriptSegment(start=4, text="사용자는 개발 구조를"),
+            TranscriptSegment(start=6, text="이해해야 한다"),
+            TranscriptSegment(start=8, text="Git API DB 같은"),
+            TranscriptSegment(start=10, text="기본 개념이 필요하다"),
+        ],
+        llm=None,
+        chunk_chars=900,
+    )
+
+    assert "AI가 코드를 만들어 줘도" in result.one_line_summary
+    assert "개발 구조" in result.one_line_summary
 
 
 def test_cache_reuses_same_video_id_and_uniquifies_titles(tmp_path: Path) -> None:
@@ -130,6 +154,140 @@ def test_cache_reuses_same_video_id_and_uniquifies_titles(tmp_path: Path) -> Non
     assert saved_first.short_title == "RAG 검색 방식의 진화"
     assert saved_second.short_title.startswith("RAG 검색 방식의 진화")
     assert saved_second.short_title != saved_first.short_title
+
+def test_summary_from_old_cache_keeps_new_fields_compatible() -> None:
+    from plugins.youtube_ops.models import SummaryResult
+
+    summary = SummaryResult.from_dict(
+        {
+            "video_id": "Ghj69GLDiqI",
+            "canonical_url": "https://www.youtube.com/watch?v=Ghj69GLDiqI",
+            "short_title": "이전 캐시",
+            "metadata": {"video_id": "Ghj69GLDiqI", "title": "원본", "channel": "채널"},
+            "topic": "주제",
+            "summary_lines": ["요약"],
+            "important_points": ["포인트"],
+            "lessons": [],
+            "practical_takeaways": [],
+            "tags": [],
+            "coverage": {},
+        }
+    )
+
+    assert summary.one_line_summary == ""
+    assert summary.miho_judgment == ""
+    assert summary.profile_help == []
+    assert summary.metadata.published_at == ""
+
+def test_youtube_answer_text_uses_learning_report_shape() -> None:
+    from plugins.youtube_ops.models import SummaryResult, VideoMetadata
+    from plugins.youtube_ops.tools import _answer_text
+
+    summary = SummaryResult(
+        video_id="Ghj69GLDiqI",
+        canonical_url="https://www.youtube.com/watch?v=Ghj69GLDiqI",
+        short_title="AI 개발 구조 지도",
+        metadata=VideoMetadata(
+            video_id="Ghj69GLDiqI",
+            title="바이브코딩 입문",
+            channel="생존연구소",
+            published_at="2026-05-01",
+        ),
+        topic="AI로 개발할 때 알아야 하는 기본 구조",
+        summary_lines=["AI가 코드를 만들어도 개발 구조를 알아야 한다."],
+        important_points=["프롬프트보다 컨텍스트가 중요하다.", "Git, API, DB 개념이 필요하다."],
+        lessons=["용어를 알아야 막힌 지점을 찾을 수 있다."],
+        practical_takeaways=["개발 요청을 프론트엔드, 백엔드, DB로 나눠 지시한다."],
+        tags=["바이브코딩"],
+        coverage={"summary_basis": "full_transcript"},
+        one_line_summary="AI에게 코딩을 맡겨도 개발 구조를 읽을 줄 알아야 한다.",
+        miho_judgment="입문자에게 필요한 용어 지도에 가깝다.",
+        profile_help=["AI 개발 요청을 구조화하는 데 바로 쓸 수 있다."],
+        conclusion="문법보다 구조 이해가 먼저다.",
+    )
+
+    text = _answer_text(summary)
+
+    assert "채널: 생존연구소" in text
+    assert "게시일: 2026-05-01" in text
+    assert "1. 주제" in text
+    assert "2. 한 줄 요약" in text
+    assert "3. 주요 내용" in text
+    assert "4. 미호의 판단" in text
+    assert "5. 사용자 맥락에서 도움되는 점" in text
+    assert "6. 결론" in text
+    assert "입문자에게 필요한 용어 지도" in text
+
+def test_analyze_tool_refreshes_legacy_youtube_cache(tmp_path: Path, monkeypatch) -> None:
+    from plugins.youtube_ops import tools as tool_module
+    from plugins.youtube_ops.cache import YouTubeCache
+    from plugins.youtube_ops.models import SummaryResult, TranscriptSegment, VideoMetadata
+
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
+    cache = YouTubeCache()
+    legacy = SummaryResult(
+        video_id="Ghj69GLDiqI",
+        canonical_url="https://www.youtube.com/watch?v=Ghj69GLDiqI",
+        short_title="예전 요약",
+        metadata=VideoMetadata(video_id="Ghj69GLDiqI", title="예전", channel="채널"),
+        topic="예전 주제",
+        summary_lines=["얕은 요약"],
+        important_points=["얕은 포인트"],
+        lessons=[],
+        practical_takeaways=[],
+        tags=[],
+        coverage={"summary_basis": "full_transcript"},
+    )
+    cache.save_summary(legacy)
+    monkeypatch.setattr(
+        tool_module,
+        "fetch_video_metadata",
+        lambda video_id: VideoMetadata(
+            video_id=video_id,
+            title="새 제목",
+            channel="새 채널",
+            published_at="2026-05-27",
+        ),
+    )
+    monkeypatch.setattr(
+        tool_module,
+        "fetch_transcript",
+        lambda video_id, languages=None: [TranscriptSegment(start=0, text="새 전체 자막")],
+    )
+    monkeypatch.setattr(
+        tool_module,
+        "summarize_transcript",
+        lambda **_: SummaryResult(
+            video_id="Ghj69GLDiqI",
+            canonical_url="https://www.youtube.com/watch?v=Ghj69GLDiqI",
+            short_title="새 리포트",
+            metadata=VideoMetadata(
+                video_id="Ghj69GLDiqI",
+                title="새 제목",
+                channel="새 채널",
+                published_at="2026-05-27",
+            ),
+            topic="새 주제",
+            summary_lines=["새 요약"],
+            important_points=["새 포인트"],
+            lessons=[],
+            practical_takeaways=[],
+            tags=[],
+            coverage={"summary_basis": "full_transcript"},
+            one_line_summary="새 한 줄",
+            miho_judgment="새 판단",
+            profile_help=["새 도움"],
+            conclusion="새 결론",
+        ),
+    )
+
+    payload = json.loads(
+        tool_module._youtube_analyze_tool_handler({"url": "https://youtu.be/Ghj69GLDiqI"})
+    )
+
+    assert payload["cached"] is False
+    assert payload["summary"]["short_title"] == "새 리포트"
+    assert "새 판단" in payload["message"]
 
 
 def test_card_html_uses_short_title_and_goyang_font() -> None:

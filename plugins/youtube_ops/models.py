@@ -18,6 +18,7 @@ class VideoMetadata:
     title: str = ""
     channel: str = ""
     duration: str = ""
+    published_at: str = ""
 
 
 @dataclass
@@ -34,6 +35,10 @@ class SummaryResult:
     tags: list[str]
     coverage: dict[str, Any]
     card_image_path: str = ""
+    one_line_summary: str = ""
+    miho_judgment: str = ""
+    profile_help: list[str] = field(default_factory=list)
+    conclusion: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -55,6 +60,10 @@ class SummaryResult:
             tags=[str(item) for item in data.get("tags") or []],
             coverage=dict(data.get("coverage") or {}),
             card_image_path=str(data.get("card_image_path") or ""),
+            one_line_summary=str(data.get("one_line_summary") or ""),
+            miho_judgment=str(data.get("miho_judgment") or ""),
+            profile_help=[str(item) for item in data.get("profile_help") or []],
+            conclusion=str(data.get("conclusion") or ""),
         )
 
 
