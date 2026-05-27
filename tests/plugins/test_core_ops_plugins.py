@@ -24,16 +24,15 @@ def test_academy_ops_loads_without_user_opt_in(tmp_path, monkeypatch):
     assert "academy" in loaded.commands_registered
 
 
-def test_youtube_ops_loads_without_user_opt_in(tmp_path, monkeypatch):
+def test_youtube_ops_does_not_load_without_user_opt_in(tmp_path, monkeypatch):
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
 
     manager = PluginManager()
     manager.discover_and_load()
 
     loaded = manager._plugins["youtube_ops"]
-    assert loaded.enabled
-    assert "youtube_analyze_video" in loaded.tools_registered
-    assert manager._hooks.get("pre_gateway_dispatch")
+    assert not loaded.enabled
+    assert loaded.error.startswith("not enabled in config")
 
 
 def test_core_ops_plugins_still_respect_disabled_config(tmp_path, monkeypatch):
