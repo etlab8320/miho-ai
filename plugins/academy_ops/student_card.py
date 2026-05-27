@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Protocol
 
@@ -75,6 +75,7 @@ class StudentCard:
     records: list[RecordItem]
     risk: RiskSummary
     missing_sources: list[str]
+    consultation_notes: list[dict[str, str]] = field(default_factory=list)
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -92,6 +93,7 @@ class StudentCard:
                 "judgment": self.risk.judgment,
             },
             "missing_sources": list(self.missing_sources),
+            "consultation_notes": [item.copy() for item in self.consultation_notes],
         }
 
 

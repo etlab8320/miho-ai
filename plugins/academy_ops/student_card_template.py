@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import date
 from html import escape
+from pathlib import Path
 
 from .student_card import RecordItem, StudentCard
 from .student_card_fonts import GOYANG_LICENSE_NOTE, goyang_font_css
+from .student_card_styles import student_card_css
 
 
-def render_student_card_html(card: StudentCard) -> str:
+def render_student_card_html(card: StudentCard, *, logo_path: Path | None = None) -> str:
     profile = card.profile
     attendance = card.attendance
     total_marked = sum(attendance.summary.values())
@@ -22,8 +25,7 @@ def render_student_card_html(card: StudentCard) -> str:
         records_html = "<div class='empty'>아직 연결된 Peak 기록이 없어.</div>"
     absences_html = _absence_days(attendance.recent_absences)
     missing = " · ".join(card.missing_sources) if card.missing_sources else "PACA/Peak 조회 정상"
-    actions = "\n".join(f"<li>{escape(action)}</li>" for action in card.risk.recommended_actions[:3])
-    reasons = "\n".join(f"<li>{escape(reason)}</li>" for reason in card.risk.reasons[:4])
+    notes_html = _consultation_notes(card.consultation_notes)
     risk_class = escape(card.risk.level or "stable")
     return f"""<!doctype html>
 <html lang="ko">
@@ -31,335 +33,30 @@ def render_student_card_html(card: StudentCard) -> str:
 <meta charset="utf-8">
 <style>
 {goyang_font_css()}
-:root {{
-  --canvas: oklch(94% 0.012 223);
-  --paper: oklch(98.8% 0.004 220);
-  --ink: oklch(22% 0.035 248);
-  --muted: oklch(55% 0.025 245);
-  --line: oklch(86% 0.012 232);
-  --panel: oklch(96.8% 0.009 226);
-  --teal: oklch(55% 0.12 185);
-  --teal-soft: oklch(91% 0.035 185);
-  --coral: oklch(60% 0.17 31);
-  --amber: oklch(78% 0.13 78);
-  --green: oklch(58% 0.12 148);
-}}
-* {{ box-sizing: border-box; }}
-html, body {{
-  width: 1200px;
-  height: 1400px;
-  margin: 0;
-  overflow: hidden;
-  background:
-    linear-gradient(135deg, oklch(92% 0.018 190), transparent 42%),
-    linear-gradient(315deg, oklch(95% 0.016 32), var(--canvas));
-  color: var(--ink);
-  font-family: "GoyangDeogyang", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  letter-spacing: 0;
-}}
-.card {{
-  width: 1120px;
-  height: 1320px;
-  margin: 40px;
-  padding: 44px;
-  border: 1px solid oklch(82% 0.014 232);
-  border-radius: 8px;
-  background: var(--paper);
-  box-shadow: 0 24px 80px oklch(25% 0.028 250 / .14);
-  overflow: hidden;
-}}
-.layout {{
-  height: 100%;
-  display: grid;
-  grid-template-rows: 246px 176px 292px 388px 46px;
-  gap: 21px;
-}}
-.hero {{
-  display: grid;
-  grid-template-columns: 1fr 214px;
-  gap: 28px;
-  padding: 32px 34px;
-  border-radius: 8px;
-  background:
-    linear-gradient(90deg, oklch(99% 0.006 220), oklch(94% 0.026 188)),
-    var(--panel);
-  border: 1px solid var(--line);
-}}
-.eyebrow {{
-  margin-bottom: 13px;
-  color: var(--teal);
-  font-size: 23px;
-}}
-.identity {{
-  display: flex;
-  align-items: center;
-  gap: 25px;
-}}
-.mark {{
-  width: 126px;
-  height: 126px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: var(--ink);
-  color: oklch(96% 0.009 220);
-  font-size: 54px;
-  font-weight: 700;
-}}
-h1 {{
-  margin: 0 0 17px;
-  font-size: 92px;
-  line-height: .9;
-  font-weight: 700;
-}}
-.meta {{
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  max-width: 720px;
-}}
-.chip {{
-  min-height: 38px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: oklch(92% 0.018 226);
-  color: oklch(35% 0.035 245);
-  font-size: 20px;
-}}
-.risk {{
-  display: grid;
-  place-items: center;
-  align-self: stretch;
-  border-radius: 8px;
-  background: var(--green);
-  color: oklch(98% 0.004 220);
-  text-align: center;
-}}
-.risk.caution {{ background: var(--amber); color: var(--ink); }}
-.risk.danger {{ background: var(--coral); }}
-.risk span {{ display: block; font-size: 20px; opacity: .86; }}
-.risk strong {{ display: block; margin-top: 9px; font-size: 54px; line-height: .9; }}
-.judgment {{
-  display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
-  align-items: stretch;
-  gap: 24px;
-  padding: 24px 28px;
-  border-radius: 8px;
-  background: var(--ink);
-  color: oklch(97% 0.006 220);
-  overflow: hidden;
-}}
-.judgment-label {{
-  display: grid;
-  place-items: center;
-  min-height: 100%;
-  padding-right: 18px;
-  border-right: 1px solid oklch(58% 0.055 194 / .45);
-  color: oklch(82% 0.08 185);
-  font-size: 23px;
-  line-height: 1.12;
-}}
-.judgment-copy {{
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  height: 100%;
-  font-size: 28px;
-  line-height: 1.25;
-  text-wrap: pretty;
-}}
-.top-grid {{
-  display: grid;
-  grid-template-columns: 1.16fr .84fr;
-  gap: 21px;
-}}
-.lower-grid {{
-  display: grid;
-  grid-template-columns: 1.03fr .97fr;
-  gap: 21px;
-}}
-.panel {{
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 26px 28px;
-  background: oklch(98% 0.006 226);
-  overflow: hidden;
-}}
-.section-title {{
-  margin: 0 0 20px;
-  color: var(--ink);
-  font-size: 30px;
-  line-height: 1;
-}}
-.title-note {{
-  margin-left: 8px;
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: var(--teal-soft);
-  color: var(--muted);
-  font-size: 16px;
-  vertical-align: middle;
-}}
-.attendance-row {{
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}}
-.metric {{
-  height: 104px;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 9px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--teal-soft);
-  text-align: center;
-}}
-.metric b {{
-  display: block;
-  font-size: 43px;
-  line-height: .92;
-}}
-.metric span {{
-  display: block;
-  color: var(--muted);
-  font-size: 19px;
-  line-height: 1;
-}}
-.today {{
-  margin-top: 16px;
-  padding: 14px 16px;
-  border-radius: 8px;
-  background: var(--paper);
-  color: var(--ink);
-  font-size: 23px;
-}}
-.absence-strip {{
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  color: var(--muted);
-  font-size: 15px;
-}}
-.absence-label {{ color: var(--coral); font-size: 16px; }}
-.absence-days {{
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}}
-.absence-chip {{
-  padding: 5px 8px;
-  border-radius: 999px;
-  background: oklch(96% 0.018 30);
-  color: oklch(48% 0.08 30);
-}}
-ul {{ margin: 0; padding-left: 24px; }}
-li {{ margin: 0 0 14px; font-size: 23px; line-height: 1.3; }}
-.records {{
-  display: grid;
-  gap: 8px;
-}}
-.lower-grid .panel {{
-  padding: 22px 28px;
-}}
-.lower-grid .section-title {{
-  margin-bottom: 14px;
-}}
-.record {{
-  min-height: 74px;
-  display: grid;
-  grid-template-columns: 1fr 214px;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: oklch(94% 0.02 205);
-}}
-.record-line {{
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}}
-.record-name {{
-  color: oklch(35% 0.06 190);
-  font-size: 18px;
-  white-space: nowrap;
-}}
-.record-value {{
-  color: var(--ink);
-  font-size: 22px;
-}}
-.record-sub {{
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 16px;
-}}
-.record-sub b {{ color: var(--ink); }}
-.record-graph {{
-  height: 58px;
-  display: flex;
-  align-items: end;
-  justify-content: end;
-  gap: 6px;
-  padding: 8px;
-  border-radius: 8px;
-  background: oklch(98% 0.006 226);
-}}
-.graph-bar {{
-  width: 15px;
-  min-height: 12px;
-  border-radius: 999px 999px 4px 4px;
-  background: oklch(72% 0.045 205);
-}}
-.graph-bar.latest {{ background: var(--teal); }}
-.delta {{
-  color: var(--muted);
-}}
-.delta.up {{ color: var(--green); }}
-.delta.down {{ color: var(--coral); }}
-.empty {{
-  color: var(--muted);
-  font-size: 23px;
-  padding: 18px 0;
-}}
-.source {{
-  align-self: end;
-  color: oklch(54% 0.025 246);
-  font-size: 18px;
-  line-height: 1.28;
-}}
-.source span {{
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}}
+{student_card_css()}
 </style>
 </head>
 <body>
 <main class="card">
   <div class="layout">
     <section class="hero">
-      <div>
+      <div class="hero-copy">
         <div class="eyebrow">PACA / Peak 학생 운영 카드</div>
-        <div class="identity">
-          <div class="mark">{escape(_initials(profile.name))}</div>
-          <div>
-            <h1>{escape(profile.name)}</h1>
-            <div class="meta">
-              {_chip(profile.school or "학교 미기록")}
-              {_chip(profile.grade or "학년 미기록")}
-              {_chip(_slot_label(profile.time_slot))}
-              {_chip(_weekly_label(profile.weekly_count))}
-              {_chip(_status_label(profile.status))}
-            </div>
-          </div>
+        <h1>{escape(profile.name)}</h1>
+        <div class="meta">
+          {_chip(profile.school or "학교 미기록")}
+          {_chip(profile.grade or "학년 미기록")}
+          {_chip(_slot_label(profile.time_slot))}
+          {_chip(_weekly_label(profile.weekly_count))}
+          {_chip(_status_label(profile.status))}
         </div>
       </div>
-      <aside class="risk {risk_class}"><div><span>현재 판단</span><strong>{escape(_risk_label(card.risk.level))}</strong></div></aside>
+      <div class="brand-stack">
+        <aside class="risk {risk_class}">
+          <div><span>현재 판단</span><strong>{escape(_risk_label(card.risk.level))}</strong></div>
+        </aside>
+        {_logo_html(logo_path)}
+      </div>
     </section>
     <section class="judgment">
       <div class="judgment-label">종합 판단</div>
@@ -375,11 +72,15 @@ li {{ margin: 0 0 14px; font-size: 23px; line-height: 1.3; }}
           {_metric("등원률", f"{attendance_rate}%")}
         </div>
         <div class="today">오늘 상태: {escape(_attendance_label(attendance.today_status))}</div>
-        <div class="absence-strip"><span class="absence-label">결석일</span><div class="absence-days">{absences_html}</div></div>
+        <div class="absence-strip">
+          <span class="absence-label">결석일</span><div class="absence-days">{absences_html}</div>
+        </div>
       </div>
       <div class="panel">
         <h2 class="section-title">상담 포인트</h2>
-        <ul>{reasons}</ul>
+        <ul>{_list_items(card.risk.reasons[:4])}</ul>
+        <div class="action-title">다음 액션</div>
+        <div class="action-list">{_action_items(card.risk.recommended_actions[:3])}</div>
       </div>
     </section>
     <section class="lower-grid">
@@ -388,8 +89,8 @@ li {{ margin: 0 0 14px; font-size: 23px; line-height: 1.3; }}
         <div class="records">{records_html}</div>
       </div>
       <div class="panel">
-        <h2 class="section-title">다음 액션</h2>
-        <ul>{actions}</ul>
+        <h2 class="section-title">상담 기록</h2>
+        {notes_html}
       </div>
     </section>
     <footer class="source">
@@ -421,6 +122,32 @@ def _record_card(item: RecordItem) -> str:
     )
 
 
+def _consultation_notes(notes: list[dict[str, str]]) -> str:
+    if not notes:
+        return "<div class='empty'>아직 저장된 상담 기록이 없어.</div>"
+    rows = []
+    for note in notes[:3]:
+        day = escape(_date_weekday(str(note.get("consulted_at") or note.get("created_at") or "")))
+        text = escape(str(note.get("note") or ""))
+        rows.append(
+            f"<article class='note-item'><div class='note-date'>{day}</div>"
+            f"<div class='note-text'>{text}</div></article>"
+        )
+    return f"<div class='note-list'>{''.join(rows)}</div>"
+
+
+def _list_items(items: list[str]) -> str:
+    if not items:
+        return "<li>확인된 상담 포인트가 아직 없어.</li>"
+    return "\n".join(f"<li>{escape(item)}</li>" for item in items)
+
+
+def _action_items(items: list[str]) -> str:
+    if not items:
+        return "<span class='action-chip'>추가 확인 없음</span>"
+    return "".join(f"<span class='action-chip'>{escape(item)}</span>" for item in items)
+
+
 def _chip(text: str) -> str:
     return f"<span class='chip'>{escape(text)}</span>"
 
@@ -436,10 +163,8 @@ def _absence_days(days: list[str]) -> str:
 
 
 def _date_weekday(value: str) -> str:
-    from datetime import date
-
     try:
-        day = date.fromisoformat(value)
+        day = date.fromisoformat(value[:10])
     except ValueError:
         return value
     weekdays = ("월", "화", "수", "목", "금", "토", "일")
@@ -460,9 +185,10 @@ def _record_graph(item: RecordItem) -> str:
     return "".join(bars)
 
 
-def _initials(name: str) -> str:
-    clean = name.strip()
-    return clean[-2:] if len(clean) >= 2 else clean or "학생"
+def _logo_html(logo_path: Path | None) -> str:
+    if logo_path and logo_path.exists():
+        return f"<img class='logo' src='{logo_path.as_uri()}' alt='MAX'>"
+    return "<div class='logo-fallback'>MAX</div>"
 
 
 def _risk_label(level: str) -> str:

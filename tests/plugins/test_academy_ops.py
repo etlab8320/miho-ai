@@ -46,7 +46,8 @@ def test_catalog_separates_connected_api_from_roadmap_candidates():
 
 
 def test_write_operations_require_confirmation_and_audit_log():
-    writes = [op for op in all_operations() if op.mode == "write" and op.key != "auth.login"]
+    explicit_local_writes = {"auth.login", "consultation.note_save"}
+    writes = [op for op in all_operations() if op.mode == "write" and op.key not in explicit_local_writes]
 
     assert writes
     assert all(op.requires_confirmation for op in writes)
@@ -67,6 +68,16 @@ def test_payment_completion_stays_a_planned_write_candidate():
     assert op.implementation_status == "planned"
     assert op.api_contract_status == "unverified"
     assert op.endpoint.path == "backend route inspection required"
+
+
+def test_consultation_note_save_is_local_only_write_tool():
+    op = find_operation("consultation.note_save")
+
+    assert op is not None
+    assert op.implementation_status == "implemented"
+    assert op.api_contract_status == "local_only"
+    assert op.endpoint.service == "local"
+    assert op.requires_audit_log is True
 
 
 def test_plan_lookup_is_connected_read_tool():

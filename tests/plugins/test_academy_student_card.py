@@ -185,7 +185,7 @@ def test_student_card_html_is_rich_and_still_excludes_sensitive_fields() -> None
     assert "graph-bar" in html
     assert "결석일" in html
     assert "05.23 토" in html
-    assert "다음 액션" in html
+    assert "상담 기록" in html
     assert "등원률" in html
     assert "고양덕양체" in html
     assert "010-" not in html
@@ -211,7 +211,7 @@ def test_student_card_html_limits_record_rows_to_prevent_footer_overlap() -> Non
     assert "종목3" in html
     assert "종목4" not in html
     assert "외 3개" in html
-    assert "grid-template-rows: 246px 176px 292px 388px 46px" in html
+    assert "grid-template-rows: 246px 154px 278px 392px 40px" in html
     assert "overflow: hidden" in html
 
 
@@ -235,7 +235,7 @@ def test_student_card_judgment_band_keeps_long_copy_inside_card() -> None:
 
     html = render_student_card_html(card)
 
-    assert "grid-template-columns: 132px minmax(0, 1fr)" in html
+    assert "grid-template-columns: 128px minmax(0, 1fr)" in html
     assert "align-items: center;" in html
     assert "font-size: 28px;" in html
     assert "text-wrap: pretty;" in html

@@ -9,6 +9,7 @@ from typing import Any
 
 from .academy_api import AcademyApiClient, AcademyApiError
 from .auth_store import decrypt_token, get_binding
+from .consultation_notes_tool import attach_recent_consultation_notes
 from .context import current_discord_user_id
 from .response_guidance import academy_response_guidance
 from .paca_client import DEFAULT_PACA_BASE_URL
@@ -33,6 +34,8 @@ def _student_card_image_tool_handler(
 
     client = kwargs.get("client")
     renderer = kwargs.get("renderer")
+    repo = kwargs.get("repo")
+    academy_id = str(kwargs.get("academy_id") or "")
     has_injected_runtime = client is not None and renderer is not None
     token = ""
     if not has_injected_runtime:
@@ -42,6 +45,7 @@ def _student_card_image_tool_handler(
         binding = get_binding(discord_user_id)
         if binding is None:
             return _json_error("학원 계정 연결이 필요해. `/academy login`으로 먼저 연결해줘.")
+        academy_id = binding.academy_id
         token = decrypt_token(binding.token_ciphertext) or ""
         if not token:
             return _json_error("학원 계정 연결을 복호화하지 못했어. `/academy login`으로 다시 연결해줘.")
@@ -58,6 +62,8 @@ def _student_card_image_tool_handler(
             today=today,
             period_days=period_days,
         )
+        if academy_id:
+            card = attach_recent_consultation_notes(card, academy_id=academy_id, repo=repo)
         image_path = renderer.render(card)
     except (AcademyApiError, StudentCardError, StudentCardRenderError) as exc:
         return _json_error(str(exc))

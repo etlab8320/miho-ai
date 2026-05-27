@@ -31,6 +31,7 @@ from .commentary_config import (
     ROUTER_MODEL,
     ROUTER_MODEL_TIMEOUT_SECONDS,
 )
+from .consultation_notes_tool import _consultation_note_save_tool_handler
 from .staff_schedule_tool import _staff_schedule_day_tool_handler
 from .staff_attendance_tool import (
     _staff_attendance_day_tool_handler,
@@ -77,6 +78,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_plan_by_date": _plan_by_date_tool_handler,
     "academy_assignment_by_date": _assignment_by_date_tool_handler,
     "academy_consultation_candidates": _consultation_candidates_tool_handler,
+    "academy_consultation_note_save": _consultation_note_save_tool_handler,
     "academy_student_summary": _student_summary_tool_handler,
     "academy_student_card_image": _student_card_image_tool_handler,
     "academy_student_context": _student_context_tool_handler,
@@ -122,10 +124,17 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "purpose": "재원생 중 상담이 필요한 학생 후보 추천. 최근 2주 출결과 최근 5개 실기기록 추세를 서버 API로 조회",
         "args": ["today", "period_days", "limit"],
     },
+    "academy_consultation_note_save": {
+        "purpose": "특정 학생 상담 기록 저장. 사용자가 상담 내용, 팔로업, 등원 사유 등을 기록해달라고 할 때 사용",
+        "args": ["student_query", "note", "consulted_at"],
+    },
     "academy_student_summary": {"purpose": "학생 요약 텍스트 조회", "args": ["student_query", "today", "period_days"]},
     "academy_student_card_image": {"purpose": "학생 카드를 이미지로 생성", "args": ["student_query", "today", "period_days"]},
     "academy_student_context": {
-        "purpose": "특정 학생의 수업 요일, 시간대, 최근 출석 요일, PACA/Peak ID 매핑, 최근 기록 컨텍스트 조회. 학생 후속 질문이나 어떤 학생 관련 질문인지 모호한 읽기 질문에 우선 사용",
+        "purpose": (
+            "특정 학생의 수업 요일, 시간대, 최근 출석 요일, PACA/Peak ID 매핑, "
+            "최근 기록 컨텍스트 조회. 학생 후속 질문이나 모호한 읽기 질문에 우선 사용"
+        ),
         "args": ["student_query", "today", "period_days"],
     },
 }
@@ -243,7 +252,13 @@ async def resolve_and_execute_academy_request(
 
     payload = _load_payload(raw_result)
     if _is_login_required_payload(payload):
-        remember_pending_request(context_key, tool_name=tool_name, args=args, request_text=clean, reason="auth_required")
+        remember_pending_request(
+            context_key,
+            tool_name=tool_name,
+            args=args,
+            request_text=clean,
+            reason="auth_required",
+        )
     remember_thread_context(context_key, tool_name=tool_name, args=args, payload=payload)
     response_focus = "" if force_default_response else str(decision.get("response_focus") or "").strip()
     response = focused_response(payload, response_focus) or _payload_message(payload)

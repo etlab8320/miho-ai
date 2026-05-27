@@ -22,6 +22,7 @@ from .context import (
     set_gateway_context,
 )
 from .commentary_config import plan_commentary_aux_defaults
+from .consultation_notes_tool import register_consultation_note_tool
 from .formatting import format_binding_status, format_catalog, format_login_link
 from .fast_model_routing import route_bound_academy_session_to_fast_model
 from . import login_preflight
@@ -46,15 +47,12 @@ from .staff_schedule_tool import _staff_schedule_day_tool_handler
 from .student_attendance_tool import register_student_attendance_tool
 from .student_card_tool import _student_card_image_tool_handler
 from .student_context_tool import _student_context_tool_handler
-
-
 def _catalog_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     """Return the academy operation catalog.
     Plugin tools may receive execution metadata such as ``task_id`` as keyword
     arguments from the tool dispatcher, so accept and ignore extra kwargs.
     """
     return json.dumps(operations_payload(), ensure_ascii=False)
-
 def _academy_command(raw_args: str = "") -> str:
     text = raw_args.strip()
     if not text:
@@ -283,6 +281,7 @@ def register(ctx: Any) -> None:
         ),
     )
     register_student_attendance_tool(ctx)
+    register_consultation_note_tool(ctx)
     ctx.register_tool(
         name="academy_student_attendance_calendar_image",
         toolset="academy_ops",
