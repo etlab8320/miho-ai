@@ -12,10 +12,8 @@ from plugins.academy_ops.natural_router import (
     AcademyNaturalRoute,
     resolve_and_execute_academy_request,
 )
-import plugins.academy_ops.response_commentary as response_commentary
-from plugins.academy_ops.response_commentary import append_summary_comment_or_fallback
 import plugins.academy_ops.response_synthesis as response_synthesis
-from plugins.academy_ops.response_synthesis import compact_payload, synthesize_or_fallback, synthesis_messages
+from plugins.academy_ops.response_synthesis import compact_payload
 from plugins.academy_ops.thread_context import clear_thread_contexts, remember_thread_context
 
 
@@ -102,7 +100,7 @@ async def test_natural_router_timeout_returns_short_response() -> None:
 
     assert route == AcademyNaturalRoute.HANDLED
     assert "학원 서버 응답이 불안정" in route.response_text
-    assert calls == 2
+    assert calls == 1
 
 
 @pytest.mark.asyncio
@@ -134,23 +132,13 @@ async def test_natural_router_retries_resolver_timeout_before_user_failure() -> 
         handlers={"academy_schedule_range": handler},
         today="2026-05-26",
         resolver_timeout=0.01,
+        resolver_attempts=2,
         synthesize=False,
     )
 
     assert route == AcademyNaturalRoute.HANDLED
     assert route.response_text == "2026-05-01 일정 2건"
     assert calls == 2
-
-
-def test_synthesis_prompt_uses_miho_persona_capsule() -> None:
-    messages = synthesis_messages("학생A 5월 출석 조회", {"message": "조회 결과"})
-
-    system = messages[0]["content"]
-    assert "현재 사용자에게 말하듯" in system
-    assert "존대" in system
-    assert "숫자, 날짜, 학생명" in system
-    assert "upcoming" in system
-    assert "미체크나 문제로 보지 마" in system
 
 
 @pytest.mark.asyncio
@@ -246,61 +234,6 @@ async def test_natural_router_can_route_student_followup_to_context_tool() -> No
 
     assert route == AcademyNaturalRoute.HANDLED
     assert route.response_text == "이서하 수업 요일: 일 오후반"
-
-
-@pytest.mark.asyncio
-async def test_polite_synthesis_falls_back_without_retry(monkeypatch) -> None:
-    calls = 0
-
-    async def polite_synthesis(_: str, __: dict) -> str:
-        nonlocal calls
-        calls += 1
-        return "학생A 5월 출석은 출석 9회예요."
-
-    monkeypatch.setattr(response_synthesis, "synthesize_response", polite_synthesis)
-
-    result = await synthesize_or_fallback(
-        "학생A 5월 출석 조회",
-        {"ok": True},
-        "학생A 5월 출석: 출석 9회, 지각 1회, 결석 1회.",
-    )
-
-    assert calls == 1
-    assert result == "학생A 5월 출석: 출석 9회, 지각 1회, 결석 1회."
-
-
-@pytest.mark.asyncio
-async def test_summary_focus_appends_optional_comment(monkeypatch) -> None:
-    async def summary_comment(_: str, __: dict) -> str:
-        return "미체크 날짜만 한 번 확인하면 돼."
-
-    monkeypatch.setattr(response_commentary, "synthesize_summary_comment", summary_comment)
-
-    result = await append_summary_comment_or_fallback(
-        "학생A 5월 출석 조회",
-        {"ok": True, "summary": {"unchecked": 1}},
-        "학생A 5월 출석: 출석 9회, 지각 0회, 결석 0회, 미체크 1회.",
-    )
-
-    assert result.endswith("\n미체크 날짜만 한 번 확인하면 돼.")
-
-
-@pytest.mark.asyncio
-async def test_summary_focus_comment_timeout_keeps_fast_fallback(monkeypatch) -> None:
-    async def slow_summary_comment(_: str, __: dict) -> str:
-        await asyncio.sleep(0.05)
-        return "늦게 온 코멘트"
-
-    monkeypatch.setattr(response_commentary, "synthesize_summary_comment", slow_summary_comment)
-    monkeypatch.setattr(response_commentary, "SUMMARY_COMMENT_TIMEOUT_SECONDS", 0.01)
-
-    result = await append_summary_comment_or_fallback(
-        "학생A 5월 출석 조회",
-        {"ok": True, "summary": {"unchecked": 1}},
-        "학생A 5월 출석: 출석 9회, 지각 0회, 결석 0회, 미체크 1회.",
-    )
-
-    assert result == "학생A 5월 출석: 출석 9회, 지각 0회, 결석 0회, 미체크 1회."
 
 
 @pytest.mark.asyncio

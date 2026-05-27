@@ -16,6 +16,9 @@ COMMENTARY_FALLBACK_MODELS = ("gpt-5.3-codex-spark", "gpt-5.2")
 COMMENTARY_FALLBACK_TIMEOUT_SECONDS = 8
 COMMENTARY_TIMEOUT_MESSAGE = "미호 코멘트: 코멘트 생성이 지연돼서 이번에는 운동계획 목록만 먼저 보냈어."
 COMMENTARY_ERROR_MESSAGE = "미호 코멘트: 코멘트 생성 쪽이 잠깐 막혀서 이번에는 운동계획 목록만 먼저 보냈어."
+ROUTER_MODEL_TIMEOUT_SECONDS = 5
+ROUTER_FALLBACK_MODELS = COMMENTARY_FALLBACK_MODELS
+ROUTER_EXTRA_BODY: dict[str, Any] = {}
 
 
 def plan_commentary_aux_defaults() -> dict[str, Any]:

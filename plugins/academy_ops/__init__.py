@@ -448,6 +448,11 @@ def register(ctx: Any) -> None:
                     "default": True,
                     "description": "신규 등록 상담만 볼지 여부.",
                 },
+                "trial_only": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "체험수업/무료체험 일정만 볼지 여부.",
+                },
             },
             "required": ["start_date", "end_date"],
             "additionalProperties": False,

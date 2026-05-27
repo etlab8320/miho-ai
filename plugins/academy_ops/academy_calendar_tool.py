@@ -42,6 +42,7 @@ def _consultation_schedule_range_tool_handler(args: dict[str, Any] | None = None
     if isinstance(date_range, str):
         return _json_error(date_range)
     new_only = _new_registration_only(payload.get("new_registration_only"))
+    trial_only = _trial_only(payload.get("trial_only"))
     client_or_error = _resolve_client(kwargs.get("client"))
     if isinstance(client_or_error, str):
         return _json_error(client_or_error)
@@ -51,6 +52,7 @@ def _consultation_schedule_range_tool_handler(args: dict[str, Any] | None = None
             date_range[0],
             date_range[1],
             new_registration_only=new_only,
+            trial_only=trial_only,
         )
     except AcademyApiError as exc:
         return _json_error(str(exc))
@@ -108,20 +110,27 @@ def _academy_schedule_message(payload: dict[str, Any]) -> str:
 def _consultation_schedule_message(payload: dict[str, Any]) -> str:
     rows = [row for row in payload.get("consultations", []) if isinstance(row, dict)]
     label = _range_label(payload)
+    item_label = "체험수업 일정" if payload.get("trial_only") else "신규 상담 일정"
     if not rows:
-        return f"{label} 신규 상담 일정은 없어."
-    lines = [f"{label} 신규 상담 일정 {len(rows)}건"]
+        return f"{label} {item_label}은 없어."
+    lines = [f"{label} {item_label} {len(rows)}건"]
     for row in rows[:_MESSAGE_LIMIT]:
         profile = " ".join(item for item in [row["student_name"], row["student_grade"], row["student_school"]] if item)
         target = f" / 목표 {row['target_school']}" if row["target_school"] else ""
-        status = f" / {row['status']}" if row["status"] else ""
-        lines.append(f"- {_short_date(row['preferred_date'])} {_short_time(row['preferred_time'])}: {profile}{target}{status}")
+        status = f" / {_status_label(row['status'])}" if row["status"] else ""
+        lines.append(f"- {_short_date(row['preferred_date'])} {_consultation_time_text(row)}: {profile}{target}{status}")
     if len(rows) > _MESSAGE_LIMIT:
         lines.append(f"외 {len(rows) - _MESSAGE_LIMIT}건")
     return "\n".join(lines)
 
 
 def _new_registration_only(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return False
+
+
+def _trial_only(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return False
@@ -139,6 +148,28 @@ def _short_date(value: str) -> str:
 
 def _short_time(value: str) -> str:
     return value[:5] if len(value) >= 5 else value
+
+
+def _consultation_time_text(row: dict[str, Any]) -> str:
+    preferred_time = _short_time(str(row.get("preferred_time") or ""))
+    if preferred_time:
+        return preferred_time
+    return _slot_label(str(row.get("time_slot") or ""))
+
+
+def _slot_label(value: str) -> str:
+    return {"morning": "오전반", "afternoon": "오후반", "evening": "저녁반"}.get(value, value)
+
+
+def _status_label(value: str) -> str:
+    return {
+        "scheduled": "예정",
+        "confirmed": "확정",
+        "completed": "완료",
+        "present": "출석",
+        "late": "지각",
+        "absent": "결석",
+    }.get(value, value)
 
 
 def _time_text(row: dict[str, Any]) -> str:

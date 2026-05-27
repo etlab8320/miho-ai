@@ -25,8 +25,12 @@ from .academy_query_tools import (
 from .attendance_calendar_tool import _student_attendance_calendar_image_tool_handler
 from .commentary_config import (
     COMMENTARY_EXTRA_BODY,
+    COMMENTARY_FALLBACK_TIMEOUT_SECONDS,
     COMMENTARY_MODEL,
     COMMENTARY_PROVIDER,
+    ROUTER_EXTRA_BODY,
+    ROUTER_FALLBACK_MODELS,
+    ROUTER_MODEL_TIMEOUT_SECONDS,
 )
 from .staff_schedule_tool import _staff_schedule_day_tool_handler
 from .student_attendance_tool import _student_attendance_range_tool_handler
@@ -35,6 +39,7 @@ from .student_context_tool import _student_context_tool_handler
 from .response_commentary import append_summary_comment_or_fallback
 from .response_focus import focused_response
 from .response_synthesis import compact_payload, synthesize_or_fallback
+from .route_preflight import academy_preflight_decision
 from .thread_context import (
     STUDENT_CONTEXT_TOOLS,
     get_thread_context,
@@ -50,6 +55,7 @@ ToolHandler = Callable[..., str]
 
 ROUTER_TASK = "academy_request_router"
 ROUTER_TIMEOUT_SECONDS = 18
+ROUTER_MAX_ATTEMPTS = 1
 TOOL_TIMEOUT_SECONDS = 70
 MIN_CONFIDENCE = 0.55
 TIMEOUT_RESPONSE = "지금 학원 서버 응답이 불안정해서 요청을 처리하지 못했어. 잠시 후 다시 한 번 보내줘."
@@ -78,8 +84,9 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "args": ["start_date", "end_date"],
     },
     "academy_consultation_schedule_range": {
-        "purpose": "신규 상담 또는 상담 일정 조회",
-        "args": ["start_date", "end_date", "new_registration_only"],
+        "purpose": "신규 상담, 상담 일정, 체험수업, 무료체험, trial lesson 일정 조회",
+        "args": ["start_date", "end_date", "new_registration_only", "trial_only"],
+        "aliases": ["체험수업", "무료체험", "체험상담", "trial", "trial lesson"],
     },
     "academy_student_attendance_range": {
         "purpose": "특정 학생의 기간별 출석, 지각, 결석, 미체크 조회",
@@ -134,16 +141,28 @@ class AcademyNaturalRoute:
 async def default_resolver(messages: list[dict[str, str]]) -> Any:
     from agent.auxiliary_client import async_call_llm
 
-    return await async_call_llm(
-        task=ROUTER_TASK,
-        provider=COMMENTARY_PROVIDER,
-        model=COMMENTARY_MODEL,
-        messages=messages,
-        temperature=0,
-        max_tokens=260,
-        timeout=ROUTER_TIMEOUT_SECONDS,
-        extra_body=COMMENTARY_EXTRA_BODY,
-    )
+    last_exc: Exception | None = None
+    model_sequence = (COMMENTARY_MODEL, *ROUTER_FALLBACK_MODELS)
+    for index, model in enumerate(model_sequence):
+        try:
+            return await async_call_llm(
+                task=ROUTER_TASK,
+                provider=COMMENTARY_PROVIDER,
+                model=model,
+                messages=messages,
+                temperature=0,
+                max_tokens=260,
+                timeout=(
+                    ROUTER_MODEL_TIMEOUT_SECONDS
+                    if index == 0
+                    else COMMENTARY_FALLBACK_TIMEOUT_SECONDS
+                ),
+                extra_body=ROUTER_EXTRA_BODY,
+            )
+        except Exception as exc:
+            last_exc = exc
+            logger.info("academy request resolver model failed: %s (%s)", model, exc)
+    raise last_exc or TimeoutError()
 
 
 async def resolve_and_execute_academy_request(
@@ -153,6 +172,7 @@ async def resolve_and_execute_academy_request(
     handlers: dict[str, ToolHandler] | None = None,
     today: str | None = None,
     resolver_timeout: float = ROUTER_TIMEOUT_SECONDS,
+    resolver_attempts: int = ROUTER_MAX_ATTEMPTS,
     tool_timeout: float = TOOL_TIMEOUT_SECONDS,
     synthesize: bool = True,
     context_key: str | None = None,
@@ -169,19 +189,22 @@ async def resolve_and_execute_academy_request(
     )
     if pending_route is not None:
         return pending_route
-    try:
-        decision = await _resolve_decision_with_retry(
-            clean,
-            resolver,
-            today=today,
-            context_key=context_key,
-            resolver_timeout=resolver_timeout,
-        )
-    except TimeoutError:
-        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, TIMEOUT_RESPONSE, "resolver_timeout")
-    except Exception as exc:
-        logger.info("academy request resolver failed: %s", exc)
-        return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="resolver_error")
+    decision = academy_preflight_decision(clean, today or _today())
+    if decision is None:
+        try:
+            decision = await _resolve_decision_with_retry(
+                clean,
+                resolver,
+                today=today,
+                context_key=context_key,
+                resolver_timeout=resolver_timeout,
+                attempts=resolver_attempts,
+            )
+        except TimeoutError:
+            return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, TIMEOUT_RESPONSE, "resolver_timeout")
+        except Exception as exc:
+            logger.info("academy request resolver failed: %s", exc)
+            return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="resolver_error")
 
     if decision.get("action") != "execute" or _confidence(decision) < MIN_CONFIDENCE:
         return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="not_academy")
@@ -230,9 +253,10 @@ async def _resolve_decision_with_retry(
     today: str | None,
     context_key: str | None,
     resolver_timeout: float,
+    attempts: int = ROUTER_MAX_ATTEMPTS,
 ) -> dict[str, Any]:
     last_error: TimeoutError | None = None
-    for attempt in range(2):
+    for attempt in range(max(1, attempts)):
         try:
             return await asyncio.wait_for(
                 _resolve_decision(text, resolver, today=today, context_key=context_key),
@@ -240,7 +264,11 @@ async def _resolve_decision_with_retry(
             )
         except TimeoutError as exc:
             last_error = exc
-            logger.info("academy request resolver timed out: attempt %s/2", attempt + 1)
+            logger.info(
+                "academy request resolver timed out: attempt %s/%s",
+                attempt + 1,
+                max(1, attempts),
+            )
     raise last_error or TimeoutError()
 
 

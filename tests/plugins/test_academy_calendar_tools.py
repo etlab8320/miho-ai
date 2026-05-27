@@ -70,6 +70,18 @@ class CalendarClient:
                 "status": "confirmed",
             },
             {
+                "id": 14,
+                "consultation_type": "trial",
+                "learning_type": "trial_class",
+                "student_name": "이체험",
+                "student_grade": "고2",
+                "student_school": "체험고",
+                "preferred_date": "2026-05-27",
+                "preferred_time": "18:00:00",
+                "status": "confirmed",
+                "parent_phone": "010-3333-4444",
+            },
+            {
                 "id": 13,
                 "consultation_type": "new_registration",
                 "student_name": "취소학생",
@@ -78,6 +90,44 @@ class CalendarClient:
                 "status": "cancelled",
             },
         ]
+
+
+class TrialAttendanceClient(CalendarClient):
+    def get_peak_attendance(self, target_day: date) -> dict:
+        assert target_day == date(2026, 5, 27)
+        return {
+            "date": "2026-05-27",
+            "slots": {
+                "afternoon": [
+                    {
+                        "assignment_id": 21,
+                        "student_id": 301,
+                        "student_name": "일반학생",
+                        "school": "맥스고",
+                        "grade": "고3",
+                        "is_trial": 0,
+                    }
+                ],
+                "evening": [
+                    {
+                        "assignment_id": 22,
+                        "student_id": 302,
+                        "student_name": "강도훈",
+                        "school": "풍동고",
+                        "grade": "고3",
+                        "is_trial": 1,
+                    },
+                    {
+                        "assignment_id": 23,
+                        "student_id": 303,
+                        "student_name": "기아림",
+                        "school": "백양고",
+                        "grade": "N수",
+                        "is_trial": "1",
+                    },
+                ],
+            },
+        }
 
 
 def test_academy_schedule_range_tool_uses_academy_events_not_class_schedules() -> None:
@@ -117,6 +167,51 @@ def test_consultation_schedule_range_tool_filters_new_registration_and_sensitive
     assert "010-" not in dumped
     assert "민감 체크" not in dumped
     assert "취소학생" not in dumped
+
+
+def test_consultation_schedule_range_tool_can_filter_trial_lessons() -> None:
+    result = _payload(
+        _consultation_schedule_range_tool_handler(
+            {
+                "start_date": "2026-05-27",
+                "end_date": "2026-05-27",
+                "new_registration_only": False,
+                "trial_only": True,
+            },
+            client=CalendarClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["operation"] == "consultation.schedule_range"
+    assert result["summary"] == {"total": 1, "confirmed": 1}
+    assert [row["student_name"] for row in result["consultations"]] == ["이체험"]
+    assert "체험수업 일정 1건" in result["message"]
+    dumped = json.dumps(result, ensure_ascii=False)
+    assert "010-" not in dumped
+
+
+def test_trial_lesson_schedule_uses_peak_attendance_trial_students() -> None:
+    result = _payload(
+        _consultation_schedule_range_tool_handler(
+            {
+                "start_date": "2026-05-27",
+                "end_date": "2026-05-27",
+                "new_registration_only": False,
+                "trial_only": True,
+            },
+            client=TrialAttendanceClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["summary"]["total"] == 2
+    assert [row["student_name"] for row in result["consultations"]] == ["강도훈", "기아림"]
+    assert all(row["time_slot"] == "evening" for row in result["consultations"])
+    assert "저녁반" in result["message"]
+    assert "예정" in result["message"]
+    assert "scheduled" not in result["message"]
+    assert "일반학생" not in json.dumps(result, ensure_ascii=False)
 
 
 def test_calendar_tools_require_llm_resolved_date_range() -> None:
