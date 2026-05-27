@@ -126,7 +126,8 @@ def _capture_gateway_context(event: Any = None, **kwargs: Any) -> dict[str, str]
 async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dict[str, str]:
     _capture_gateway_context(event, **kwargs)
     source = getattr(event, "source", None)
-    platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
+    platform_raw = getattr(source, "platform", "")
+    platform = str(getattr(platform_raw, "value", platform_raw) or "")
     discord_user_id = DISCORD_USER_ID.get()
     if platform != "discord" or not discord_user_id:
         return {"action": "allow"}

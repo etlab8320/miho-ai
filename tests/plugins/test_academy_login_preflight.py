@@ -50,6 +50,29 @@ async def test_natural_login_request_returns_login_link_for_authorized_discord_u
 
 
 @pytest.mark.asyncio
+async def test_natural_login_request_accepts_string_discord_platform(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    event = MessageEvent(
+        text="피크 계정 연결해줘",
+        source=SimpleNamespace(
+            platform="discord",
+            user_id="discord-user-2",
+            chat_id="channel-1",
+            guild_id="guild-1",
+            parent_chat_id="",
+            parent_chat_name="",
+            chat_name="",
+        ),
+    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
+
+    result = await _academy_pre_gateway_dispatch(event, gateway=gateway)
+
+    assert result["action"] == "respond"
+    assert "/academy/login?state=" in result["text"]
+
+
+@pytest.mark.asyncio
 async def test_natural_login_request_does_not_bypass_gateway_auth(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     event = MessageEvent(
