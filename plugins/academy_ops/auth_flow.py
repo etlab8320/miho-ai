@@ -155,6 +155,14 @@ def load_pending_logins() -> dict[str, PendingLogin]:
     return items
 
 
+def has_pending_login_for_user(discord_user_id: str, *, now: int | None = None) -> bool:
+    current = int(now or time.time())
+    user_id = str(discord_user_id)
+    return any(
+        item.discord_user_id == user_id and item.expires_at >= current for item in load_pending_logins().values()
+    )
+
+
 def refresh_remote_pending_logins(*, now: int | None = None) -> int:
     current = int(now or time.time())
     completed = 0

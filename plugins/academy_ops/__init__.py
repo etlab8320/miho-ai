@@ -8,6 +8,7 @@ from typing import Any
 from .auth_flow import (
     LINK_TTL_SECONDS,
     create_login_link,
+    has_pending_login_for_user as has_pending_login,
     refresh_remote_pending_logins,
     resolve_auth_base_url,
 )
@@ -23,7 +24,7 @@ from .context import (
 from .commentary_config import plan_commentary_aux_defaults
 from .formatting import format_binding_status, format_catalog, format_login_link
 from .fast_model_routing import route_bound_academy_session_to_fast_model
-from .login_preflight import is_academy_login_request, is_academy_login_status_request, is_gateway_source_authorized
+from . import login_preflight
 from .natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
 from .thread_context import academy_context_key
 from .academy_query_tools import (
@@ -54,7 +55,6 @@ def _catalog_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     """
     return json.dumps(operations_payload(), ensure_ascii=False)
 
-
 def _academy_command(raw_args: str = "") -> str:
     text = raw_args.strip()
     if not text:
@@ -70,7 +70,6 @@ def _academy_command(raw_args: str = "") -> str:
     if normalized == "logout":
         return _logout_command()
     return format_catalog()
-
 
 def _login_command() -> str:
     discord_user_id = DISCORD_USER_ID.get()
@@ -88,7 +87,6 @@ def _login_command() -> str:
         is_local=base_url.startswith("http://127.0.0.1") or base_url.startswith("http://localhost"),
     )
 
-
 def _status_command() -> str:
     discord_user_id = DISCORD_USER_ID.get()
     if not discord_user_id:
@@ -98,7 +96,6 @@ def _status_command() -> str:
     if binding is None:
         return "아직 학원 계정이 연결되지 않았어. `/academy login`으로 먼저 연결해줘."
     return format_binding_status(binding.name, binding.academy_name, binding.role)
-
 
 def _logout_command() -> str:
     discord_user_id = DISCORD_USER_ID.get()
@@ -131,18 +128,23 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
     if platform != "discord" or not discord_user_id:
         return {"action": "allow"}
     refresh_remote_pending_logins()
-    if is_academy_login_status_request(str(getattr(event, "text", "") or "")):
-        if is_gateway_source_authorized(kwargs.get("gateway"), source):
+    text = str(getattr(event, "text", "") or "")
+    binding = get_binding(discord_user_id)
+    has_login_context = (
+        login_preflight.has_academy_login_context(text) or binding is not None or has_pending_login(discord_user_id)
+    )
+    if login_preflight.is_academy_login_status_request(text) and has_login_context:
+        if login_preflight.is_gateway_source_authorized(kwargs.get("gateway"), source):
             return {"action": "respond", "text": _status_command()}
         return {"action": "allow"}
-    if is_academy_login_request(str(getattr(event, "text", "") or "")):
-        if is_gateway_source_authorized(kwargs.get("gateway"), source):
+    if login_preflight.is_academy_login_request(text):
+        if login_preflight.is_gateway_source_authorized(kwargs.get("gateway"), source):
             return {"action": "respond", "text": _login_command()}
         return {"action": "allow"}
-    if get_binding(discord_user_id) is None:
+    if binding is None:
         return {"action": "allow"}
     route = await resolve_and_execute_academy_request(
-        str(getattr(event, "text", "") or ""),
+        text,
         context_key=academy_context_key(event),
     )
     if route == AcademyNaturalRoute.HANDLED:

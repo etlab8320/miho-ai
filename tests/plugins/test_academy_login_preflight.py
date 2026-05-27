@@ -10,7 +10,7 @@ from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 from plugins.academy_ops import _academy_pre_gateway_dispatch
-from plugins.academy_ops.auth_flow import load_pending_logins
+from plugins.academy_ops.auth_flow import create_login_link, load_pending_logins
 from plugins.academy_ops.auth_store import AcademyBinding, encrypt_token, save_binding
 from plugins.academy_ops.login_preflight import is_academy_login_request, is_academy_login_status_request
 
@@ -22,6 +22,11 @@ def test_academy_login_request_detection_is_intent_based() -> None:
     assert not is_academy_login_request("로그인 했어")
     assert is_academy_login_status_request("로그인했어 되었는지 확인해줘")
     assert is_academy_login_status_request("로그인 완료")
+    assert is_academy_login_status_request("파카 로그인되어있어?")
+    assert not is_academy_login_request("파카 로그인되어있어?")
+    assert not is_academy_login_request("파카 로그인 관련 구조 얘기해줘")
+    assert not is_academy_login_request("paca login status")
+    assert is_academy_login_request("paca login please")
     assert not is_academy_login_request("학생 카드 디자인 의견 줘")
     assert not is_academy_login_status_request("학생 카드 디자인 의견 줘")
 
@@ -135,6 +140,46 @@ async def test_login_completion_confirmation_reports_missing_binding(monkeypatch
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     monkeypatch.setattr("plugins.academy_ops.refresh_remote_pending_logins", lambda: 0)
     event = MessageEvent(
+        text="파카 로그인 완료 확인해줘",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="discord-user-1",
+            chat_id="channel-1",
+            guild_id="guild-1",
+        ),
+    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
+
+    result = await _academy_pre_gateway_dispatch(event, gateway=gateway)
+
+    assert result["action"] == "respond"
+    assert "아직 학원 계정이 연결되지 않았어" in result["text"]
+
+
+@pytest.mark.asyncio
+async def test_generic_login_confirmation_without_academy_context_is_ignored(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setattr("plugins.academy_ops.refresh_remote_pending_logins", lambda: 0)
+    event = MessageEvent(
+        text="로그인 완료 확인해줘",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="discord-user-1",
+            chat_id="channel-1",
+            guild_id="guild-1",
+        ),
+    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
+
+    assert await _academy_pre_gateway_dispatch(event, gateway=gateway) == {"action": "allow"}
+
+
+@pytest.mark.asyncio
+async def test_pending_login_allows_generic_completion_confirmation(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setattr("plugins.academy_ops.refresh_remote_pending_logins", lambda: 0)
+    create_login_link(discord_user_id="discord-user-1", guild_id="guild-1", channel_id="channel-1")
+    event = MessageEvent(
         text="로그인 완료 확인해줘",
         source=SessionSource(
             platform=Platform.DISCORD,
@@ -149,3 +194,26 @@ async def test_login_completion_confirmation_reports_missing_binding(monkeypatch
 
     assert result["action"] == "respond"
     assert "아직 학원 계정이 연결되지 않았어" in result["text"]
+    assert len(load_pending_logins()) == 1
+
+
+@pytest.mark.asyncio
+async def test_academy_login_status_question_does_not_create_link(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setattr("plugins.academy_ops.refresh_remote_pending_logins", lambda: 0)
+    event = MessageEvent(
+        text="파카 로그인되어있어?",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="discord-user-1",
+            chat_id="channel-1",
+            guild_id="guild-1",
+        ),
+    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
+
+    result = await _academy_pre_gateway_dispatch(event, gateway=gateway)
+
+    assert result["action"] == "respond"
+    assert "아직 학원 계정이 연결되지 않았어" in result["text"]
+    assert load_pending_logins() == {}
