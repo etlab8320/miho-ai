@@ -22,6 +22,7 @@ from .formatting import (
     format_login_link,
 )
 from .fast_model_routing import route_bound_academy_session_to_fast_model
+from .login_preflight import is_academy_login_request, is_gateway_source_authorized
 from .natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
 from .thread_context import academy_context_key
 from .academy_query_tools import (
@@ -127,7 +128,13 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
     source = getattr(event, "source", None)
     platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
     discord_user_id = DISCORD_USER_ID.get()
-    if platform != "discord" or not discord_user_id or get_binding(discord_user_id) is None:
+    if platform != "discord" or not discord_user_id:
+        return {"action": "allow"}
+    if is_academy_login_request(str(getattr(event, "text", "") or "")):
+        if is_gateway_source_authorized(kwargs.get("gateway"), source):
+            return {"action": "respond", "text": _login_command()}
+        return {"action": "allow"}
+    if get_binding(discord_user_id) is None:
         return {"action": "allow"}
     route = await resolve_and_execute_academy_request(
         str(getattr(event, "text", "") or ""),
