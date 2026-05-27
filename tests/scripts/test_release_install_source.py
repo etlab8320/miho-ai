@@ -8,6 +8,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_FILES = [
     REPO_ROOT / "README.md",
+    REPO_ROOT / "install.ps1",
     REPO_ROOT / "scripts" / "install.sh",
     REPO_ROOT / "scripts" / "install.ps1",
     REPO_ROOT / "scripts" / "install.cmd",
@@ -23,6 +24,7 @@ def test_release_installers_use_miho_ai_github_source():
 
 def test_installers_show_miho_ai_branding():
     installer_files = [
+        REPO_ROOT / "install.ps1",
         REPO_ROOT / "scripts" / "install.sh",
         REPO_ROOT / "scripts" / "install.ps1",
     ]
@@ -39,3 +41,10 @@ def test_update_source_defaults_to_main_release_branch():
     assert install_script_url() == (
         "https://raw.githubusercontent.com/etlab8320/miho-ai/main/scripts/install.sh"
     )
+
+
+def test_windows_root_installer_is_public_short_url_entrypoint():
+    text = (REPO_ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    assert "https://raw.githubusercontent.com/etlab8320/miho-ai/$ref/scripts/install.ps1" in text
+    assert "raw.githubusercontent.com/etlab8320/miho-ai/main/install.ps1" in text

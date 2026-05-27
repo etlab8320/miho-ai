@@ -337,7 +337,7 @@ detect_os() {
             OS="windows"
             DISTRO="windows"
             log_error "Windows detected. Please use the PowerShell installer:"
-            log_info "  iex (irm https://raw.githubusercontent.com/etlab8320/miho-ai/main/scripts/install.ps1)"
+            log_info "  irm https://raw.githubusercontent.com/etlab8320/miho-ai/main/install.ps1 | iex"
             exit 1
             ;;
         *)

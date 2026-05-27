@@ -1,3 +1,4 @@
+include install.ps1
 graft skills
 graft optional-skills
 global-exclude __pycache__
