@@ -187,7 +187,9 @@ def test_student_card_html_is_rich_and_still_excludes_sensitive_fields() -> None
     assert "05.23 토" in html
     assert "상담 기록" in html
     assert "등원률" in html
-    assert "고양덕양체" in html
+    assert "최근 2주 출결" in html
+    assert "GoyangDeogyang" in html
+    assert "민감정보 제외" not in html
     assert "010-" not in html
     assert "500000" not in html
     assert "discount" not in html
@@ -211,7 +213,7 @@ def test_student_card_html_limits_record_rows_to_prevent_footer_overlap() -> Non
     assert "종목3" in html
     assert "종목4" not in html
     assert "외 3개" in html
-    assert "grid-template-rows: 246px 154px 278px 392px 40px" in html
+    assert "grid-template-rows: 250px 154px 282px minmax(0, 452px)" in html
     assert "overflow: hidden" in html
 
 

@@ -7,7 +7,7 @@ from html import escape
 from pathlib import Path
 
 from .student_card import RecordItem, StudentCard
-from .student_card_fonts import GOYANG_LICENSE_NOTE, goyang_font_css
+from .student_card_fonts import goyang_font_css
 from .student_card_styles import student_card_css
 
 
@@ -24,7 +24,6 @@ def render_student_card_html(card: StudentCard, *, logo_path: Path | None = None
     if not records_html:
         records_html = "<div class='empty'>아직 연결된 Peak 기록이 없어.</div>"
     absences_html = _absence_days(attendance.recent_absences)
-    missing = " · ".join(card.missing_sources) if card.missing_sources else "PACA/Peak 조회 정상"
     notes_html = _consultation_notes(card.consultation_notes)
     risk_class = escape(card.risk.level or "stable")
     return f"""<!doctype html>
@@ -64,7 +63,7 @@ def render_student_card_html(card: StudentCard, *, logo_path: Path | None = None
     </section>
     <section class="top-grid">
       <div class="panel">
-        <h2 class="section-title">최근 출결</h2>
+        <h2 class="section-title">최근 2주 출결</h2>
         <div class="attendance-row">
           {_metric("출석", str(attendance.summary["present"]))}
           {_metric("지각", str(attendance.summary["late"]))}
@@ -93,10 +92,6 @@ def render_student_card_html(card: StudentCard, *, logo_path: Path | None = None
         {notes_html}
       </div>
     </section>
-    <footer class="source">
-      <span>자료 상태: {escape(missing)}</span>
-      <span>민감정보 제외 완료 · {GOYANG_LICENSE_NOTE}</span>
-    </footer>
   </div>
 </main>
 </body>
