@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .auth_flow import LINK_TTL_SECONDS, create_login_link, resolve_auth_base_url
+from .auth_flow import (
+    LINK_TTL_SECONDS,
+    create_login_link,
+    refresh_remote_pending_logins,
+    resolve_auth_base_url,
+)
 from .auth_store import delete_binding, get_binding
 from .catalog import operations_payload
 from .context import (
@@ -95,6 +100,7 @@ def _status_command() -> str:
     discord_user_id = DISCORD_USER_ID.get()
     if not discord_user_id:
         return "디스코드 사용자 정보를 확인하지 못했어."
+    refresh_remote_pending_logins()
     binding = get_binding(discord_user_id)
     if binding is None:
         return "아직 학원 계정이 연결되지 않았어. `/academy login`으로 먼저 연결해줘."
@@ -131,6 +137,7 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
     discord_user_id = DISCORD_USER_ID.get()
     if platform != "discord" or not discord_user_id:
         return {"action": "allow"}
+    refresh_remote_pending_logins()
     if is_academy_login_request(str(getattr(event, "text", "") or "")):
         if is_gateway_source_authorized(kwargs.get("gateway"), source):
             return {"action": "respond", "text": _login_command()}

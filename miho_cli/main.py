@@ -9632,62 +9632,77 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 except (FileNotFoundError, subprocess.TimeoutExpired, ImportError):
                     pass
 
+            # --- Windows Scheduled Task / direct detached gateway ---
+            windows_gateway_restarted = False
+            if _is_windows():
+                try:
+                    from miho_cli import gateway_windows
+
+                    if gateway_windows.is_installed() or gateway_windows._gateway_pids():
+                        gateway_windows.restart()
+                        restarted_services.append(gateway_windows.get_task_name())
+                        windows_gateway_restarted = True
+                except Exception as exc:
+                    logger.debug("Windows gateway restart during update failed: %s", exc)
+
             # --- Manual (non-service) gateways ---
             # Kill any remaining gateway processes not managed by a service.
             # Exclude PIDs that belong to just-restarted services so we don't
             # immediately kill the process that systemd/launchd just spawned.
-            service_pids = _get_service_pids()
-            manual_pids = find_gateway_pids(
-                exclude_pids=service_pids, all_profiles=True
-            )
-            profile_processes = {
-                proc.pid: proc
-                for proc in find_profile_gateway_processes(exclude_pids=service_pids)
-                if proc.pid in manual_pids
-            }
-            for pid, proc in profile_processes.items():
-                if not launch_detached_profile_gateway_restart(proc.profile, pid):
-                    continue
-                # Prefer a graceful SIGUSR1 drain so in-flight agent runs
-                # finish before the watcher respawns the gateway.  If the
-                # gateway doesn't support SIGUSR1 or doesn't exit within
-                # the drain budget, fall back to SIGTERM — the watcher
-                # still sees the exit and relaunches either way.
-                drained = _graceful_restart_via_sigusr1(
-                    pid,
-                    drain_timeout=_drain_budget,
+            manual_pids = []
+            if not windows_gateway_restarted:
+                service_pids = _get_service_pids()
+                manual_pids = find_gateway_pids(
+                    exclude_pids=service_pids, all_profiles=True
                 )
-                if not drained:
+                profile_processes = {
+                    proc.pid: proc
+                    for proc in find_profile_gateway_processes(exclude_pids=service_pids)
+                    if proc.pid in manual_pids
+                }
+                for pid, proc in profile_processes.items():
+                    if not launch_detached_profile_gateway_restart(proc.profile, pid):
+                        continue
+                    # Prefer a graceful SIGUSR1 drain so in-flight agent runs
+                    # finish before the watcher respawns the gateway.  If the
+                    # gateway doesn't support SIGUSR1 or doesn't exit within
+                    # the drain budget, fall back to SIGTERM — the watcher
+                    # still sees the exit and relaunches either way.
+                    drained = _graceful_restart_via_sigusr1(
+                        pid,
+                        drain_timeout=_drain_budget,
+                    )
+                    if not drained:
+                        try:
+                            os.kill(pid, _signal.SIGTERM)
+                        except (ProcessLookupError, PermissionError):
+                            pass
+                    # Wait for the old process to fully exit before the watcher
+                    # spawns the new gateway.  Telegram holds the previous
+                    # getUpdates long-poll session open on its servers for up to
+                    # ~30s after the client disconnects.  If the new gateway
+                    # connects before that window expires it receives a 409
+                    # Conflict, which _handle_polling_conflict() recovers from
+                    # via back-off retries — but a brief wait here reduces the
+                    # chance of hitting that path at all, especially on fast
+                    # machines where the watcher loop restarts in < 1s.
+                    # We wait up to 5s for the process to exit (the OS-level
+                    # close, not the Telegram server-side expiry), then let the
+                    # watcher take over.  The Telegram adapter's retry logic
+                    # handles any remaining 409s if the server session is still
+                    # live when the new gateway polls.
+                    _wait_for_gateway_exit(timeout=5.0, force_after=None)
+                    killed_pids.add(pid)
+                    relaunched_profiles.append(proc.profile)
+
+                for pid in manual_pids:
+                    if pid in profile_processes:
+                        continue
                     try:
                         os.kill(pid, _signal.SIGTERM)
+                        killed_pids.add(pid)
                     except (ProcessLookupError, PermissionError):
                         pass
-                # Wait for the old process to fully exit before the watcher
-                # spawns the new gateway.  Telegram holds the previous
-                # getUpdates long-poll session open on its servers for up to
-                # ~30s after the client disconnects.  If the new gateway
-                # connects before that window expires it receives a 409
-                # Conflict, which _handle_polling_conflict() recovers from
-                # via back-off retries — but a brief wait here reduces the
-                # chance of hitting that path at all, especially on fast
-                # machines where the watcher loop restarts in < 1s.
-                # We wait up to 5s for the process to exit (the OS-level
-                # close, not the Telegram server-side expiry), then let the
-                # watcher take over.  The Telegram adapter's retry logic
-                # handles any remaining 409s if the server session is still
-                # live when the new gateway polls.
-                _wait_for_gateway_exit(timeout=5.0, force_after=None)
-                killed_pids.add(pid)
-                relaunched_profiles.append(proc.profile)
-
-            for pid in manual_pids:
-                if pid in profile_processes:
-                    continue
-                try:
-                    os.kill(pid, _signal.SIGTERM)
-                    killed_pids.add(pid)
-                except (ProcessLookupError, PermissionError):
-                    pass
 
             if restarted_services or killed_pids:
                 print()

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -12,6 +14,13 @@ from .auth_flow import complete_login, load_pending_logins
 from .auth_pages import render_error_page, render_login_page, render_success_page
 from .paca_client import DEFAULT_PACA_BASE_URL, AcademyLoginError, login_paca
 from .rate_limit import is_limited, record_failure, record_success
+from .remote_auth import (
+    BrokerPendingLogin,
+    consume_broker_result,
+    get_broker_pending,
+    save_broker_pending,
+    set_broker_result,
+)
 
 
 class AcademyAuthHandler(BaseHTTPRequestHandler):
@@ -27,18 +36,24 @@ class AcademyAuthHandler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "max-age=86400")
             self.end_headers()
             return
+        if parsed.path == "/academy/result":
+            self._handle_result_request(parsed)
+            return
         if parsed.path != "/academy/login":
             self._send_html(render_error_page("요청한 페이지를 찾지 못했어."), HTTPStatus.NOT_FOUND)
             return
 
         state = parse_qs(parsed.query).get("state", [""])[0].strip()
-        if not state or state not in load_pending_logins():
+        if not state or (state not in load_pending_logins() and get_broker_pending(state) is None):
             self._send_html(render_error_page("로그인 링크가 만료되었거나 잘못됐어."), HTTPStatus.BAD_REQUEST)
             return
         self._send_html(render_login_page(state=state))
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        if parsed.path == "/academy/pending":
+            self._handle_pending_registration()
+            return
         if parsed.path != "/academy/login":
             self._send_html(render_error_page("요청한 페이지를 찾지 못했어."), HTTPStatus.NOT_FOUND)
             return
@@ -67,7 +82,16 @@ class AcademyAuthHandler(BaseHTTPRequestHandler):
                 password=password,
                 base_url=os.getenv("MIHO_ACADEMY_PACA_BASE_URL", DEFAULT_PACA_BASE_URL),
             )
-            binding = complete_login(state, login_result)
+            if state in load_pending_logins():
+                binding = complete_login(state, login_result)
+                success_name = binding.name
+                success_academy = binding.academy_name
+            elif get_broker_pending(state) is not None:
+                set_broker_result(state, asdict(login_result))
+                success_name = login_result.name
+                success_academy = login_result.academy_name
+            else:
+                raise ValueError("로그인 링크가 만료되었거나 잘못됐어.")
         except AcademyLoginError as exc:
             record_failure(rate_key)
             self._send_html(render_login_page(state=state, error=str(exc)), HTTPStatus.UNAUTHORIZED)
@@ -77,7 +101,7 @@ class AcademyAuthHandler(BaseHTTPRequestHandler):
             return
 
         record_success(rate_key)
-        self._send_html(render_success_page(name=binding.name, academy_name=binding.academy_name))
+        self._send_html(render_success_page(name=success_name, academy_name=success_academy))
 
     def log_message(self, fmt: str, *args: object) -> None:
         if self.path.startswith("/academy/login"):
@@ -89,12 +113,61 @@ class AcademyAuthHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(min(length, 65536)).decode("utf-8", errors="replace")
         return parse_qs(raw, keep_blank_values=True)
 
+    def _read_json(self) -> dict[str, object]:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(min(length, 65536)).decode("utf-8", errors="replace")
+        payload = json.loads(raw)
+        return payload if isinstance(payload, dict) else {}
+
+    def _handle_pending_registration(self) -> None:
+        try:
+            payload = self._read_json()
+            item = BrokerPendingLogin(
+                state=str(payload.get("state") or ""),
+                discord_user_id=str(payload.get("discord_user_id") or ""),
+                guild_id=str(payload.get("guild_id") or ""),
+                channel_id=str(payload.get("channel_id") or ""),
+                created_at=int(payload.get("created_at") or 0),
+                expires_at=int(payload.get("expires_at") or 0),
+                claim_secret=str(payload.get("claim_secret") or ""),
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            self._send_json({"ok": False, "error": "bad_request"}, HTTPStatus.BAD_REQUEST)
+            return
+        if not item.state or not item.claim_secret or item.expires_at <= item.created_at:
+            self._send_json({"ok": False, "error": "bad_request"}, HTTPStatus.BAD_REQUEST)
+            return
+        save_broker_pending(item)
+        self._send_json({"ok": True})
+
+    def _handle_result_request(self, parsed) -> None:  # noqa: ANN001
+        params = parse_qs(parsed.query)
+        state = params.get("state", [""])[0].strip()
+        claim = params.get("claim", [""])[0].strip()
+        result = consume_broker_result(state, claim)
+        if result is None:
+            self._send_json({"ok": False, "error": "not_found"}, HTTPStatus.NOT_FOUND)
+            return
+        if not result:
+            self._send_json({"ok": False, "status": "pending"}, HTTPStatus.ACCEPTED)
+            return
+        self._send_json(result)
+
     def _send_text(self, body: str, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
+
+    def _send_json(self, payload: dict[str, object], status: HTTPStatus = HTTPStatus.OK) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_html(self, body: str, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.send_response(status)

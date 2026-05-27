@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -14,6 +15,11 @@ from miho_constants import get_miho_home
 from utils import atomic_json_write
 
 from .auth_store import AcademyBinding, encrypt_token, save_binding
+from .remote_auth import (
+    fetch_remote_result,
+    is_loopback_base_url,
+    register_remote_pending,
+)
 
 
 DEFAULT_AUTH_BASE_URL = "https://academy-login.etlab.kr"
@@ -35,6 +41,8 @@ class PendingLogin:
     channel_id: str
     created_at: int
     expires_at: int
+    claim_secret: str = ""
+    broker_base_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -58,6 +66,12 @@ def create_login_link(
 ) -> LoginLink:
     current = int(now or time.time())
     state = secrets.token_urlsafe(32)
+    auth_base = resolve_auth_base_url(base_url).rstrip("/")
+    claim_secret = ""
+    broker_base_url = ""
+    if not is_loopback_base_url(auth_base):
+        claim_secret = secrets.token_urlsafe(32)
+        broker_base_url = auth_base
     pending = PendingLogin(
         state=state,
         discord_user_id=str(discord_user_id),
@@ -65,9 +79,13 @@ def create_login_link(
         channel_id=str(channel_id or ""),
         created_at=current,
         expires_at=current + LINK_TTL_SECONDS,
+        claim_secret=claim_secret,
+        broker_base_url=broker_base_url,
     )
     _save_pending(pending)
-    auth_base = resolve_auth_base_url(base_url).rstrip("/")
+    if broker_base_url:
+        register_remote_pending(broker_base_url, asdict(pending))
+        _start_remote_result_poll(pending)
     query = urlencode({"state": state})
     return LoginLink(
         state=state,
@@ -122,10 +140,32 @@ def load_pending_logins() -> dict[str, PendingLogin]:
         if not isinstance(value, dict):
             continue
         try:
-            items[str(state)] = PendingLogin(**value)
-        except TypeError:
+            items[str(state)] = PendingLogin(
+                state=str(value.get("state") or state),
+                discord_user_id=str(value.get("discord_user_id") or ""),
+                guild_id=str(value.get("guild_id") or ""),
+                channel_id=str(value.get("channel_id") or ""),
+                created_at=int(value.get("created_at") or 0),
+                expires_at=int(value.get("expires_at") or 0),
+                claim_secret=str(value.get("claim_secret") or ""),
+                broker_base_url=str(value.get("broker_base_url") or ""),
+            )
+        except (TypeError, ValueError):
             continue
     return items
+
+
+def refresh_remote_pending_logins(*, now: int | None = None) -> int:
+    current = int(now or time.time())
+    completed = 0
+    for pending in list(load_pending_logins().values()):
+        if not pending.broker_base_url or not pending.claim_secret:
+            continue
+        if pending.expires_at < current:
+            continue
+        if _complete_remote_pending(pending):
+            completed += 1
+    return completed
 
 
 def purge_expired_pending(*, now: int | None = None) -> int:
@@ -163,6 +203,35 @@ def _save_pending(pending: PendingLogin) -> None:
     items = load_pending_logins()
     items[pending.state] = pending
     _write_pending(items)
+
+
+def _complete_remote_pending(pending: PendingLogin) -> bool:
+    payload = fetch_remote_result(
+        pending.broker_base_url,
+        state=pending.state,
+        claim_secret=pending.claim_secret,
+    )
+    if not payload:
+        return False
+    try:
+        complete_login(pending.state, AcademyLoginResult(**payload))
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _start_remote_result_poll(pending: PendingLogin) -> None:
+    def _poll() -> None:
+        while int(time.time()) <= pending.expires_at:
+            if _complete_remote_pending(pending):
+                return
+            time.sleep(2.0)
+
+    threading.Thread(
+        target=_poll,
+        name=f"academy-login-poll-{pending.state[:8]}",
+        daemon=True,
+    ).start()
 
 
 def _write_pending(items: dict[str, PendingLogin]) -> None:
