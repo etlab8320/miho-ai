@@ -298,6 +298,7 @@ def _build_gateway_cmd_script(
     working_dir: str,
     miho_home: str,
     profile_arg: str,
+    extra_pythonpath: list[str] | None = None,
 ) -> str:
     """Build the ``gateway.cmd`` wrapper content (CRLF-terminated).
 
@@ -320,6 +321,10 @@ def _build_gateway_cmd_script(
     # if someone imports miho_constants-based logic during startup.
     venv_dir = str(Path(python_path).resolve().parent.parent)
     lines.append(f'set "VIRTUAL_ENV={venv_dir}"')
+    pythonpath_entries = [working_dir, *(extra_pythonpath or [])]
+    if pythonpath_entries:
+        joined = ";".join(pythonpath_entries)
+        lines.append(f'set "PYTHONPATH={joined};%PYTHONPATH%"')
 
     pythonw_path = _derive_venv_pythonw(python_path)
     prog_args = [pythonw_path, "-m", "miho_cli.main"]
@@ -360,12 +365,19 @@ def _write_task_script() -> Path:
         get_python_path,
     )
 
-    python_path = get_python_path()
+    raw_python_path = get_python_path()
+    python_path, _venv_dir, extra_pythonpath = _resolve_detached_python(raw_python_path)
     working_dir = str(PROJECT_ROOT)
     miho_home = str(Path(get_miho_home()).resolve())
     profile_arg = _profile_arg(miho_home)
 
-    content = _build_gateway_cmd_script(python_path, working_dir, miho_home, profile_arg)
+    content = _build_gateway_cmd_script(
+        python_path,
+        working_dir,
+        miho_home,
+        profile_arg,
+        extra_pythonpath=extra_pythonpath,
+    )
     script_path = get_task_script_path()
     tmp = script_path.with_suffix(".tmp")
     tmp.write_text(content, encoding="utf-8", newline="")

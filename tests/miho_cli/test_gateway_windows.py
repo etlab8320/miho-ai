@@ -123,6 +123,23 @@ def test_gateway_cmd_script_uses_pythonw_without_replace_or_start_churn(monkeypa
     assert "exit /b 0" in content
 
 
+def test_gateway_cmd_script_can_include_detached_pythonpath(monkeypatch):
+    """Scheduled Task script should support base pythonw for uv venvs."""
+    monkeypatch.setattr(gateway_windows, "_derive_venv_pythonw", lambda exe: exe)
+
+    content = gateway_windows._build_gateway_cmd_script(
+        r"C:\\Python\\pythonw.exe",
+        r"C:\\Miho\\miho-agent",
+        r"C:\\MihoHome",
+        "",
+        extra_pythonpath=[r"C:\\Miho\\miho-agent\\venv\\Lib\\site-packages"],
+    )
+
+    assert 'set "PYTHONPATH=C:\\\\Miho\\\\miho-agent;C:\\\\Miho\\\\miho-agent\\\\venv\\\\Lib\\\\site-packages;%PYTHONPATH%"' in content
+    assert "pythonw.exe" in content
+    assert "exit /b 0" in content
+
+
 def test_elevated_gateway_command_uses_pythonw_hidden_console(monkeypatch):
     """UAC handoff should not leave a second elevated cmd.exe window open."""
     calls = []
