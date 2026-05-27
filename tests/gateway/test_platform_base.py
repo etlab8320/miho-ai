@@ -329,6 +329,19 @@ class TestExtractMedia:
         assert media == [("/tmp/Jane Doe/speech.flac", False)]
         assert cleaned == ""
 
+    def test_media_tag_supports_windows_drive_paths(self):
+        content = r"유가은 출석 달력이야. MEDIA:C:\Users\user\AppData\Local\miho\media_cache\calendar.png"
+        media, cleaned = BasePlatformAdapter.extract_media(content)
+        assert media == [(r"C:\Users\user\AppData\Local\miho\media_cache\calendar.png", False)]
+        assert "유가은 출석 달력이야." in cleaned
+        assert "MEDIA:" not in cleaned
+
+    def test_media_tag_supports_quoted_windows_paths_with_spaces(self):
+        content = r'MEDIA:"C:\Users\user\AppData\Local\miho\media cache\student calendar.png"'
+        media, cleaned = BasePlatformAdapter.extract_media(content)
+        assert media == [(r"C:\Users\user\AppData\Local\miho\media cache\student calendar.png", False)]
+        assert cleaned == ""
+
     def test_as_document_directive_stripped_from_cleaned_text(self):
         """[[as_document]] is a routing directive — strip it from
         user-visible text just like [[audio_as_voice]]. Callers detect the
