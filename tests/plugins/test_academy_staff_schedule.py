@@ -12,6 +12,7 @@ from miho_cli.plugins import PluginContext, PluginManager, PluginManifest
 from plugins.academy_ops import _academy_command, _capture_gateway_context, register
 from plugins.academy_ops.auth_store import AcademyBinding, save_binding
 from plugins.academy_ops.academy_query_tools import _capability_status_tool_handler
+from plugins.academy_ops.codex_model_policy import session_model
 from plugins.academy_ops.quick_router import classify_quick_operation, quick_command_for
 from plugins.academy_ops.staff_schedule_tool import _staff_schedule_day_tool_handler
 
@@ -171,7 +172,7 @@ def test_gateway_context_allows_and_routes_bound_academy_session(monkeypatch, tm
     result = _capture_gateway_context(event, gateway=gateway)
 
     assert result["action"] == "allow"
-    assert gateway._session_model_overrides["channel-1"]["model"] == "gpt-5.4"
+    assert gateway._session_model_overrides["channel-1"]["model"] == session_model()
 
 
 def test_academy_quick_staff_schedule_is_disabled() -> None:

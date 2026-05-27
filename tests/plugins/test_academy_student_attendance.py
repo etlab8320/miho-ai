@@ -10,6 +10,7 @@ from plugins.academy_ops import register
 from plugins.academy_ops.academy_query_tools import _capability_status_tool_handler
 from plugins.academy_ops.attendance_calendar_template import render_attendance_calendar_html
 from plugins.academy_ops.attendance_calendar_tool import _student_attendance_calendar_image_tool_handler
+from plugins.academy_ops.commentary_config import COMMENTARY_MODEL
 from plugins.academy_ops.student_attendance_tool import _student_attendance_range_tool_handler
 
 
@@ -135,7 +136,7 @@ def test_student_attendance_range_returns_safe_counts_and_michekeu_label() -> No
     assert "미확인" not in result["message"]
     assert result["assistant_guidance"] == {
         "persona_commentary": True,
-        "preferred_fast_model": "gpt-5.4",
+        "preferred_fast_model": COMMENTARY_MODEL,
         "avoid_hardcoded_judgment": True,
         "instruction": (
             "반환된 API 사실만 바탕으로 미호 말투의 짧은 코멘트를 작성해. "

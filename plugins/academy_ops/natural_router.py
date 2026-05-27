@@ -26,10 +26,10 @@ from .attendance_calendar_tool import _student_attendance_calendar_image_tool_ha
 from .commentary_config import (
     COMMENTARY_EXTRA_BODY,
     COMMENTARY_FALLBACK_TIMEOUT_SECONDS,
-    COMMENTARY_MODEL,
     COMMENTARY_PROVIDER,
     ROUTER_EXTRA_BODY,
     ROUTER_FALLBACK_MODELS,
+    ROUTER_MODEL,
     ROUTER_MODEL_TIMEOUT_SECONDS,
 )
 from .staff_schedule_tool import _staff_schedule_day_tool_handler
@@ -142,7 +142,7 @@ async def default_resolver(messages: list[dict[str, str]]) -> Any:
     from agent.auxiliary_client import async_call_llm
 
     last_exc: Exception | None = None
-    model_sequence = (COMMENTARY_MODEL, *ROUTER_FALLBACK_MODELS)
+    model_sequence = (ROUTER_MODEL, *ROUTER_FALLBACK_MODELS)
     for index, model in enumerate(model_sequence):
         try:
             return await async_call_llm(

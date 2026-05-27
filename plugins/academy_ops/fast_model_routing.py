@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .commentary_config import COMMENTARY_MODEL, COMMENTARY_PROVIDER
+from .commentary_config import COMMENTARY_PROVIDER
+from .codex_model_policy import session_model
 
 
 def route_bound_academy_session_to_fast_model(*, gateway: Any, event: Any, has_binding: bool) -> bool:
@@ -21,7 +22,7 @@ def route_bound_academy_session_to_fast_model(*, gateway: Any, event: Any, has_b
     session_key = session_key_fn(source)
     if not session_key:
         return False
-    desired = {"model": COMMENTARY_MODEL, "provider": COMMENTARY_PROVIDER}
+    desired = {"model": session_model(), "provider": COMMENTARY_PROVIDER}
     current = overrides.get(session_key) or {}
     if current.get("model") == desired["model"] and current.get("provider") == desired["provider"]:
         return False

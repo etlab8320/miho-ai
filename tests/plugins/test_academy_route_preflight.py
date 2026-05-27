@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 import plugins.academy_ops.natural_router as natural_router
+from plugins.academy_ops.commentary_config import ROUTER_MODEL
 from plugins.academy_ops.natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
 
 
@@ -168,4 +169,5 @@ async def test_default_router_resolver_omits_reasoning_extra_body(monkeypatch) -
 
     assert calls
     assert calls[0]["task"] == "academy_request_router"
+    assert calls[0]["model"] == ROUTER_MODEL
     assert calls[0]["extra_body"] == {}

@@ -21,6 +21,7 @@ from plugins.academy_ops.commentary_config import (
     COMMENTARY_PROVIDER,
     COMMENTARY_TIMEOUT_MESSAGE,
 )
+from plugins.academy_ops.codex_model_policy import session_model
 from plugins.academy_ops.plan_commentary import (
     generate_plan_commentary,
     plan_commentary_facts,
@@ -138,7 +139,7 @@ def test_gateway_context_routes_bound_plan_session_to_fast_model(monkeypatch, tm
     assert result == {"action": "allow"}
     session_key = f"{Platform.DISCORD.value}:discord-user-1:channel-1"
     assert gateway._session_model_overrides[session_key] == {
-        "model": COMMENTARY_MODEL,
+        "model": session_model(),
         "provider": COMMENTARY_PROVIDER,
     }
     assert gateway.evicted == [session_key]
