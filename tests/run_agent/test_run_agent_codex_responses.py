@@ -481,6 +481,84 @@ def test_run_codex_stream_fallback_parses_create_stream_events(monkeypatch):
     assert response.output[0].content[0].text == "streamed create ok"
 
 
+def test_run_codex_stream_falls_back_when_none_iterable_has_no_recoverable_events(monkeypatch):
+    agent = _build_agent(monkeypatch)
+    calls = []
+
+    def _fake_stream(**kwargs):
+        calls.append(dict(kwargs))
+        return _FakeResponsesStream(final_error=TypeError("'NoneType' object is not iterable"))
+
+    agent.client = SimpleNamespace(
+        responses=SimpleNamespace(
+            stream=_fake_stream,
+            create=lambda **kwargs: _codex_message_response("fallback"),
+        )
+    )
+
+    request = _codex_request_kwargs() | {
+        "reasoning": {"effort": "medium", "summary": "auto"},
+        "include": ["reasoning.encrypted_content"],
+    }
+
+    response = agent._run_codex_stream(request)
+
+    assert response.output[0].content[0].text == "fallback"
+    assert len(calls) == 1
+    assert "reasoning" in calls[0]
+    assert "include" in calls[0]
+
+
+def test_run_codex_stream_falls_back_when_none_iterable_persists(monkeypatch):
+    agent = _build_agent(monkeypatch)
+    calls = {"stream": 0, "create": 0}
+
+    def _fake_stream(**kwargs):
+        calls["stream"] += 1
+        return _FakeResponsesStream(final_error=TypeError("'NoneType' object is not iterable"))
+
+    def _fake_create(**kwargs):
+        calls["create"] += 1
+        assert kwargs["stream"] is True
+        return _codex_message_response("fallback ok")
+
+    agent.client = SimpleNamespace(
+        responses=SimpleNamespace(
+            stream=_fake_stream,
+            create=_fake_create,
+        )
+    )
+
+    request = _codex_request_kwargs() | {
+        "reasoning": {"effort": "medium", "summary": "auto"},
+        "include": ["reasoning.encrypted_content"],
+    }
+
+    response = agent._run_codex_stream(request)
+
+    assert calls == {"stream": 1, "create": 1}
+    assert response.output[0].content[0].text == "fallback ok"
+
+
+def test_run_conversation_retries_codex_none_iterable_stream_error(monkeypatch):
+    agent = _build_agent(monkeypatch)
+    calls = []
+
+    def _fake_api_call(api_kwargs):
+        calls.append(api_kwargs)
+        if len(calls) == 1:
+            raise TypeError("'NoneType' object is not iterable")
+        return _codex_message_response("recovered")
+
+    monkeypatch.setattr(agent, "_interruptible_api_call", _fake_api_call)
+
+    result = agent.run_conversation("recover please")
+
+    assert result["completed"] is True
+    assert result["final_response"] == "recovered"
+    assert len(calls) == 2
+
+
 def test_run_conversation_codex_plain_text(monkeypatch):
     agent = _build_agent(monkeypatch)
     monkeypatch.setattr(agent, "_interruptible_api_call", lambda api_kwargs: _codex_message_response("OK"))
@@ -1960,3 +2038,123 @@ def test_preflight_codex_input_deduplicates_reasoning_ids(monkeypatch):
     # IDs must be stripped — with store=False the API 404s on id lookups.
     for it in reasoning_items:
         assert "id" not in it
+
+
+def test_run_conversation_codex_disables_reasoning_replay_after_invalid_encrypted_content(monkeypatch):
+    agent = _build_agent(monkeypatch)
+    agent.provider = "custom"
+    agent.base_url = "https://api.example.com/v1"
+
+    request_payloads = []
+
+    class _InvalidEncryptedContentError(Exception):
+        def __init__(self):
+            super().__init__(
+                "Error code: 400 - The encrypted content for item rs_001 could not be verified. "
+                "Reason: Encrypted content could not be decrypted or parsed."
+            )
+            self.status_code = 400
+            self.body = {
+                "error": {
+                    "message": (
+                        '{"error":{"message":"The encrypted content for item rs_001 could not be verified. '
+                        'Reason: Encrypted content could not be decrypted or parsed.",'
+                        '"type":"invalid_request_error","param":"","code":"invalid_encrypted_content"}}'
+                    ),
+                    "type": "400",
+                }
+            }
+
+    responses = [
+        _InvalidEncryptedContentError(),
+        _codex_message_response("Recovered without replay."),
+    ]
+
+    def _fake_api_call(api_kwargs):
+        request_payloads.append(api_kwargs)
+        current = responses.pop(0)
+        if isinstance(current, Exception):
+            raise current
+        return current
+
+    monkeypatch.setattr(agent, "_interruptible_api_call", _fake_api_call)
+
+    history = [
+        {
+            "role": "assistant",
+            "content": "",
+            "finish_reason": "incomplete",
+            "codex_reasoning_items": [
+                {
+                    "type": "reasoning",
+                    "id": "rs_001",
+                    "encrypted_content": "enc_bad",
+                    "summary": [],
+                },
+            ],
+        }
+    ]
+
+    result = agent.run_conversation("continue", conversation_history=history)
+
+    assert result["completed"] is True
+    assert result["final_response"] == "Recovered without replay."
+    assert len(request_payloads) == 2
+    assert any(item.get("type") == "reasoning" for item in request_payloads[0]["input"])
+    assert not any(item.get("type") == "reasoning" for item in request_payloads[1]["input"])
+    assert request_payloads[0].get("include") == ["reasoning.encrypted_content"]
+    assert request_payloads[1].get("include") == []
+    assert result["messages"][0].get("codex_reasoning_items") is None
+    assert agent._codex_reasoning_replay_enabled is False
+
+
+def test_run_conversation_codex_invalid_encrypted_content_without_replay_state_does_not_disable_replay(monkeypatch):
+    agent = _build_agent(monkeypatch)
+    agent.provider = "custom"
+    agent.base_url = "https://api.example.com/v1"
+
+    request_payloads = []
+
+    class _InvalidEncryptedContentError(Exception):
+        def __init__(self):
+            super().__init__("Error code: 400 - bad request")
+            self.status_code = 400
+            self.body = {
+                "error": {
+                    "code": "INVALID_ENCRYPTED_CONTENT",
+                    "message": "Bad request",
+                }
+            }
+
+    responses = [
+        _InvalidEncryptedContentError(),
+        _codex_message_response("Recovered after generic retry."),
+    ]
+
+    def _fake_api_call(api_kwargs):
+        request_payloads.append(api_kwargs)
+        current = responses.pop(0)
+        if isinstance(current, Exception):
+            raise current
+        return current
+
+    monkeypatch.setattr(agent, "_interruptible_api_call", _fake_api_call)
+
+    result = agent.run_conversation(
+        "continue",
+        conversation_history=[{"role": "assistant", "content": "No replay state here."}],
+    )
+
+    assert result["completed"] is True
+    assert result["final_response"] == "Recovered after generic retry."
+    assert len(request_payloads) == 2
+    assert all(
+        payload.get("include") == ["reasoning.encrypted_content"]
+        for payload in request_payloads
+    )
+    assert all(
+        not any(item.get("type") == "reasoning" for item in payload["input"])
+        for payload in request_payloads
+    )
+    assert agent._codex_reasoning_replay_enabled is True
+    assert result["messages"][0].get("codex_reasoning_items") is None

@@ -94,6 +94,9 @@ _GATEWAY_PROVIDER_ERROR_RE = re.compile(
     r"|rate\s+limited\s+after\s+\d+\s+retries"
     r"|error\s+code\s*:"
     r"|\bhttp\s*\d{3}\b"
+    r"|nonetype['\"]?\s+object\s+is\s+not\s+iterable"
+    r"|object\s+is\s+not\s+iterable"
+    r"|traceback\s+\(most\s+recent\s+call\s+last\)"
     r"|incorrect\s+api\s+key"
     r"|invalid\s+api\s+key"
     r")",
@@ -184,6 +187,9 @@ _GATEWAY_PROVIDER_ERROR_SHAPE_RE = re.compile(
     r"|rate\s+limited\s+after\s+\d+\s+retries"
     r"|error\s+code\s*:"
     r"|http\s*\d{3}\b"
+    r"|['\"]?nonetype['\"]?\s+object\s+is\s+not\s+iterable"
+    r"|object\s+is\s+not\s+iterable"
+    r"|traceback\s+\(most\s+recent\s+call\s+last\)"
     r"|incorrect\s+api\s+key"
     r"|invalid\s+api\s+key"
     r")",
@@ -237,7 +243,13 @@ def _prepare_gateway_status_message(platform: Any, event_type: str, message: str
     text = str(message or "").strip()
     if not text:
         return None
-    if _gateway_platform_value(platform) != "telegram":
+    platform_value = _gateway_platform_value(platform)
+    if platform_value != "telegram":
+        if platform_value == "discord":
+            text = _redact_gateway_user_facing_secrets(text)
+            if _looks_like_gateway_provider_error(text):
+                return _gateway_provider_error_reply(text, platform)
+            return text
         return text
 
     text = _redact_gateway_user_facing_secrets(text)

@@ -31,6 +31,17 @@ def test_non_telegram_status_is_unchanged():
     assert _prepare_gateway_status_message("local", "lifecycle", message) == message
 
 
+def test_discord_status_sanitizes_internal_provider_exceptions():
+    raw = "⚠️ 'NoneType' object is not iterable"
+
+    sanitized = _prepare_gateway_status_message(Platform.DISCORD, "warn", raw)
+
+    assert sanitized is not None
+    assert "모델 호출" in sanitized or "모델 요청" in sanitized
+    assert "NoneType" not in sanitized
+    assert "not iterable" not in sanitized
+
+
 def test_telegram_status_sanitizes_raw_provider_security_errors():
     """Provider policy/security bodies should be replaced before chat delivery."""
     raw = (
@@ -113,3 +124,15 @@ def test_discord_failed_empty_response_does_not_wrap_raw_provider_error():
     assert "API call failed" not in sanitized
     assert "Connection error" not in sanitized
     assert "req_timeout" not in sanitized
+
+
+def test_discord_failed_empty_response_hides_internal_exception_text():
+    normalized = _normalize_empty_agent_response(
+        {"failed": True, "error": "'NoneType' object is not iterable", "api_calls": 1},
+        "",
+    )
+    sanitized = _sanitize_gateway_final_response(Platform.DISCORD, normalized)
+
+    assert "모델 호출" in sanitized or "모델 요청" in sanitized
+    assert "NoneType" not in sanitized
+    assert "not iterable" not in sanitized

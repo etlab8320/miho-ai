@@ -50,6 +50,7 @@ class FailoverReason(enum.Enum):
 
     # Request format
     format_error = "format_error"        # 400 bad request — abort or strip + retry
+    invalid_encrypted_content = "invalid_encrypted_content"  # Responses replay blob rejected — strip replay state and retry
     multimodal_tool_content_unsupported = "multimodal_tool_content_unsupported"  # Provider rejected list-type content in tool messages (e.g. Xiaomi MiMo) — downgrade to text and retry
 
     # Provider-specific
@@ -830,6 +831,24 @@ def _classify_400(
             retryable=True,
         )
 
+    # Invalid encrypted reasoning replay blob (OpenAI Responses API).
+    # Check before context_overflow because provider wording can mention
+    # encrypted content verification rather than a clean structured code.
+    error_code_lower = (error_code or "").lower()
+    if (
+        error_code_lower == "invalid_encrypted_content"
+        or "invalid_encrypted_content" in error_msg
+        or (
+            "encrypted content for item" in error_msg
+            and "could not be verified" in error_msg
+        )
+    ):
+        return result_fn(
+            FailoverReason.invalid_encrypted_content,
+            retryable=True,
+            should_fallback=False,
+        )
+
     # Context overflow from 400
     if any(p in error_msg for p in _CONTEXT_OVERFLOW_PATTERNS):
         return result_fn(
@@ -937,6 +956,13 @@ def _classify_by_error_code(
             FailoverReason.context_overflow,
             retryable=True,
             should_compress=True,
+        )
+
+    if code_lower == "invalid_encrypted_content":
+        return result_fn(
+            FailoverReason.invalid_encrypted_content,
+            retryable=True,
+            should_fallback=False,
         )
 
     return None

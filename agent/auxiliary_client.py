@@ -635,6 +635,7 @@ class _CodexCompletionsAdapter:
         self._model = model
 
     def create(self, **kwargs) -> Any:
+        retry_without_reasoning = bool(kwargs.pop("_codex_retry_without_reasoning", False))
         messages = kwargs.get("messages", [])
         model = kwargs.get("model", self._model)
 
@@ -678,7 +679,7 @@ class _CodexCompletionsAdapter:
         # that configure reasoning via auxiliary.<task>.extra_body get the
         # same behavior as the main agent's Codex transport.
         extra_body = kwargs.get("extra_body") or {}
-        if isinstance(extra_body, dict):
+        if isinstance(extra_body, dict) and not retry_without_reasoning:
             reasoning_cfg = extra_body.get("reasoning")
             if isinstance(reasoning_cfg, dict):
                 if reasoning_cfg.get("enabled") is False:
@@ -784,6 +785,118 @@ class _CodexCompletionsAdapter:
                 # new failure mode for auxiliary calls.
                 pass
 
+        def _item_get(obj: Any, key: str, default: Any = None) -> Any:
+            val = getattr(obj, key, None)
+            if val is None and isinstance(obj, dict):
+                val = obj.get(key, default)
+            return val if val is not None else default
+
+        def _response_from_output(
+            output_items: Any,
+            resp_usage: Any = None,
+        ) -> Any:
+            local_text_parts: List[str] = []
+            local_tool_calls: List[Any] = []
+            for item in output_items or []:
+                item_type = _item_get(item, "type")
+                if item_type == "message":
+                    for part in (_item_get(item, "content") or []):
+                        ptype = _item_get(part, "type")
+                        if ptype in {"output_text", "text"}:
+                            local_text_parts.append(_item_get(part, "text", ""))
+                elif item_type == "function_call":
+                    local_tool_calls.append(SimpleNamespace(
+                        id=_item_get(item, "call_id", ""),
+                        type="function",
+                        function=SimpleNamespace(
+                            name=_item_get(item, "name", ""),
+                            arguments=_item_get(item, "arguments", "{}"),
+                        ),
+                    ))
+
+            local_usage = None
+            if resp_usage:
+                local_usage = SimpleNamespace(
+                    prompt_tokens=getattr(resp_usage, "input_tokens", 0),
+                    completion_tokens=getattr(resp_usage, "output_tokens", 0),
+                    total_tokens=getattr(resp_usage, "total_tokens", 0),
+                )
+            message = SimpleNamespace(
+                role="assistant",
+                content="".join(local_text_parts).strip() or None,
+                tool_calls=local_tool_calls or None,
+            )
+            choice = SimpleNamespace(
+                index=0,
+                message=message,
+                finish_reason="stop" if not local_tool_calls else "tool_calls",
+            )
+            return SimpleNamespace(choices=[choice], model=model, usage=local_usage)
+
+        def _response_from_text_delta(deltas: List[str]) -> Any:
+            assembled = "".join(deltas)
+            output = [SimpleNamespace(
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[SimpleNamespace(type="output_text", text=assembled)],
+            )]
+            return _response_from_output(output)
+
+        def _create_stream_fallback_response() -> Any:
+            fallback_kwargs = dict(resp_kwargs)
+            fallback_kwargs.pop("reasoning", None)
+            fallback_kwargs.pop("include", None)
+            fallback_kwargs["stream"] = True
+            stream_or_response = self._client.responses.create(**fallback_kwargs)
+            if hasattr(stream_or_response, "output"):
+                return _response_from_output(
+                    getattr(stream_or_response, "output", []),
+                    getattr(stream_or_response, "usage", None),
+                )
+            fallback_items: List[Any] = []
+            fallback_deltas: List[str] = []
+            terminal = None
+            try:
+                for event in stream_or_response:
+                    _check_cancelled()
+                    event_type = getattr(event, "type", None)
+                    if not event_type and isinstance(event, dict):
+                        event_type = event.get("type")
+                    if event_type == "response.output_item.done":
+                        item = getattr(event, "item", None)
+                        if item is None and isinstance(event, dict):
+                            item = event.get("item")
+                        if item is not None:
+                            fallback_items.append(item)
+                    elif "output_text.delta" in str(event_type or ""):
+                        delta = getattr(event, "delta", "")
+                        if not delta and isinstance(event, dict):
+                            delta = event.get("delta", "")
+                        if delta:
+                            fallback_deltas.append(delta)
+                    if event_type in {"response.completed", "response.incomplete", "response.failed"}:
+                        terminal = getattr(event, "response", None)
+                        if terminal is None and isinstance(event, dict):
+                            terminal = event.get("response")
+                        break
+            finally:
+                close_fn = getattr(stream_or_response, "close", None)
+                if callable(close_fn):
+                    try:
+                        close_fn()
+                    except Exception:
+                        logger.debug("Codex auxiliary fallback stream close failed", exc_info=True)
+            if terminal is not None:
+                output = getattr(terminal, "output", None)
+                if isinstance(output, list) and output:
+                    return _response_from_output(output, getattr(terminal, "usage", None))
+            if fallback_items:
+                return _response_from_output(fallback_items)
+            if fallback_deltas:
+                return _response_from_text_delta(fallback_deltas)
+            raise TypeError("'NoneType' object is not iterable")
+
         try:
             # Collect output items and text deltas during streaming —
             # the Codex backend can return empty response.output from
@@ -839,12 +952,6 @@ class _CodexCompletionsAdapter:
             # Extract text and tool calls from the Responses output.
             # Items may be SDK objects (attrs) or dicts (raw/fallback paths),
             # so use a helper that handles both shapes.
-            def _item_get(obj: Any, key: str, default: Any = None) -> Any:
-                val = getattr(obj, key, None)
-                if val is None and isinstance(obj, dict):
-                    val = obj.get(key, default)
-                return val if val is not None else default
-
             for item in getattr(final, "output", []):
                 item_type = _item_get(item, "type")
                 if item_type == "message":
@@ -872,6 +979,39 @@ class _CodexCompletionsAdapter:
         except Exception as exc:
             if timed_out.is_set():
                 raise TimeoutError(_timeout_message()) from exc
+            err_text = str(exc)
+            if (
+                isinstance(exc, TypeError)
+                and not retry_without_reasoning
+                and "NoneType" in err_text
+                and "not iterable" in err_text
+                and ("reasoning" in resp_kwargs or "include" in resp_kwargs)
+            ):
+                if collected_text_deltas and not has_function_calls:
+                    logger.warning(
+                        "Codex auxiliary Responses stream ended with malformed "
+                        "reasoning output; recovered from streamed text deltas."
+                    )
+                    return _response_from_text_delta(collected_text_deltas)
+                retry_kwargs = dict(kwargs)
+                retry_kwargs["_codex_retry_without_reasoning"] = True
+                logger.warning(
+                    "Codex auxiliary Responses stream hit a malformed reasoning "
+                    "payload; retrying once without reasoning continuity."
+                )
+                return self.create(**retry_kwargs)
+            if isinstance(exc, TypeError) and "NoneType" in err_text and "not iterable" in err_text:
+                if collected_text_deltas and not has_function_calls:
+                    logger.warning(
+                        "Codex auxiliary Responses stream ended with malformed "
+                        "output; recovered from streamed text deltas."
+                    )
+                    return _response_from_text_delta(collected_text_deltas)
+                logger.warning(
+                    "Codex auxiliary Responses stream hit a malformed SDK "
+                    "payload; falling back to create(stream=True)."
+                )
+                return _create_stream_fallback_response()
             logger.debug("Codex auxiliary Responses API call failed: %s", exc)
             raise
         finally:
@@ -2323,6 +2463,8 @@ def _is_connection_error(exc: Exception) -> bool:
         return True
     err_lower = str(exc).lower()
     if any(kw in err_lower for kw in (
+        "nonetype' object is not iterable",
+        "nonetype object is not iterable",
         "connection refused", "name or service not known",
         "no route to host", "network is unreachable",
         "timed out", "connection reset",

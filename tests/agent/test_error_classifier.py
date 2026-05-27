@@ -56,6 +56,7 @@ class TestFailoverReason:
             "overloaded", "server_error", "timeout",
             "context_overflow", "payload_too_large", "image_too_large",
             "model_not_found", "format_error",
+            "invalid_encrypted_content",
             "multimodal_tool_content_unsupported",
             "provider_policy_blocked",
             "thinking_signature", "long_context_tier",
@@ -476,6 +477,33 @@ class TestClassifyApiError:
         result = classify_api_error(e, provider="openrouter", approx_tokens=0)
         # Without "thinking" in the message, it shouldn't be thinking_signature
         assert result.reason != FailoverReason.thinking_signature
+
+    def test_invalid_encrypted_content_classified_as_retryable_replay_failure(self):
+        body = {
+            "error": {
+                "message": (
+                    '{"error":{"message":"The encrypted content for item rs_001 could not be verified. '
+                    'Reason: Encrypted content could not be decrypted or parsed.",'
+                    '"type":"invalid_request_error","param":"","code":"invalid_encrypted_content"}}'
+                ),
+                "type": "400",
+            }
+        }
+        e = MockAPIError(
+            "Error code: 400 - invalid_encrypted_content",
+            status_code=400,
+            body=body,
+        )
+        result = classify_api_error(e, provider="custom", model="gpt-5.4")
+        assert result.reason == FailoverReason.invalid_encrypted_content
+        assert result.retryable is True
+        assert result.should_fallback is False
+
+    def test_invalid_encrypted_content_broad_message_match_does_not_catch_generic_parse_error(self):
+        message = "Encrypted content could not be decrypted or parsed."
+        e = MockAPIError(message, status_code=400)
+        result = classify_api_error(e, provider="custom", model="gpt-5.4")
+        assert result.reason == FailoverReason.format_error
 
     # ── Provider-specific: llama.cpp grammar-parse ──
 

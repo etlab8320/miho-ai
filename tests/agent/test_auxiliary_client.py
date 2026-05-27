@@ -27,6 +27,7 @@ from agent.auxiliary_client import (
     _try_payment_fallback,
     _resolve_auto,
     _resolve_xai_oauth_for_aux,
+    _is_connection_error,
     _CodexCompletionsAdapter,
 )
 
@@ -2221,6 +2222,151 @@ class TestCodexAdapterReasoningTranslation:
         )
         assert captured.get("reasoning") == {"effort": "medium", "summary": "auto"}
         assert captured.get("include") == ["reasoning.encrypted_content"]
+
+    def test_none_iterable_stream_error_retries_without_reasoning(self):
+        from agent.auxiliary_client import _CodexCompletionsAdapter
+
+        class _FakeStream:
+            def __init__(self, *, fail: bool) -> None:
+                self.fail = fail
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def __iter__(self):
+                return iter(())
+
+            def get_final_response(self):
+                if self.fail:
+                    raise TypeError("'NoneType' object is not iterable")
+                return SimpleNamespace(
+                    output=[SimpleNamespace(
+                        type="message",
+                        content=[SimpleNamespace(type="output_text", text="ok")],
+                    )],
+                    usage=None,
+                )
+
+        class _FakeResponses:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def stream(self, **kwargs):
+                self.calls.append(dict(kwargs))
+                return _FakeStream(fail=len(self.calls) == 1)
+
+        fake_responses = _FakeResponses()
+        fake_client = SimpleNamespace(responses=fake_responses)
+        adapter = _CodexCompletionsAdapter(fake_client, "gpt-5.5")
+
+        response = adapter.create(
+            messages=[{"role": "user", "content": "hi"}],
+            extra_body={"reasoning": {"effort": "low"}},
+        )
+
+        assert response.choices[0].message.content == "ok"
+        assert "reasoning" in fake_responses.calls[0]
+        assert "include" in fake_responses.calls[0]
+        assert "reasoning" not in fake_responses.calls[1]
+        assert "include" not in fake_responses.calls[1]
+
+    def test_none_iterable_stream_error_recovers_from_text_deltas(self):
+        from agent.auxiliary_client import _CodexCompletionsAdapter
+
+        class _FakeStream:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def __iter__(self):
+                yield SimpleNamespace(type="response.output_text.delta", delta="ok")
+
+            def get_final_response(self):
+                raise TypeError("'NoneType' object is not iterable")
+
+        class _FakeResponses:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def stream(self, **kwargs):
+                self.calls.append(dict(kwargs))
+                return _FakeStream()
+
+        fake_responses = _FakeResponses()
+        fake_client = SimpleNamespace(responses=fake_responses)
+        adapter = _CodexCompletionsAdapter(fake_client, "gpt-5.5")
+
+        response = adapter.create(
+            messages=[{"role": "user", "content": "hi"}],
+            extra_body={"reasoning": {"effort": "low"}},
+        )
+
+        assert response.choices[0].message.content == "ok"
+        assert len(fake_responses.calls) == 1
+
+    def test_none_iterable_stream_error_falls_back_to_create_stream(self):
+        from agent.auxiliary_client import _CodexCompletionsAdapter
+
+        class _BrokenStream:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def __iter__(self):
+                return iter(())
+
+            def get_final_response(self):
+                raise TypeError("'NoneType' object is not iterable")
+
+        class _CreateStream:
+            def __iter__(self):
+                yield SimpleNamespace(type="response.output_text.delta", delta="fallback ok")
+                yield SimpleNamespace(
+                    type="response.completed",
+                    response=SimpleNamespace(output=[]),
+                )
+
+        class _FakeResponses:
+            def __init__(self) -> None:
+                self.stream_calls = []
+                self.create_calls = []
+
+            def stream(self, **kwargs):
+                self.stream_calls.append(dict(kwargs))
+                return _BrokenStream()
+
+            def create(self, **kwargs):
+                self.create_calls.append(dict(kwargs))
+                return _CreateStream()
+
+        fake_responses = _FakeResponses()
+        fake_client = SimpleNamespace(responses=fake_responses)
+        adapter = _CodexCompletionsAdapter(fake_client, "gpt-5.5")
+
+        response = adapter.create(
+            messages=[{"role": "user", "content": "hi"}],
+            extra_body={"reasoning": {"effort": "low"}},
+        )
+
+        assert response.choices[0].message.content == "fallback ok"
+        assert len(fake_responses.stream_calls) == 2
+        assert len(fake_responses.create_calls) == 1
+        assert fake_responses.create_calls[0]["stream"] is True
+        assert "reasoning" not in fake_responses.create_calls[0]
+        assert "include" not in fake_responses.create_calls[0]
+
+
+def test_codex_none_iterable_auxiliary_error_is_connection_recoverable():
+    error = TypeError("'NoneType' object is not iterable")
+
+    assert _is_connection_error(error) is True
 
 
 class TestVisionAutoSkipsKimiCoding:

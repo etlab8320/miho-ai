@@ -995,6 +995,7 @@ def run_conversation(
         nous_auth_retry_attempted=False
         copilot_auth_retry_attempted=False
         thinking_sig_retry_attempted = False
+        invalid_encrypted_content_retry_attempted = False
         image_shrink_retry_attempted = False
         multimodal_tool_content_retry_attempted = False
         oauth_1m_beta_retry_attempted = False
@@ -2239,6 +2240,39 @@ def run_conversation(
                     )
                     continue
 
+                # ── Invalid encrypted reasoning replay recovery ───────
+                # Some Responses-compatible routes reject a replayed
+                # encrypted reasoning blob from a previous turn. Disable
+                # replay for this session, strip cached items, and retry once.
+                if (
+                    classified.reason == FailoverReason.invalid_encrypted_content
+                    and not invalid_encrypted_content_retry_attempted
+                    and agent.api_mode == "codex_responses"
+                    and bool(getattr(agent, "_codex_reasoning_replay_enabled", True))
+                    and any(
+                        isinstance(_m, dict)
+                        and _m.get("role") == "assistant"
+                        and isinstance(_m.get("codex_reasoning_items"), list)
+                        and _m.get("codex_reasoning_items")
+                        for _m in messages
+                    )
+                ):
+                    invalid_encrypted_content_retry_attempted = True
+                    replay_stats = agent._disable_codex_reasoning_replay(messages)
+                    agent._vprint(
+                        f"{agent.log_prefix}⚠️  Encrypted reasoning replay was rejected by the provider — "
+                        f"disabled replay and stripped {replay_stats['items']} item(s) from "
+                        f"{replay_stats['messages']} message(s), retrying...",
+                        force=True,
+                    )
+                    logger.warning(
+                        "%sInvalid encrypted reasoning recovery: disabled replay and stripped %d items from %d messages",
+                        agent.log_prefix,
+                        replay_stats["items"],
+                        replay_stats["messages"],
+                    )
+                    continue
+
                 # ── llama.cpp grammar-parse recovery ──────────────────
                 # llama.cpp's ``json-schema-to-grammar`` converter rejects
                 # regex escape classes (``\d``, ``\w``, ``\s``) and most
@@ -2769,6 +2803,15 @@ def run_conversation(
                     isinstance(api_error, (ValueError, TypeError))
                     and not isinstance(
                         api_error, (UnicodeEncodeError, json.JSONDecodeError)
+                    )
+                    and not (
+                        isinstance(api_error, TypeError)
+                        and "NoneType" in str(api_error)
+                        and "not iterable" in str(api_error)
+                        and (
+                            getattr(agent, "api_mode", "") == "codex_responses"
+                            or str(getattr(agent, "provider", "")).lower() == "openai-codex"
+                        )
                     )
                     # ssl.SSLError (and its subclass SSLCertVerificationError)
                     # inherits from OSError *and* ValueError via Python MRO,
