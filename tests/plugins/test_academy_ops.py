@@ -223,9 +223,18 @@ def test_gateway_context_enables_academy_login_command(monkeypatch, tmp_path):
     assert "로컬 개발용" not in output
 
 
-def test_login_command_warns_when_only_local_link_available(monkeypatch, tmp_path):
+def test_login_link_defaults_to_public_base_url(monkeypatch, tmp_path):
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     monkeypatch.delenv("MIHO_ACADEMY_AUTH_BASE_URL", raising=False)
+
+    link = create_login_link(discord_user_id="42", guild_id="7", channel_id="9", now=100)
+
+    assert link.url.startswith("https://academy-login.etlab.kr/academy/login?state=")
+
+
+def test_login_command_warns_when_explicit_local_link_configured(monkeypatch, tmp_path):
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setenv("MIHO_ACADEMY_AUTH_BASE_URL", "http://127.0.0.1:8765")
     event = MessageEvent(
         text="/academy login",
         source=SessionSource(platform=Platform.DISCORD, user_id="u1", chat_id="c1"),

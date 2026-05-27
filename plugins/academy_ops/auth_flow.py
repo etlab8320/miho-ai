@@ -16,7 +16,7 @@ from utils import atomic_json_write
 from .auth_store import AcademyBinding, encrypt_token, save_binding
 
 
-DEFAULT_AUTH_BASE_URL = "http://127.0.0.1:8765"
+DEFAULT_AUTH_BASE_URL = "https://academy-login.etlab.kr"
 LINK_TTL_SECONDS = 10 * 60
 
 
