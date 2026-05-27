@@ -9,9 +9,12 @@ from plugins.academy_ops.academy_query_tools import (
     _attendance_day_tool_handler,
     _capability_status_tool_handler,
     _consultation_candidates_tool_handler,
-    _staff_attendance_day_tool_handler,
     _student_summary_tool_handler,
     _write_action_draft_tool_handler,
+)
+from plugins.academy_ops.staff_attendance_tool import (
+    _staff_attendance_day_tool_handler,
+    _staff_attendance_range_tool_handler,
 )
 from plugins.academy_ops.student_context_tool import _student_context_tool_handler
 from plugins.academy_ops import _capture_gateway_context
@@ -169,6 +172,40 @@ def test_staff_attendance_day_tool_reads_live_shape_without_sensitive_fields() -
     assert [row["name"] for row in result["instructors"]] == ["박성준"]
     dumped = json.dumps(result, ensure_ascii=False)
     assert "010-" not in dumped
+
+
+def test_staff_attendance_range_tool_counts_one_instructor_month_without_sensitive_fields() -> None:
+    class StaffClient(FakeAcademyClient):
+        def list_paca_instructors(self, *, status: str = "active") -> list[dict]:
+            return [
+                {"id": 1, "name": "정의솔", "phone": "010-1111-2222"},
+                {"id": 2, "name": "박성준", "phone": "010-3333-4444"},
+            ]
+
+        def get_paca_instructor_attendance(self, instructor_id: int, *, year: int, month: int) -> list[dict]:
+            assert (year, month) == (2026, 5)
+            rows = {
+                1: [
+                    {"work_date": "2026-05-20", "time_slot": "evening", "attendance_status": "present"},
+                    {"work_date": "2026-05-27", "time_slot": "evening", "attendance_status": "late"},
+                ],
+                2: [{"work_date": "2026-05-20", "time_slot": "evening", "attendance_status": "present"}],
+            }
+            return rows[instructor_id]
+
+    result = _payload(
+        _staff_attendance_range_tool_handler(
+            {"staff_query": "정의솔", "start_date": "2026-05-01", "end_date": "2026-05-31"},
+            client=StaffClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["operation"] == "staff.attendance_range"
+    assert result["summary"]["worked"] == 2
+    assert result["instructors"][0]["name"] == "정의솔"
+    assert "출근 2회" in result["message"]
+    assert "010-" not in json.dumps(result, ensure_ascii=False)
 
 
 def test_consultation_candidates_use_read_only_attendance_signals() -> None:

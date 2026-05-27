@@ -15,7 +15,6 @@ from .context import current_discord_user_id
 from .paca_client import DEFAULT_PACA_BASE_URL
 from .plan_lookup import plan_lookup_for_day
 from .response_guidance import academy_response_guidance
-from .staff_attendance import staff_attendance_for_day
 from .student_card import AcademyClient, AcademyStudentCardService, StudentCardError
 
 
@@ -88,30 +87,6 @@ def _attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwargs: A
             "summary": summary,
             "slots": slots,
             "message": _attendance_message(target_day, summary),
-            "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
-        }
-    )
-
-
-def _staff_attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
-    payload = args or {}
-    target_day = _date_arg(payload.get("date"))
-    if target_day is None:
-        return _json_error("조회 날짜를 YYYY-MM-DD로 지정해줘.")
-    client_or_error = _resolve_client(kwargs.get("client"))
-    if isinstance(client_or_error, str):
-        return _json_error(client_or_error)
-    try:
-        attendance = staff_attendance_for_day(client_or_error, target_day)
-    except AcademyApiError as exc:
-        return _json_error(str(exc))
-    return _json_ok(
-        {
-            "operation": "staff.attendance_day",
-            "date": attendance["date"],
-            "summary": attendance["summary"],
-            "instructors": attendance["instructors"],
-            "message": _staff_attendance_message(attendance),
             "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
         }
     )
@@ -395,13 +370,6 @@ def _capability_message(op: OperationSpec) -> str:
             return f"{op.title}은 현재 연결된 도구로 조회할 수 있어. `{tool}`을 사용해."
         return f"{op.title}은 현재 연결된 기능이야."
     return f"{op.title}은 아직 연동 후보라서 실제 데이터로 처리하면 안 돼."
-
-
-def _staff_attendance_message(payload: dict[str, Any]) -> str:
-    names = [row["name"] for row in payload["instructors"] if row.get("name")]
-    if not names:
-        return f"{payload['date']} 출근 기록이 있는 강사는 없어."
-    return f"{payload['date']} 출근 강사: {', '.join(names)}."
 
 
 def _plan_message(payload: dict[str, Any]) -> str:

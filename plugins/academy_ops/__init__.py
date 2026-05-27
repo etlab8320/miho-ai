@@ -35,7 +35,6 @@ from .academy_query_tools import (
     _capability_status_tool_handler,
     _consultation_candidates_tool_handler,
     _plan_by_date_tool_handler,
-    _staff_attendance_day_tool_handler,
     _student_summary_tool_handler,
     _write_action_draft_tool_handler,
 )
@@ -45,6 +44,7 @@ from .academy_calendar_tool import (
 )
 from .assignment_tool import _assignment_by_date_tool_handler
 from .attendance_calendar_tool import _student_attendance_calendar_image_tool_handler
+from .staff_attendance_tool import _staff_attendance_day_tool_handler
 from .staff_schedule_tool import _staff_schedule_day_tool_handler
 from .student_attendance_tool import register_student_attendance_tool
 from .student_card_tool import _student_card_image_tool_handler

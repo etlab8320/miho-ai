@@ -13,6 +13,9 @@ STUDENT_CONTEXT_TOOLS = {
     "academy_student_card_image",
     "academy_student_context",
 }
+STAFF_CONTEXT_TOOLS = {
+    "academy_staff_attendance_range",
+}
 CONTEXT_TTL = timedelta(minutes=30)
 _CONTEXTS: dict[str, dict[str, Any]] = {}
 
@@ -50,7 +53,12 @@ def remember_thread_context(
     args: dict[str, Any],
     payload: dict[str, Any],
 ) -> None:
-    if not key or tool_name not in STUDENT_CONTEXT_TOOLS or not payload.get("ok"):
+    if not key or not payload.get("ok"):
+        return
+    if tool_name in STAFF_CONTEXT_TOOLS:
+        _remember_staff_context(key, tool_name=tool_name, args=args, payload=payload)
+        return
+    if tool_name not in STUDENT_CONTEXT_TOOLS:
         return
     student = payload.get("student") if isinstance(payload.get("student"), dict) else {}
     card = payload.get("card") if isinstance(payload.get("card"), dict) else {}
@@ -66,6 +74,30 @@ def remember_thread_context(
         "end_date": str(payload.get("end_date") or args.get("end_date") or ""),
         "today": str(args.get("today") or ""),
         "period_days": args.get("period_days"),
+        "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+
+def _remember_staff_context(
+    key: str,
+    *,
+    tool_name: str,
+    args: dict[str, Any],
+    payload: dict[str, Any],
+) -> None:
+    staff_query = str(args.get("staff_query") or payload.get("staff_query") or "").strip()
+    instructors = payload.get("instructors") if isinstance(payload.get("instructors"), list) else []
+    if not staff_query and len(instructors) == 1 and isinstance(instructors[0], dict):
+        staff_query = str(instructors[0].get("name") or "").strip()
+    if not staff_query:
+        return
+    _CONTEXTS[key] = {
+        "kind": "staff",
+        "tool": tool_name,
+        "staff_query": staff_query,
+        "start_date": str(payload.get("start_date") or args.get("start_date") or ""),
+        "end_date": str(payload.get("end_date") or args.get("end_date") or ""),
         "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
         "updated_at": datetime.now(timezone.utc),
     }

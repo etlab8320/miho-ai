@@ -19,7 +19,6 @@ from .academy_query_tools import (
     _attendance_day_tool_handler,
     _consultation_candidates_tool_handler,
     _plan_by_date_tool_handler,
-    _staff_attendance_day_tool_handler,
     _student_summary_tool_handler,
 )
 from .attendance_calendar_tool import _student_attendance_calendar_image_tool_handler
@@ -33,6 +32,10 @@ from .commentary_config import (
     ROUTER_MODEL_TIMEOUT_SECONDS,
 )
 from .staff_schedule_tool import _staff_schedule_day_tool_handler
+from .staff_attendance_tool import (
+    _staff_attendance_day_tool_handler,
+    _staff_attendance_range_tool_handler,
+)
 from .student_attendance_tool import _student_attendance_range_tool_handler
 from .student_card_tool import _student_card_image_tool_handler
 from .student_context_tool import _student_context_tool_handler
@@ -69,6 +72,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_student_attendance_calendar_image": _student_attendance_calendar_image_tool_handler,
     "academy_attendance_day": _attendance_day_tool_handler,
     "academy_staff_attendance_day": _staff_attendance_day_tool_handler,
+    "academy_staff_attendance_range": _staff_attendance_range_tool_handler,
     "academy_staff_schedule_day": _staff_schedule_day_tool_handler,
     "academy_plan_by_date": _plan_by_date_tool_handler,
     "academy_assignment_by_date": _assignment_by_date_tool_handler,
@@ -100,6 +104,10 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
     "academy_staff_attendance_day": {
         "purpose": "이미 출근한 강사, 출근 기록, 어제/과거 출근자 조회",
         "args": ["date"],
+    },
+    "academy_staff_attendance_range": {
+        "purpose": "특정 강사의 기간별 출근 기록, 월간 출근 횟수, 지난주/이번달 출근일 조회",
+        "args": ["staff_query", "start_date", "end_date"],
     },
     "academy_staff_schedule_day": {
         "purpose": "출근 예정 강사, 앞으로 출근해야 할 강사, 배정된 강사 조회",
@@ -189,7 +197,7 @@ async def resolve_and_execute_academy_request(
     )
     if pending_route is not None:
         return pending_route
-    decision = academy_preflight_decision(clean, today or _today())
+    decision = academy_preflight_decision(clean, today or _today(), get_thread_context(context_key))
     if decision is None:
         try:
             decision = await _resolve_decision_with_retry(
@@ -239,7 +247,9 @@ async def resolve_and_execute_academy_request(
     remember_thread_context(context_key, tool_name=tool_name, args=args, payload=payload)
     response_focus = "" if force_default_response else str(decision.get("response_focus") or "").strip()
     response = focused_response(payload, response_focus) or _payload_message(payload)
-    if response_focus == "summary" and synthesize and payload.get("ok") and not payload.get("media_tag"):
+    if decision.get("skip_synthesis"):
+        response = _payload_message(payload)
+    elif response_focus == "summary" and synthesize and payload.get("ok") and not payload.get("media_tag"):
         response = await append_summary_comment_or_fallback(clean, compact_payload(payload), response)
     elif not response_focus and synthesize and payload.get("ok") and not payload.get("media_tag"):
         response = await synthesize_or_fallback(clean, payload, response)

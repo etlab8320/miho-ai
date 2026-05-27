@@ -143,6 +143,92 @@ async def test_routes_explicit_student_attendance_image_without_llm() -> None:
     assert "MEDIA:" in route.response_text
 
 
+@pytest.mark.asyncio
+async def test_routes_staff_month_count_without_llm() -> None:
+    calls: list[dict] = []
+
+    async def fake_resolver(messages: list[dict[str, str]]) -> object:
+        raise AssertionError(f"resolver should not run for explicit staff month query: {messages!r}")
+
+    def handler(args: dict, **_: object) -> str:
+        calls.append(args)
+        return json.dumps(
+            {"ok": True, "message": "정의솔 2026-05-01~2026-05-31 출근 4회."},
+            ensure_ascii=False,
+        )
+
+    route = await resolve_and_execute_academy_request(
+        "정의솔 강사 5월 총 몇번 출근했어?",
+        resolver=fake_resolver,
+        handlers={"academy_staff_attendance_range": handler},
+        today="2026-05-27",
+        synthesize=True,
+    )
+
+    assert route == AcademyNaturalRoute.HANDLED
+    assert calls == [
+        {
+            "staff_query": "정의솔",
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-31",
+        }
+    ]
+    assert route.response_text == "정의솔 2026-05-01~2026-05-31 출근 4회."
+
+
+@pytest.mark.asyncio
+async def test_routes_staff_followup_month_count_from_thread_context_without_llm() -> None:
+    calls: list[dict] = []
+
+    async def fake_resolver(messages: list[dict[str, str]]) -> object:
+        raise AssertionError(f"resolver should not run for staff follow-up: {messages!r}")
+
+    def handler(args: dict, **_: object) -> str:
+        calls.append(args)
+        return json.dumps(
+            {
+                "ok": True,
+                "staff_query": args["staff_query"],
+                "start_date": args["start_date"],
+                "end_date": args["end_date"],
+                "summary": {"worked": 1},
+                "instructors": [{"name": args["staff_query"], "worked": 1}],
+                "message": f"{args['staff_query']} 출근 1회",
+            },
+            ensure_ascii=False,
+        )
+
+    first = await resolve_and_execute_academy_request(
+        "김세희 강사 저번주 출근일정좀 줘",
+        resolver=fake_resolver,
+        handlers={"academy_staff_attendance_range": handler},
+        context_key="staff-thread",
+        today="2026-05-27",
+        synthesize=True,
+    )
+    followup = await resolve_and_execute_academy_request(
+        "그럼 5월 총 몇번 출근했어?",
+        resolver=fake_resolver,
+        handlers={"academy_staff_attendance_range": handler},
+        context_key="staff-thread",
+        today="2026-05-27",
+        synthesize=True,
+    )
+
+    assert first == AcademyNaturalRoute.HANDLED
+    assert followup == AcademyNaturalRoute.HANDLED
+    assert calls[0] == {
+        "staff_query": "김세희",
+        "start_date": "2026-05-18",
+        "end_date": "2026-05-24",
+    }
+    assert calls[1] == {
+        "staff_query": "김세희",
+        "start_date": "2026-05-01",
+        "end_date": "2026-05-31",
+    }
+
+
 def test_trial_lesson_contract_is_visible_to_llm_router() -> None:
     prompt = "\n".join(
         message["content"]

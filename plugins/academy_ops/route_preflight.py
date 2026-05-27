@@ -11,6 +11,30 @@ IMAGE_MARKERS = ("이미지", "사진", "png", "달력", "캘린더", "카드")
 ATTENDANCE_MARKERS = ("출석", "결석", "지각", "미체크")
 TRIAL_ALIASES = ("체험수업", "무료체험", "체험상담", "trial", "trial lesson")
 DATE_ALIASES = ("오늘", "금일", "내일", "어제", "이번주", "저번주", "지난주", "이번달", "이번 달", "저번달", "지난달")
+STAFF_MARKERS = ("강사", "선생", "출근")
+STAFF_FUTURE_MARKERS = ("예정", "해야", "배정")
+STAFF_RANGE_MARKERS = ("총", "몇번", "몇회", "횟수", "일정", "기록")
+STAFF_STOPWORDS = (
+    "강사",
+    "선생님",
+    "선생",
+    "출근",
+    "일정",
+    "기록",
+    "조회",
+    "총",
+    "몇번",
+    "몇",
+    "번",
+    "회",
+    "횟수",
+    "했어",
+    "했니",
+    "했나",
+    "줘",
+    "좀",
+    "그럼",
+)
 ATTENDANCE_STOPWORDS = (
     "출석",
     "결석",
@@ -44,11 +68,18 @@ ATTENDANCE_STOPWORDS = (
 )
 
 
-def academy_preflight_decision(text: str, today: str) -> dict[str, Any] | None:
+def academy_preflight_decision(
+    text: str,
+    today: str,
+    thread_context: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     normalized = _compact_text(text)
     trial = _trial_schedule_decision(normalized, today)
     if trial is not None:
         return trial
+    staff = _staff_attendance_decision(text, normalized, today, thread_context or {})
+    if staff is not None:
+        return staff
     return _student_attendance_decision(text, normalized, today)
 
 
@@ -97,6 +128,44 @@ def _student_attendance_decision(text: str, normalized: str, today: str) -> dict
     }
 
 
+def _staff_attendance_decision(
+    text: str,
+    normalized: str,
+    today: str,
+    thread_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    if "출근" not in normalized or not _contains_any(normalized, STAFF_MARKERS):
+        return None
+    if _contains_any(normalized, STAFF_FUTURE_MARKERS) and _single_day_from_alias(normalized, today) > today[:10]:
+        return None
+    resolved_range = _date_range_from_text(normalized, today)
+    if resolved_range is None:
+        return None
+    staff_query = _staff_query_from_text(text) or _staff_query_from_context(thread_context)
+    is_single_day = resolved_range[0] == resolved_range[1]
+    if is_single_day and not staff_query and not _contains_any(normalized, STAFF_RANGE_MARKERS):
+        return {
+            "action": "execute",
+            "tool": "academy_staff_attendance_day",
+            "args": {"date": resolved_range[0]},
+            "skip_synthesis": True,
+            "confidence": 0.98,
+        }
+    if not staff_query:
+        return None
+    return {
+        "action": "execute",
+        "tool": "academy_staff_attendance_range",
+        "args": {
+            "staff_query": staff_query,
+            "start_date": resolved_range[0],
+            "end_date": resolved_range[1],
+        },
+        "skip_synthesis": True,
+        "confidence": 0.98,
+    }
+
+
 def _date_range_from_text(normalized: str, today: str) -> tuple[str, str] | None:
     base = _today_date(today)
     month = _month_number_before_wol(normalized)
@@ -141,6 +210,21 @@ def _student_query_from_text(text: str) -> str:
     words = [word.strip(" .,!?~!ㅋㅎ") for word in cleaned.split()]
     candidates = [word for word in words if word]
     return candidates[0] if len(candidates) == 1 else ""
+
+
+def _staff_query_from_text(text: str) -> str:
+    cleaned = _remove_month_tokens(str(text or ""))
+    for token in DATE_ALIASES + STAFF_STOPWORDS:
+        cleaned = cleaned.replace(token, " ")
+    words = [word.strip(" .,!?~!ㅋㅎ") for word in cleaned.split()]
+    candidates = [word for word in words if word]
+    return candidates[0] if len(candidates) == 1 else ""
+
+
+def _staff_query_from_context(thread_context: dict[str, Any]) -> str:
+    if thread_context.get("kind") != "staff":
+        return ""
+    return str(thread_context.get("staff_query") or "").strip()
 
 
 def _remove_month_tokens(text: str) -> str:
