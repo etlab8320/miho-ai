@@ -6731,7 +6731,7 @@ class GatewayRunner:
                         source = event.source
                     break
                 if _action == "allow":
-                    break
+                    continue
 
         if is_internal:
             pass

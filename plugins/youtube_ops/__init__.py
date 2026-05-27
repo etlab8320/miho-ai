@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 from typing import Any
 
 from .context import capture_gateway_context
+from .pre_gateway import youtube_preflight_decision
 from .tools import _youtube_analyze_tool_handler, set_llm
+
+logger = logging.getLogger(__name__)
+YOUTUBE_PRE_GATEWAY_TIMEOUT_SECONDS = 180
 
 
 def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, str]:
@@ -13,9 +20,41 @@ def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, str]:
     return {"action": "allow"}
 
 
+async def _youtube_pre_gateway_dispatch(event: Any = None, **_: Any) -> dict[str, str]:
+    capture_gateway_context(event)
+    decision = youtube_preflight_decision(str(getattr(event, "text", "") or ""))
+    if decision is None:
+        return {"action": "allow"}
+    try:
+        raw_result = await asyncio.wait_for(
+            asyncio.to_thread(_youtube_analyze_tool_handler, decision.args),
+            timeout=YOUTUBE_PRE_GATEWAY_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        return {"action": "respond", "text": "유튜브 분석이 오래 걸리고 있어. 잠시 후 다시 보내줘."}
+    except Exception as exc:
+        logger.warning("YouTube pre-gateway analysis failed: %s", exc)
+        return {"action": "respond", "text": "유튜브 분석 중 문제가 생겼어. 잠시 후 다시 시도해줘."}
+
+    return {"action": "respond", "text": _response_text(raw_result)}
+
+
+def _response_text(raw_result: str) -> str:
+    try:
+        payload = json.loads(raw_result)
+    except (TypeError, json.JSONDecodeError):
+        return str(raw_result or "").strip() or "유튜브 분석 결과를 만들지 못했어."
+    if not isinstance(payload, dict):
+        return "유튜브 분석 결과를 만들지 못했어."
+    message = payload.get("message")
+    if isinstance(message, str) and message.strip():
+        return message.strip()
+    return "유튜브 분석 결과를 만들지 못했어."
+
+
 def register(ctx: Any) -> None:
     set_llm(ctx.llm)
-    ctx.register_hook("pre_gateway_dispatch", _capture_gateway_context)
+    ctx.register_hook("pre_gateway_dispatch", _youtube_pre_gateway_dispatch)
     ctx.register_tool(
         name="youtube_analyze_video",
         toolset="youtube_ops",

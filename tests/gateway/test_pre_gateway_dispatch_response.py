@@ -28,3 +28,23 @@ async def test_pre_gateway_dispatch_respond_returns_plugin_text(monkeypatch) -> 
     )
 
     assert await runner._handle_message(event) == "빠른 응답"
+
+
+@pytest.mark.asyncio
+async def test_pre_gateway_dispatch_allow_does_not_mask_later_response(monkeypatch) -> None:
+    async def fake_invoke_hook_async(*_: object, **__: object) -> list[dict[str, str]]:
+        return [{"action": "allow"}, {"action": "respond", "text": "뒤 플러그인 응답"}]
+
+    monkeypatch.setattr("miho_cli.plugins.invoke_hook_async", fake_invoke_hook_async)
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner.session_store = object()
+    event = MessageEvent(
+        text="https://www.youtube.com/watch?v=Ghj69GLDiqI 정리해줘",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="u1",
+            chat_id="c1",
+        ),
+    )
+
+    assert await runner._handle_message(event) == "뒤 플러그인 응답"

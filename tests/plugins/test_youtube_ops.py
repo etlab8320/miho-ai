@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from miho_cli.plugins import PluginContext, PluginManager, PluginManifest
 
 
@@ -14,6 +16,27 @@ def test_video_id_extraction_rejects_invalid_url() -> None:
     assert extract_video_id("https://youtu.be/Ghj69GLDiqI?t=4") == "Ghj69GLDiqI"
     assert extract_video_id("https://example.com/watch?v=Ghj69GLDiqI") is None
     assert extract_video_id("not a youtube link") is None
+
+
+def test_youtube_preflight_routes_url_without_phrase_hardcoding() -> None:
+    from plugins.youtube_ops.pre_gateway import youtube_preflight_decision
+
+    decision = youtube_preflight_decision("https://www.youtube.com/watch?v=Ghj69GLDiqI 이거 봐줘")
+
+    assert decision is not None
+    assert decision.args["url"] == "https://www.youtube.com/watch?v=Ghj69GLDiqI 이거 봐줘"
+    assert decision.args["render_card"] is False
+    assert decision.args["force_refresh"] is False
+    assert youtube_preflight_decision("https://example.com/watch?v=Ghj69GLDiqI 정리") is None
+
+
+def test_youtube_preflight_enables_card_for_image_requests() -> None:
+    from plugins.youtube_ops.pre_gateway import youtube_preflight_decision
+
+    decision = youtube_preflight_decision("https://youtu.be/Ghj69GLDiqI 이미지 카드로 줘")
+
+    assert decision is not None
+    assert decision.args["render_card"] is True
 
 
 def test_summary_covers_every_transcript_chunk() -> None:
@@ -215,6 +238,7 @@ def test_ytdlp_failure_is_plain_korean(monkeypatch) -> None:
 
 def test_analyze_tool_saves_rag_and_returns_media_tag(tmp_path: Path, monkeypatch) -> None:
     from plugins.youtube_ops import register
+    from plugins.youtube_ops.context import capture_gateway_context
     from plugins.youtube_ops import tools as tool_module
     from plugins.youtube_ops.models import SummaryResult, TranscriptSegment, VideoMetadata
 
@@ -266,7 +290,7 @@ def test_analyze_tool_saves_rag_and_returns_media_tag(tmp_path: Path, monkeypatc
     event = SimpleNamespace(source=source, text="https://www.youtube.com/watch?v=Ghj69GLDiqI 요약")
     ctx = PluginContext(PluginManifest(name="youtube_ops", key="youtube_ops"), PluginManager())
     register(ctx)
-    ctx._manager.invoke_hook("pre_gateway_dispatch", event=event)
+    capture_gateway_context(event)
 
     payload = json.loads(
         tool_module._youtube_analyze_tool_handler(
@@ -283,3 +307,36 @@ def test_analyze_tool_saves_rag_and_returns_media_tag(tmp_path: Path, monkeypatc
     rag_lines = rag_path.read_text(encoding="utf-8").splitlines()
     assert len(rag_lines) == 1
     assert "RAG 검색 방식의 진화" in rag_lines[0]
+
+
+@pytest.mark.asyncio
+async def test_youtube_pre_gateway_dispatch_responds_with_tool_result(monkeypatch) -> None:
+    import plugins.youtube_ops as youtube_ops
+
+    seen: dict[str, object] = {}
+
+    def fake_handler(args):
+        seen.update(args)
+        return json.dumps({"ok": True, "message": "빠른 유튜브 요약\nMEDIA:/tmp/card.png"}, ensure_ascii=False)
+
+    monkeypatch.setattr(youtube_ops, "_youtube_analyze_tool_handler", fake_handler)
+    event = SimpleNamespace(text="https://www.youtube.com/watch?v=Ghj69GLDiqI 이미지로 정리해줘", source=SimpleNamespace())
+
+    result = await youtube_ops._youtube_pre_gateway_dispatch(event=event)
+
+    assert result == {"action": "respond", "text": "빠른 유튜브 요약\nMEDIA:/tmp/card.png"}
+    assert seen["render_card"] is True
+    assert seen["force_refresh"] is False
+
+
+@pytest.mark.asyncio
+async def test_youtube_pre_gateway_dispatch_allows_non_youtube_text(monkeypatch) -> None:
+    import plugins.youtube_ops as youtube_ops
+
+    def fail_handler(args):
+        raise AssertionError(args)
+
+    monkeypatch.setattr(youtube_ops, "_youtube_analyze_tool_handler", fail_handler)
+    event = SimpleNamespace(text="오늘 학원 일정 줘", source=SimpleNamespace())
+
+    assert await youtube_ops._youtube_pre_gateway_dispatch(event=event) == {"action": "allow"}
