@@ -21,13 +21,9 @@ from .context import (
     set_gateway_context,
 )
 from .commentary_config import plan_commentary_aux_defaults
-from .formatting import (
-    format_binding_status,
-    format_catalog,
-    format_login_link,
-)
+from .formatting import format_binding_status, format_catalog, format_login_link
 from .fast_model_routing import route_bound_academy_session_to_fast_model
-from .login_preflight import is_academy_login_request, is_gateway_source_authorized
+from .login_preflight import is_academy_login_request, is_academy_login_status_request, is_gateway_source_authorized
 from .natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
 from .thread_context import academy_context_key
 from .academy_query_tools import (
@@ -53,7 +49,6 @@ from .student_context_tool import _student_context_tool_handler
 
 def _catalog_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     """Return the academy operation catalog.
-
     Plugin tools may receive execution metadata such as ``task_id`` as keyword
     arguments from the tool dispatcher, so accept and ignore extra kwargs.
     """
@@ -68,14 +63,12 @@ def _academy_command(raw_args: str = "") -> str:
     normalized = subcommand.lower().strip()
     if normalized == "quick":
         return "빠른 문장 가로채기는 꺼져 있어. 일반 문장으로 요청하면 미호가 판단해서 필요한 도구를 호출할게."
-    if normalized == "login":
+    if normalized in {"login", "link"}:
         return _login_command()
     if normalized == "status":
         return _status_command()
     if normalized == "logout":
         return _logout_command()
-    if normalized == "link":
-        return _login_command()
     return format_catalog()
 
 
@@ -138,6 +131,10 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
     if platform != "discord" or not discord_user_id:
         return {"action": "allow"}
     refresh_remote_pending_logins()
+    if is_academy_login_status_request(str(getattr(event, "text", "") or "")):
+        if is_gateway_source_authorized(kwargs.get("gateway"), source):
+            return {"action": "respond", "text": _status_command()}
+        return {"action": "allow"}
     if is_academy_login_request(str(getattr(event, "text", "") or "")):
         if is_gateway_source_authorized(kwargs.get("gateway"), source):
             return {"action": "respond", "text": _login_command()}
