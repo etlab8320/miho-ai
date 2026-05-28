@@ -45,6 +45,7 @@ from .response_focus import focused_response
 from .response_synthesis import compact_payload, synthesize_or_fallback
 from .route_preflight import academy_preflight_decision
 from .thread_context import (
+    STAFF_CONTEXT_TOOLS,
     STUDENT_CONTEXT_TOOLS,
     get_thread_context,
     pop_pending_request,
@@ -335,8 +336,10 @@ def _resolver_messages(text: str, today: str, thread_context: dict[str, Any] | N
                 "직전 맥락이 pending_request이고 현재 요청이 로그인 완료/재시도 후속이면 "
                 "pending_request의 도구와 인자를 이어받아 실행해. "
                 "현재 요청에 새 학생이 명시되지 않았다면 예시나 다른 대화에서 학생명을 추측하지 마. "
+                "PACA/Peak 단어만으로 도구를 실행하지 마. 조회/목록/몇 명/누구/기록/이미지처럼 읽기 의도가 분명할 때만 execute해. "
                 "출근해서 보면, 출근하고 확인, 내일 출근 같은 일상 표현은 강사 출근 조회가 아니므로 action=allow로 둬. "
-                "강사 출근 조회는 누구/누가/강사/선생/출근한/출근했/출근 기록/출근 횟수처럼 조회 의도가 분명할 때만 실행해. "
+                "더 추가해야 할까, 어떻게 운영할까, 괜찮을까 같은 판단/상담 질문은 먼저 데이터를 가져오라고 명시하지 않으면 action=allow야. "
+                "강사 출근 조회는 누구/누가/몇 명/출근 기록/출근 횟수처럼 조회 의도가 분명할 때만 실행해. "
                 "쓰기/반영/결제 완료 요청은 실행하지 말고 action=allow로 둬."
             ),
         },
@@ -355,12 +358,16 @@ def _resolver_messages(text: str, today: str, thread_context: dict[str, Any] | N
 
 
 def _resolved_args(tool_name: str, args: dict[str, Any], context_key: str | None) -> dict[str, Any]:
-    if tool_name not in STUDENT_CONTEXT_TOOLS:
+    if tool_name not in STUDENT_CONTEXT_TOOLS and tool_name not in STAFF_CONTEXT_TOOLS:
         return args
     context = get_thread_context(context_key)
     if not context:
         return args
     resolved = dict(args)
+    if tool_name in STAFF_CONTEXT_TOOLS:
+        if not str(resolved.get("staff_query") or "").strip() and context.get("kind") == "staff":
+            resolved["staff_query"] = context.get("staff_query", "")
+        return resolved
     if not str(resolved.get("student_query") or "").strip():
         resolved["student_query"] = context.get("student_query", "")
     if "start_date" in TOOL_CONTRACTS.get(tool_name, {}).get("args", []):

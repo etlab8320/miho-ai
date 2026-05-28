@@ -1,4 +1,4 @@
-"""Tests for high-confidence academy preflight routes."""
+"""Tests for semantic academy natural routes."""
 
 from __future__ import annotations
 
@@ -19,11 +19,27 @@ class _Response:
 
 
 @pytest.mark.asyncio
-async def test_routes_trial_lesson_schedule_without_llm() -> None:
+async def test_routes_trial_lesson_schedule_through_router() -> None:
     calls: list[dict] = []
 
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
-        raise AssertionError(f"resolver should not run for unambiguous trial query: {messages!r}")
+        assert "오늘 체험수업 학생있어?" in messages[-1]["content"]
+        return _Response(
+            json.dumps(
+                {
+                    "action": "execute",
+                    "tool": "academy_consultation_schedule_range",
+                    "args": {
+                        "start_date": "2026-05-27",
+                        "end_date": "2026-05-27",
+                        "new_registration_only": False,
+                        "trial_only": True,
+                    },
+                    "confidence": 0.95,
+                },
+                ensure_ascii=False,
+            )
+        )
 
     def handler(args: dict, **_: object) -> str:
         calls.append(args)
@@ -53,11 +69,28 @@ async def test_routes_trial_lesson_schedule_without_llm() -> None:
 
 
 @pytest.mark.asyncio
-async def test_routes_explicit_student_month_attendance_without_llm() -> None:
+async def test_routes_explicit_student_month_attendance_through_router() -> None:
     calls: list[dict] = []
 
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
-        raise AssertionError(f"resolver should not run for explicit attendance query: {messages!r}")
+        assert "백지민 5월 출석조회좀" in messages[-1]["content"]
+        return _Response(
+            json.dumps(
+                {
+                    "action": "execute",
+                    "tool": "academy_student_attendance_range",
+                    "args": {
+                        "student_query": "백지민",
+                        "start_date": "2026-05-01",
+                        "end_date": "2026-05-31",
+                        "today": "2026-05-27",
+                    },
+                    "response_focus": "summary",
+                    "confidence": 0.96,
+                },
+                ensure_ascii=False,
+            )
+        )
 
     def handler(args: dict, **_: object) -> str:
         calls.append(args)
@@ -87,11 +120,27 @@ async def test_routes_explicit_student_month_attendance_without_llm() -> None:
 
 
 @pytest.mark.asyncio
-async def test_routes_colloquial_student_attendance_suffix_without_llm() -> None:
+async def test_routes_colloquial_student_attendance_suffix_through_router() -> None:
     calls: list[dict] = []
 
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
-        raise AssertionError(f"resolver should not run for explicit attendance query: {messages!r}")
+        assert "백지민 5월 출석 조회좀해봐" in messages[-1]["content"]
+        return _Response(
+            json.dumps(
+                {
+                    "action": "execute",
+                    "tool": "academy_student_attendance_range",
+                    "args": {
+                        "student_query": "백지민",
+                        "start_date": "2026-05-01",
+                        "end_date": "2026-05-31",
+                        "today": "2026-05-27",
+                    },
+                    "confidence": 0.96,
+                },
+                ensure_ascii=False,
+            )
+        )
 
     def handler(args: dict, **_: object) -> str:
         calls.append(args)
@@ -112,11 +161,27 @@ async def test_routes_colloquial_student_attendance_suffix_without_llm() -> None
 
 
 @pytest.mark.asyncio
-async def test_routes_explicit_student_attendance_image_without_llm() -> None:
+async def test_routes_explicit_student_attendance_image_through_router() -> None:
     calls: list[dict] = []
 
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
-        raise AssertionError(f"resolver should not run for explicit attendance image query: {messages!r}")
+        assert "백지민 5월 출석조회 이미지로 줘" in messages[-1]["content"]
+        return _Response(
+            json.dumps(
+                {
+                    "action": "execute",
+                    "tool": "academy_student_attendance_calendar_image",
+                    "args": {
+                        "student_query": "백지민",
+                        "start_date": "2026-05-01",
+                        "end_date": "2026-05-31",
+                        "today": "2026-05-27",
+                    },
+                    "confidence": 0.97,
+                },
+                ensure_ascii=False,
+            )
+        )
 
     def handler(args: dict, **_: object) -> str:
         calls.append(args)
@@ -145,11 +210,26 @@ async def test_routes_explicit_student_attendance_image_without_llm() -> None:
 
 
 @pytest.mark.asyncio
-async def test_routes_staff_month_count_without_llm() -> None:
+async def test_routes_staff_month_count_through_router() -> None:
     calls: list[dict] = []
 
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
-        raise AssertionError(f"resolver should not run for explicit staff month query: {messages!r}")
+        assert "정의솔 강사 5월 총 몇번 출근했어?" in messages[-1]["content"]
+        return _Response(
+            json.dumps(
+                {
+                    "action": "execute",
+                    "tool": "academy_staff_attendance_range",
+                    "args": {
+                        "staff_query": "정의솔",
+                        "start_date": "2026-05-01",
+                        "end_date": "2026-05-31",
+                    },
+                    "confidence": 0.96,
+                },
+                ensure_ascii=False,
+            )
+        )
 
     def handler(args: dict, **_: object) -> str:
         calls.append(args)
@@ -178,11 +258,34 @@ async def test_routes_staff_month_count_without_llm() -> None:
 
 
 @pytest.mark.asyncio
-async def test_routes_staff_followup_month_count_from_thread_context_without_llm() -> None:
+async def test_routes_staff_followup_month_count_from_thread_context_through_router() -> None:
     calls: list[dict] = []
+    decisions = [
+        {
+            "action": "execute",
+            "tool": "academy_staff_attendance_range",
+            "args": {
+                "staff_query": "김세희",
+                "start_date": "2026-05-18",
+                "end_date": "2026-05-24",
+            },
+            "confidence": 0.96,
+        },
+        {
+            "action": "execute",
+            "tool": "academy_staff_attendance_range",
+            "args": {
+                "staff_query": "",
+                "start_date": "2026-05-01",
+                "end_date": "2026-05-31",
+            },
+            "confidence": 0.96,
+        },
+    ]
 
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
-        raise AssertionError(f"resolver should not run for staff follow-up: {messages!r}")
+        assert "도구 계약" in messages[-1]["content"]
+        return _Response(json.dumps(decisions.pop(0), ensure_ascii=False))
 
     def handler(args: dict, **_: object) -> str:
         calls.append(args)
@@ -239,6 +342,15 @@ def test_preflight_ignores_casual_tomorrow_work_phrase() -> None:
     assert decision is None
 
 
+def test_preflight_defers_staff_attendance_advice_question_to_router() -> None:
+    decision = academy_preflight_decision(
+        "오늘 출근한 강사가 너무 적은데, 다음에 더 추가해야할까?",
+        today="2026-05-28",
+    )
+
+    assert decision is None
+
+
 @pytest.mark.asyncio
 async def test_casual_tomorrow_work_phrase_does_not_execute_staff_attendance() -> None:
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
@@ -259,15 +371,42 @@ async def test_casual_tomorrow_work_phrase_does_not_execute_staff_attendance() -
     assert route == AcademyNaturalRoute.ALLOW
 
 
-def test_preflight_keeps_explicit_staff_day_lookup() -> None:
+@pytest.mark.asyncio
+async def test_staff_attendance_advice_question_does_not_execute_preflight() -> None:
+    async def fake_resolver(messages: list[dict[str, str]]) -> object:
+        assert "출근한 강사가 너무 적은데" in messages[-1]["content"]
+        return _Response(json.dumps({"action": "allow", "confidence": 0.1}))
+
+    def handler(args: dict, **_: object) -> str:
+        raise AssertionError(f"staff attendance tool should not run for advice question: {args!r}")
+
+    route = await resolve_and_execute_academy_request(
+        "오늘 출근한 강사가 너무 적은데, 다음에 더 추가해야할까?",
+        resolver=fake_resolver,
+        handlers={"academy_staff_attendance_day": handler},
+        today="2026-05-28",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.ALLOW
+
+
+def test_preflight_defers_explicit_staff_day_lookup_to_router() -> None:
     decision = academy_preflight_decision(
         "어제 누구 출근했는지 알려줘",
         today="2026-05-28",
     )
 
-    assert decision is not None
-    assert decision["tool"] == "academy_staff_attendance_day"
-    assert decision["args"] == {"date": "2026-05-27"}
+    assert decision is None
+
+
+def test_preflight_defers_explicit_staff_day_count_lookup_to_router() -> None:
+    decision = academy_preflight_decision(
+        "오늘 출근한 강사 몇 명이야?",
+        today="2026-05-28",
+    )
+
+    assert decision is None
 
 
 def test_trial_lesson_contract_is_visible_to_llm_router() -> None:
@@ -293,6 +432,20 @@ def test_staff_attendance_false_positive_guard_is_visible_to_llm_router() -> Non
 
     assert "출근해서" in prompt
     assert "일상 표현" in prompt
+    assert "action=allow" in prompt
+
+
+def test_staff_advice_guard_is_visible_to_llm_router() -> None:
+    prompt = "\n".join(
+        message["content"]
+        for message in natural_router._resolver_messages(
+            "오늘 출근한 강사가 너무 적은데, 다음에 더 추가해야할까?",
+            "2026-05-28",
+        )
+    )
+
+    assert "단어만으로 도구를 실행하지 마" in prompt
+    assert "더 추가해야 할까" in prompt
     assert "action=allow" in prompt
 
 
