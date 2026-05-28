@@ -397,3 +397,35 @@ class TestCleanupProgress:
                 }
             }
             assert resolve_display_setting(config, "telegram", "cleanup_progress") is True, val
+
+
+class TestInterimAssistantMessages:
+    """Mid-turn assistant commentary is platform-gated."""
+
+    def test_discord_requires_platform_opt_in_even_when_global_true(self):
+        from gateway.display_config import resolve_interim_assistant_messages
+
+        config = {"display": {"interim_assistant_messages": True}}
+
+        assert resolve_interim_assistant_messages(config, "discord") is False
+
+    def test_discord_platform_opt_in_enables_commentary(self):
+        from gateway.display_config import resolve_interim_assistant_messages
+
+        config = {
+            "display": {
+                "platforms": {
+                    "discord": {"interim_assistant_messages": True},
+                },
+            },
+        }
+
+        assert resolve_interim_assistant_messages(config, "discord") is True
+
+    def test_global_setting_still_applies_to_telegram(self):
+        from gateway.display_config import resolve_interim_assistant_messages
+
+        assert resolve_interim_assistant_messages(
+            {"display": {"interim_assistant_messages": False}},
+            "telegram",
+        ) is False

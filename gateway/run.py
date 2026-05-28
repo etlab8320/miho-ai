@@ -15822,7 +15822,10 @@ class GatewayRunner:
         # Per-platform display settings — resolve via display_config module
         # which checks display.platforms.<platform>.<key> first, then
         # display.<key> global, then built-in platform defaults.
-        from gateway.display_config import resolve_display_setting
+        from gateway.display_config import (
+            resolve_display_setting,
+            resolve_interim_assistant_messages,
+        )
 
         # Apply tool preview length config (0 = no limit)
         try:
@@ -15864,10 +15867,7 @@ class GatewayRunner:
         # in chat platforms while opting into concise mid-turn updates.
         interim_assistant_messages_enabled = (
             source.platform != Platform.WEBHOOK
-            and is_truthy_value(
-                display_config.get("interim_assistant_messages"),
-                default=True,
-            )
+            and resolve_interim_assistant_messages(user_config, platform_key)
         )
         
         # Queue for progress messages (thread-safe)

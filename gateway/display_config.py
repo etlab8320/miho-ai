@@ -33,6 +33,7 @@ from typing import Any
 _GLOBAL_DEFAULTS: dict[str, Any] = {
     "tool_progress": "all",
     "show_reasoning": False,
+    "interim_assistant_messages": True,
     "tool_preview_length": 0,
     "streaming": None,  # None = follow top-level streaming config
     # When true, delete tool-progress / "Still working..." / status bubbles
@@ -54,6 +55,7 @@ _GLOBAL_DEFAULTS: dict[str, Any] = {
 _TIER_HIGH = {
     "tool_progress": "all",
     "show_reasoning": False,
+    "interim_assistant_messages": True,
     "tool_preview_length": 40,
     "streaming": None,  # follow global
 }
@@ -82,7 +84,7 @@ _TIER_MINIMAL = {
 _PLATFORM_DEFAULTS: dict[str, dict[str, Any]] = {
     # Tier 1 — full edit support, personal/team use
     "telegram":    {**_TIER_HIGH, "tool_progress": "new"},
-    "discord":     {**_TIER_HIGH, "tool_progress": "clean"},
+    "discord":     {**_TIER_HIGH, "tool_progress": "clean", "interim_assistant_messages": False},
 
     # Tier 2 — edit support, often customer/workspace channels
     # Slack: tool_progress off by default — Bolt posts cannot be edited like CLI;
@@ -190,7 +192,7 @@ def _normalise(setting: str, value: Any) -> Any:
         if value is True:
             return "all"
         return str(value).lower()
-    if setting in {"show_reasoning", "streaming"}:
+    if setting in {"show_reasoning", "streaming", "interim_assistant_messages"}:
         if isinstance(value, str):
             return value.lower() in {"true", "1", "yes", "on"}
         return bool(value)
@@ -204,3 +206,27 @@ def _normalise(setting: str, value: Any) -> Any:
         except (TypeError, ValueError):
             return 0
     return value
+
+
+def resolve_interim_assistant_messages(user_config: dict, platform_key: str) -> bool:
+    """Resolve whether mid-turn assistant commentary should be user-visible.
+
+    Discord channels are often durable work threads. A global opt-in should not
+    expose agent process narration there; require an explicit Discord override.
+    """
+    display_cfg = user_config.get("display") or {}
+    if not isinstance(display_cfg, dict):
+        display_cfg = {}
+    platforms = display_cfg.get("platforms") or {}
+    plat_overrides = platforms.get(platform_key)
+    if isinstance(plat_overrides, dict) and "interim_assistant_messages" in plat_overrides:
+        return bool(
+            _normalise(
+                "interim_assistant_messages",
+                plat_overrides.get("interim_assistant_messages"),
+            )
+        )
+    if platform_key == "discord":
+        return False
+    resolved = resolve_display_setting(user_config, platform_key, "interim_assistant_messages", True)
+    return bool(resolved)

@@ -418,9 +418,28 @@ def test_staff_advice_guard_is_visible_to_llm_router() -> None:
         )
     )
 
-    assert "건강/식단/잡담/상담" in prompt
+    assert "그 외 요청이면" in prompt
     assert "intent" in prompt
     assert "action=allow" in prompt
+
+
+def test_academy_router_prompt_includes_neutral_turn_time_facts() -> None:
+    prompt = "\n".join(
+        message["content"]
+        for message in natural_router._resolver_messages(
+            "오늘 먹은거랑 어제 먹은거 섞지 말고 정리해줘",
+            "2026-05-29",
+            temporal_context=(
+                "Turn time: calendar_date=2026-05-29, previous_calendar_date=2026-05-28, "
+                "local_time=00:45, timezone=Asia/Seoul, after_midnight_window=true."
+            ),
+        )
+    )
+
+    assert "reference_date: 2026-05-29" in prompt
+    assert "previous_calendar_date=2026-05-28" in prompt
+    assert "after_midnight_window=true" in prompt
+    assert "life" + "_log_date" not in prompt
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,7 @@ import logging
 from typing import Any, Awaitable, Callable, ClassVar
 from zoneinfo import ZoneInfo
 
+from agent.temporal_semantics import build_temporal_reference, format_temporal_context
 from .assignment_tool import _assignment_by_date_tool_handler
 from .academy_calendar_tool import (
     _academy_schedule_range_tool_handler,
@@ -308,26 +309,33 @@ async def _resolve_decision(
     today: str | None,
     context_key: str | None,
 ) -> dict[str, Any]:
-    response = await resolver(_resolver_messages(text, today or _today(), get_thread_context(context_key)))
+    reference_day = today or _today()
+    response = await resolver(_resolver_messages(text, reference_day, get_thread_context(context_key)))
     payload = _load_payload(_response_content(response))
     return payload if isinstance(payload, dict) else {}
 
 
-def _resolver_messages(text: str, today: str, thread_context: dict[str, Any] | None = None) -> list[dict[str, str]]:
+def _resolver_messages(
+    text: str,
+    today: str,
+    thread_context: dict[str, Any] | None = None,
+    temporal_context: str | None = None,
+) -> list[dict[str, str]]:
     contracts = json.dumps(TOOL_CONTRACTS, ensure_ascii=False, sort_keys=True)
     context_text = json.dumps(thread_context or {}, ensure_ascii=False, sort_keys=True)
+    temporal = temporal_context or format_temporal_context(build_temporal_reference())
     return [
         {
             "role": "system",
             "content": (
                 "너는 Discord 학원업무 요청을 구조화하는 의미 기반 라우터야. "
                 "사용자 문장을 직접 답하지 말고 JSON만 반환해. "
-                "PACA/Peak 학원 운영 도메인으로 확정되면 domain=academy_ops와 action=execute, "
-                "그 외 대화/건강/식단/잡담/상담이면 domain=non_academy와 action=allow로 반환해. "
+                "PACA/Peak 운영 도메인으로 확정되면 domain=academy_ops와 action=execute, "
+                "그 외 요청이면 domain=non_academy와 action=allow로 반환해. "
                 "키워드 하나가 아니라 전체 문맥, 사용자의 목적, 직전 학원업무 맥락을 함께 판단해. "
                 "학원 도구를 실행하려면 ambiguous=false, intent, evidence를 반드시 채워. "
                 "도메인이 조금이라도 불명확하면 action=allow, ambiguous=true로 둬. "
-                "상대 날짜와 범위는 기준일로 계산해서 ISO 날짜로 넣어. "
+                "상대 날짜와 범위는 reference_date와 turn_time을 함께 보고 ISO 날짜로 넣어. "
                 "도구 계약에 없는 인자는 만들지 말고, 모르는 값은 빈 문자열이나 false로 둬. "
                 "출력 초점이 있으면 response_focus를 함께 반환해. "
                 "가능한 response_focus는 summary, daily_attendance, unchecked_dates 중 하나야. "
@@ -349,7 +357,8 @@ def _resolver_messages(text: str, today: str, thread_context: dict[str, Any] | N
         {
             "role": "user",
             "content": (
-                f"기준일: {today}\n"
+                f"reference_date: {today}\n"
+                f"turn_time: {temporal}\n"
                 f"직전 학원업무 맥락: {context_text}\n"
                 f"도구 계약: {contracts}\n"
                 '반환 형식: {"action":"execute|allow","domain":"academy_ops|non_academy|ambiguous",'

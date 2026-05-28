@@ -24,6 +24,10 @@ def test_workspace_prompt_applies_context_and_rag_budget():
         workspace_active_dir=Path("/tmp/workspace"),
         rag_dir=Path("/tmp/workspace/rag"),
         source=source,
+        temporal_context=(
+            "Turn time: calendar_date=2026-05-29, previous_calendar_date=2026-05-28, "
+            "local_time=00:30, timezone=Asia/Seoul, after_midnight_window=true."
+        ),
         context_seed="seed " + ("z" * 3000),
         owner_profile_context="### Relevant Owner Profile\n- [user] 날짜별 건강 기록",
         recent=recent,
@@ -42,3 +46,7 @@ def test_workspace_prompt_applies_context_and_rag_budget():
     assert "z" * 1300 not in prompt
     assert "without asking the user to do it manually" in prompt
     assert "do not restate unrelated retrieved context" in prompt
+    assert "do not expose internal workflow" in prompt
+    assert "previous_calendar_date=2026-05-28" in prompt
+    assert "after_midnight_window=true" in prompt
+    assert "life" + "_log_date" not in prompt

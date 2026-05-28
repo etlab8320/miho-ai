@@ -809,6 +809,50 @@ async def test_run_agent_surfaces_interim_commentary_by_default(monkeypatch, tmp
 
 
 @pytest.mark.asyncio
+async def test_run_agent_suppresses_discord_interim_commentary_by_default(monkeypatch, tmp_path):
+    adapter, result = await _run_with_agent(
+        monkeypatch,
+        tmp_path,
+        CommentaryAgent,
+        session_id="sess-discord-commentary-default-off",
+        platform=Platform.DISCORD,
+        chat_id="discord-channel",
+        thread_id="discord-thread",
+    )
+
+    assert result.get("already_sent") is not True
+    assert not any(call["content"] == "I'll inspect the repo first." for call in adapter.sent)
+
+
+@pytest.mark.asyncio
+async def test_run_agent_allows_discord_interim_commentary_when_platform_opted_in(
+    monkeypatch,
+    tmp_path,
+):
+    adapter, result = await _run_with_agent(
+        monkeypatch,
+        tmp_path,
+        CommentaryAgent,
+        session_id="sess-discord-commentary-opt-in",
+        platform=Platform.DISCORD,
+        chat_id="discord-channel",
+        thread_id="discord-thread",
+        config_data={
+            "display": {
+                "platforms": {
+                    "discord": {
+                        "interim_assistant_messages": True,
+                    },
+                },
+            },
+        },
+    )
+
+    assert result.get("already_sent") is not True
+    assert any(call["content"] == "I'll inspect the repo first." for call in adapter.sent)
+
+
+@pytest.mark.asyncio
 async def test_run_agent_suppresses_interim_commentary_when_disabled(monkeypatch, tmp_path):
     adapter, result = await _run_with_agent(
         monkeypatch,
@@ -1100,7 +1144,14 @@ async def test_run_agent_drops_interim_commentary_after_generation_invalidation(
     import yaml
 
     (tmp_path / "config.yaml").write_text(
-        yaml.dump({"display": {"tool_progress": "off", "interim_assistant_messages": True}}),
+        yaml.dump(
+            {
+                "display": {
+                    "tool_progress": "off",
+                    "platforms": {"discord": {"interim_assistant_messages": True}},
+                },
+            }
+        ),
         encoding="utf-8",
     )
 

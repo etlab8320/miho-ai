@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from agent.temporal_semantics import build_temporal_reference, format_temporal_context
 from utils import atomic_json_write
 from gateway.discord_workspace_archive import (
     archive_workspace_for_channel,
@@ -195,9 +196,13 @@ def _timestamp_fields(timestamp: Any = None) -> dict[str, str]:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=ZoneInfo(_WORKSPACE_TIMEZONE))
     local_dt = dt.astimezone(ZoneInfo(_WORKSPACE_TIMEZONE))
+    temporal = build_temporal_reference(local_dt, timezone_name=_WORKSPACE_TIMEZONE)
     return {
         "timestamp": raw,
         "date": local_dt.date().isoformat(),
+        "previous_calendar_date": temporal.previous_calendar_date,
+        "local_time": temporal.local_time,
+        "after_midnight_window": temporal.is_after_midnight_window,
         "timezone": _WORKSPACE_TIMEZONE,
     }
 
@@ -360,6 +365,9 @@ def record_turn_and_build_prompt(
         workspace_active_dir=workspace.active_dir,
         rag_dir=workspace.rag_dir,
         source=source,
+        temporal_context=format_temporal_context(
+            build_temporal_reference(timestamp, timezone_name=_WORKSPACE_TIMEZONE)
+        ),
         context_seed=context_seed,
         owner_profile_context=owner_profile_context,
         recent=recent,
