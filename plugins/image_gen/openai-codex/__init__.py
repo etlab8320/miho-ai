@@ -161,20 +161,18 @@ def _build_codex_client():
         return None
 
 
-def _collect_image_b64(client: Any, *, prompt: str, size: str, quality: str) -> Optional[str]:
-    """Stream a Codex Responses image_generation call and return the b64 image."""
-    image_b64: Optional[str] = None
-
-    with client.responses.stream(
-        model=_CODEX_CHAT_MODEL,
-        store=False,
-        instructions=_CODEX_INSTRUCTIONS,
-        input=[{
+def _build_image_request(*, prompt: str, size: str, quality: str) -> Dict[str, Any]:
+    """Build the Codex Responses request shared by stream and create paths."""
+    return {
+        "model": _CODEX_CHAT_MODEL,
+        "store": False,
+        "instructions": _CODEX_INSTRUCTIONS,
+        "input": [{
             "type": "message",
             "role": "user",
             "content": [{"type": "input_text", "text": prompt}],
         }],
-        tools=[{
+        "tools": [{
             "type": "image_generation",
             "model": API_MODEL,
             "size": size,
@@ -183,34 +181,79 @@ def _collect_image_b64(client: Any, *, prompt: str, size: str, quality: str) -> 
             "background": "opaque",
             "partial_images": 1,
         }],
-        tool_choice={
+        "tool_choice": {
             "type": "allowed_tools",
             "mode": "required",
             "tools": [{"type": "image_generation"}],
         },
-    ) as stream:
-        for event in stream:
-            event_type = getattr(event, "type", "")
-            if event_type == "response.output_item.done":
-                item = getattr(event, "item", None)
-                if getattr(item, "type", None) == "image_generation_call":
-                    result = getattr(item, "result", None)
-                    if isinstance(result, str) and result:
-                        image_b64 = result
-            elif event_type == "response.image_generation_call.partial_image":
-                partial = getattr(event, "partial_image_b64", None)
-                if isinstance(partial, str) and partial:
-                    image_b64 = partial
-        final = stream.get_final_response()
+    }
 
-    # Final-response sweep covers the case where the stream finished before
-    # we observed the ``output_item.done`` event for the image call.
-    for item in getattr(final, "output", None) or []:
+
+def _extract_image_b64_from_output(output: Any) -> Optional[str]:
+    """Return the first image_generation_call result from a Responses output."""
+    for item in output or []:
         if getattr(item, "type", None) == "image_generation_call":
             result = getattr(item, "result", None)
             if isinstance(result, str) and result:
-                image_b64 = result
+                return result
+        if isinstance(item, dict) and item.get("type") == "image_generation_call":
+            result = item.get("result")
+            if isinstance(result, str) and result:
+                return result
+    return None
 
+
+def _collect_image_b64_from_events(events: Any) -> Optional[str]:
+    """Collect an image result from streamed Responses events."""
+    image_b64: Optional[str] = None
+    for event in events:
+        event_type = getattr(event, "type", "")
+        if event_type == "response.output_item.done":
+            item = getattr(event, "item", None)
+            if item is None and isinstance(event, dict):
+                item = event.get("item")
+            found = _extract_image_b64_from_output([item])
+            if found:
+                image_b64 = found
+        elif event_type == "response.image_generation_call.partial_image":
+            partial = getattr(event, "partial_image_b64", None)
+            if partial is None and isinstance(event, dict):
+                partial = event.get("partial_image_b64")
+            if isinstance(partial, str) and partial:
+                image_b64 = partial
+    return image_b64
+
+
+def _collect_image_b64_via_create(client: Any, request: Dict[str, Any]) -> Optional[str]:
+    """Fallback for Codex stream helper failures."""
+    stream = client.responses.create(**request, stream=True)
+    try:
+        return _collect_image_b64_from_events(stream)
+    finally:
+        close_fn = getattr(stream, "close", None)
+        if callable(close_fn):
+            close_fn()
+
+
+def _collect_image_b64(client: Any, *, prompt: str, size: str, quality: str) -> Optional[str]:
+    """Stream a Codex Responses image_generation call and return the b64 image."""
+    request = _build_image_request(prompt=prompt, size=size, quality=quality)
+
+    try:
+        with client.responses.stream(**request) as stream:
+            image_b64 = _collect_image_b64_from_events(stream)
+            final = stream.get_final_response()
+    except TypeError as exc:
+        if "NoneType" not in str(exc) or "not iterable" not in str(exc):
+            raise
+        logger.warning(
+            "Codex image stream returned malformed SDK output; retrying via create()."
+        )
+        return _collect_image_b64_via_create(client, request)
+
+    found = _extract_image_b64_from_output(getattr(final, "output", None))
+    if found:
+        return found
     return image_b64
 
 

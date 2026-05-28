@@ -51,6 +51,20 @@ class _FakeStream:
         return self._final
 
 
+class _BrokenStream:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def __iter__(self):
+        raise TypeError("'NoneType' object is not iterable")
+
+    def get_final_response(self):
+        return SimpleNamespace(output=[], status="completed", output_text="")
+
+
 @pytest.fixture(autouse=True)
 def _tmp_miho_home(tmp_path, monkeypatch):
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
@@ -281,6 +295,37 @@ class TestGenerate:
         assert result["success"] is False
         assert result["error_type"] == "api_error"
         assert "cloudflare 403" in result["error"]
+
+    def test_none_iterable_stream_falls_back_to_create(self, provider, monkeypatch):
+        monkeypatch.setattr(codex_plugin, "_read_codex_access_token", lambda: "codex-token")
+
+        calls = []
+        output_item = SimpleNamespace(
+            type="image_generation_call",
+            status="completed",
+            id="ig_create",
+            result=_b64_png(),
+        )
+        done_event = SimpleNamespace(type="response.output_item.done", item=output_item)
+
+        def _create(**kwargs):
+            calls.append(kwargs)
+            return _FakeStream([done_event], SimpleNamespace(output=[], status="completed"))
+
+        fake_client = SimpleNamespace(
+            responses=SimpleNamespace(
+                stream=lambda **kwargs: _BrokenStream(),
+                create=_create,
+            )
+        )
+        monkeypatch.setattr(codex_plugin, "_build_codex_client", lambda: fake_client)
+
+        result = provider.generate("a cat")
+
+        assert calls[0]["stream"] is True
+        assert result["success"] is True
+        assert result["provider"] == "openai-codex"
+        assert Path(result["image"]).exists()
 
 
 # ── Plugin entry point ──────────────────────────────────────────────────────
