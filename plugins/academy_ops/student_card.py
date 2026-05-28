@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Protocol
 
+from .student_lookup import StudentLookupAmbiguous, StudentLookupNotFound, resolve_paca_student
+
 
 class AcademyClient(Protocol):
     def search_paca_students(self, query: str) -> list[dict[str, Any]]: ...
@@ -113,7 +115,7 @@ class AcademyStudentCardService:
             raise StudentCardNotFoundError("학생 이름이나 검색어를 알려줘.")
         target_day = today or date.today()
         period = max(1, min(int(period_days or 14), 60))
-        paca_student = self._select_student(query, self._client.search_paca_students(query))
+        paca_student = self._select_student(query)
         paca_id = _to_int(paca_student.get("id"))
         detail = self._client.get_paca_student_detail(paca_id)
         detail_student = detail.get("student") if isinstance(detail.get("student"), dict) else {}
@@ -146,16 +148,13 @@ class AcademyStudentCardService:
         risk = self._risk_summary(profile, attendance, records, missing_sources)
         return StudentCard(profile, attendance, records, risk, missing_sources)
 
-    def _select_student(self, query: str, students: list[dict[str, Any]]) -> dict[str, Any]:
-        if not students:
+    def _select_student(self, query: str) -> dict[str, Any]:
+        try:
+            return resolve_paca_student(self._client, query)
+        except StudentLookupNotFound as exc:
             raise StudentCardNotFoundError("학생을 찾지 못했어. 이름이나 학교를 조금 더 정확히 알려줘.")
-        exact = [item for item in students if str(item.get("name") or "").strip() == query]
-        if len(exact) == 1:
-            return exact[0]
-        if len(students) == 1:
-            return students[0]
-        candidates = ", ".join(str(item.get("name") or "이름 없음") for item in students[:5])
-        raise StudentCardAmbiguousError(f"동명이인이 있어. 학생을 조금 더 구체적으로 골라줘: {candidates}")
+        except StudentLookupAmbiguous as exc:
+            raise StudentCardAmbiguousError(f"동명이인이 있어. 학생을 조금 더 구체적으로 골라줘: {exc}") from exc
 
     def _find_peak_student(self, paca_student_id: int) -> dict[str, Any] | None:
         for student in self._client.list_peak_students():

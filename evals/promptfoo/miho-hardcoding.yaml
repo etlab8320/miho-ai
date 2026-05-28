@@ -1,0 +1,16 @@
+description: Miho Agent hardcoding guard for promptfoo eval paths.
+
+prompts:
+  - "scan hardcoding"
+
+providers:
+  - id: file://providers/hardcoding_guard_provider.py
+    label: miho-hardcoding-guard
+
+tests:
+  - description: Promptfoo eval path should not add hardcoded local paths or secrets.
+    assert:
+      - type: contains
+        value: 하드코딩 검사 완료
+      - type: javascript
+        value: "!output.includes('하드코딩 경고')"

@@ -6,6 +6,8 @@ from datetime import date, timedelta
 import json
 from typing import Any, Protocol
 
+from .student_lookup import StudentLookupAmbiguous, StudentLookupNotFound, resolve_paca_student
+
 
 PACA_WEEKDAY_TO_PYTHON = {0: 6, 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5}
 TIME_SLOT_ORDER = {"morning": 0, "afternoon": 1, "evening": 2}
@@ -32,7 +34,7 @@ def student_attendance_range(
     if end_day < start_day:
         raise StudentAttendanceError("조회 종료일이 시작일보다 빠를 수는 없어.")
     reference_day = today or date.today()
-    paca_student = _select_student(student_query, client.search_paca_students(student_query.strip()))
+    paca_student = _resolve_student(client, student_query)
     paca_student_id = _to_int(paca_student.get("id"))
     attendance_rows = _paca_attendance_rows_by_day(client, paca_student_id, start_day, end_day)
     schedule_slots, schedule_known = _schedule_baseline(client, paca_student, start_day, end_day)
@@ -63,18 +65,15 @@ def student_attendance_range(
     }
 
 
-def _select_student(query: str, students: list[dict[str, Any]]) -> dict[str, Any]:
-    if not query:
+def _resolve_student(client: StudentAttendanceClient, query: str) -> dict[str, Any]:
+    if not query.strip():
         raise StudentAttendanceError("학생 이름이나 검색어를 알려줘.")
-    if not students:
+    try:
+        return resolve_paca_student(client, query)
+    except StudentLookupNotFound as exc:
         raise StudentAttendanceError("학생을 찾지 못했어. 이름이나 학교를 조금 더 정확히 알려줘.")
-    exact = [item for item in students if str(item.get("name") or "").strip() == query]
-    if len(exact) == 1:
-        return exact[0]
-    if len(students) == 1:
-        return students[0]
-    candidates = ", ".join(str(item.get("name") or "이름 없음") for item in students[:5])
-    raise StudentAttendanceError(f"동명이인이 있어. 학생을 조금 더 구체적으로 골라줘: {candidates}")
+    except StudentLookupAmbiguous as exc:
+        raise StudentAttendanceError(f"동명이인이 있어. 학생을 조금 더 구체적으로 골라줘: {exc}") from exc
 
 
 def _day_row(
@@ -87,7 +86,9 @@ def _day_row(
     row = attendance_rows.get(day.isoformat())
     if row:
         status = _status(row)
-        if status == "unchecked" and day > today:
+        if status == "present" and bool(row.get("is_makeup")):
+            status = "makeup"
+        if status == "unchecked" and day >= today:
             status = "upcoming"
         return {
             "date": day.isoformat(),
@@ -100,7 +101,7 @@ def _day_row(
     slots = schedule_slots.get(day.isoformat(), set())
     if schedule_known and not slots:
         return {"date": day.isoformat(), "status": "no_class", "time_slot": "", "absence_reason": "", "scheduled": False}
-    if day > today:
+    if day >= today:
         return {
             "date": day.isoformat(),
             "status": "upcoming",
@@ -123,16 +124,16 @@ def _schedule_baseline(
     start_day: date,
     end_day: date,
 ) -> tuple[dict[str, set[str]], bool]:
+    has_student_class_days = bool(_class_days(student.get("class_days")))
     student_slots = _student_class_slots(student, start_day, end_day)
     academy_slots = _academy_schedule_slots(client, start_day, end_day)
     if academy_slots is None:
         return student_slots, bool(student_slots)
     if not student_slots:
+        if has_student_class_days:
+            return {day: set() for day in _date_keys(start_day, end_day)}, True
         return academy_slots, True
-    return {
-        day: academy_slots.get(day, set()) if day in student_slots else set()
-        for day in _date_keys(start_day, end_day)
-    }, True
+    return {_day_key: academy_slots.get(_day_key, set()) & slots for _day_key, slots in student_slots.items()}, True
 
 
 def _student_class_slots(student: dict[str, Any], start_day: date, end_day: date) -> dict[str, set[str]]:
@@ -142,13 +143,19 @@ def _student_class_slots(student: dict[str, Any], start_day: date, end_day: date
     slots_by_day: dict[str, set[str]] = {}
     fallback_slot = str(student.get("time_slot") or "")
     for day in _days(start_day, end_day):
-        has_class = any(
-            PACA_WEEKDAY_TO_PYTHON.get(_to_int(item.get("day"))) == day.weekday()
+        slots = {
+            _class_day_slot(item, fallback_slot)
             for item in class_days
-        )
-        if has_class:
-            slots_by_day[day.isoformat()] = {fallback_slot} if fallback_slot else set()
+            if PACA_WEEKDAY_TO_PYTHON.get(_to_int(item.get("day"))) == day.weekday()
+        }
+        slots.discard("")
+        if slots:
+            slots_by_day[day.isoformat()] = slots
     return slots_by_day
+
+
+def _class_day_slot(item: dict[str, Any], fallback_slot: str) -> str:
+    return str(item.get("timeSlot") or item.get("time_slot") or item.get("slot") or fallback_slot)
 
 
 def _academy_schedule_slots(
@@ -180,7 +187,13 @@ def _class_days(value: Any) -> list[dict[str, Any]]:
             return []
     if not isinstance(value, list):
         return []
-    return [item for item in value if isinstance(item, dict)]
+    days: list[dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict):
+            days.append(item)
+        elif isinstance(item, int):
+            days.append({"day": item})
+    return days
 
 
 def _has_scheduled_students(row: dict[str, Any]) -> bool:

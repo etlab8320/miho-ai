@@ -76,6 +76,52 @@ class SundayAfternoonClient(StudentAttendanceClient):
         ]
 
 
+class MixedSlotScheduleClient(StudentAttendanceClient):
+    def search_paca_students(self, query: str) -> list[dict]:
+        student = super().search_paca_students(query)[0]
+        student["class_days"] = [{"day": 3, "timeSlot": "evening"}]
+        return [student]
+
+    def get_paca_student_attendance(self, paca_student_id: int, *, year_month: str) -> dict:
+        assert paca_student_id == 101
+        assert year_month == "2026-05"
+        return {"records": []}
+
+    def list_paca_schedules(self, start_day: date, end_day: date) -> list[dict]:
+        assert start_day == date(2026, 5, 27)
+        assert end_day == date(2026, 5, 27)
+        return [
+            {"class_date": "2026-05-27", "time_slot": "afternoon", "student_count": 10},
+            {"class_date": "2026-05-27", "time_slot": "evening", "student_count": 10},
+        ]
+
+
+class NumericClassDaysClient(StudentAttendanceClient):
+    def search_paca_students(self, query: str) -> list[dict]:
+        student = super().search_paca_students(query)[0]
+        student["class_days"] = [1, 4, 6]
+        student["time_slot"] = "evening"
+        return [student]
+
+    def get_paca_student_attendance(self, paca_student_id: int, *, year_month: str) -> dict:
+        assert paca_student_id == 101
+        assert year_month == "2026-05"
+        return {"records": []}
+
+    def list_paca_schedules(self, start_day: date, end_day: date) -> list[dict]:
+        assert start_day == date(2026, 5, 24)
+        assert end_day == date(2026, 5, 31)
+        return [
+            {"class_date": "2026-05-24", "time_slot": "afternoon", "student_count": 10},
+            {"class_date": "2026-05-25", "time_slot": "evening", "student_count": 10},
+            {"class_date": "2026-05-27", "time_slot": "afternoon", "student_count": 10},
+            {"class_date": "2026-05-27", "time_slot": "evening", "student_count": 10},
+            {"class_date": "2026-05-28", "time_slot": "evening", "student_count": 10},
+            {"class_date": "2026-05-30", "time_slot": "evening", "student_count": 10},
+            {"class_date": "2026-05-31", "time_slot": "afternoon", "student_count": 10},
+        ]
+
+
 class FutureUncheckedRecordClient(StudentAttendanceClient):
     def get_paca_student_attendance(self, paca_student_id: int, *, year_month: str) -> dict:
         assert paca_student_id == 101
@@ -84,6 +130,27 @@ class FutureUncheckedRecordClient(StudentAttendanceClient):
             "records": [
                 {"date": "2026-05-01", "time_slot": "evening", "attendance_status": "present"},
                 {"date": "2026-05-04", "time_slot": "evening", "attendance_status": "unchecked"},
+            ]
+        }
+
+    def list_paca_schedules(self, start_day: date, end_day: date) -> list[dict]:
+        assert start_day == date(2026, 5, 4)
+        assert end_day == date(2026, 5, 4)
+        return [{"class_date": "2026-05-04", "time_slot": "evening", "student_count": 10}]
+
+
+class MakeupAttendanceClient(StudentAttendanceClient):
+    def get_paca_student_attendance(self, paca_student_id: int, *, year_month: str) -> dict:
+        assert paca_student_id == 101
+        assert year_month == "2026-05"
+        return {
+            "records": [
+                {
+                    "date": "2026-05-04",
+                    "time_slot": "evening",
+                    "attendance_status": "present",
+                    "is_makeup": True,
+                }
             ]
         }
 
@@ -197,6 +264,73 @@ def test_student_attendance_range_excludes_future_classes_from_michekeu() -> Non
     assert "예정 수업일 1일" in result["message"]
 
 
+def test_student_attendance_range_excludes_today_classes_from_michekeu_until_checked() -> None:
+    result = _payload(
+        _student_attendance_range_tool_handler(
+            {
+                "student_query": "김민준",
+                "start_date": "2026-05-01",
+                "end_date": "2026-05-04",
+                "today": "2026-05-04",
+            },
+            client=StudentAttendanceClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["attendance"][3]["status"] == "upcoming"
+    assert result["summary"]["unchecked"] == 0
+    assert result["summary"]["upcoming"] == 1
+    assert "미체크 0회" in result["message"]
+
+
+def test_student_attendance_range_uses_student_slot_intersection() -> None:
+    result = _payload(
+        _student_attendance_range_tool_handler(
+            {
+                "student_query": "김민준",
+                "start_date": "2026-05-27",
+                "end_date": "2026-05-27",
+                "today": "2026-05-28",
+            },
+            client=MixedSlotScheduleClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["attendance"][0]["status"] == "unchecked"
+    assert result["attendance"][0]["time_slot"] == "evening"
+
+
+def test_student_attendance_range_supports_numeric_class_days() -> None:
+    result = _payload(
+        _student_attendance_range_tool_handler(
+            {
+                "student_query": "김민준",
+                "start_date": "2026-05-24",
+                "end_date": "2026-05-31",
+                "today": "2026-05-28",
+            },
+            client=NumericClassDaysClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert [row["status"] for row in result["attendance"]] == [
+        "no_class",
+        "unchecked",
+        "no_class",
+        "no_class",
+        "upcoming",
+        "no_class",
+        "upcoming",
+        "no_class",
+    ]
+    assert result["attendance"][1]["time_slot"] == "evening"
+    assert result["summary"]["unchecked"] == 1
+    assert result["summary"]["upcoming"] == 2
+
+
 def test_student_attendance_range_converts_future_unchecked_api_records_to_upcoming() -> None:
     result = _payload(
         _student_attendance_range_tool_handler(
@@ -217,6 +351,26 @@ def test_student_attendance_range_converts_future_unchecked_api_records_to_upcom
     assert "미체크 0회" in result["message"]
 
 
+def test_student_attendance_range_marks_makeup_presence_separately() -> None:
+    result = _payload(
+        _student_attendance_range_tool_handler(
+            {
+                "student_query": "김민준",
+                "start_date": "2026-05-04",
+                "end_date": "2026-05-04",
+                "today": "2026-05-05",
+            },
+            client=MakeupAttendanceClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["attendance"][0]["status"] == "makeup"
+    assert result["summary"]["present"] == 0
+    assert result["summary"]["makeup"] == 1
+    assert result["summary"]["attendance_rate"] == 100.0
+
+
 def test_student_attendance_calendar_html_marks_classes_without_no_class_label() -> None:
     payload = _payload(
         _student_attendance_range_tool_handler(
@@ -233,9 +387,33 @@ def test_student_attendance_calendar_html_marks_classes_without_no_class_label()
     assert "지각" in html
     assert "결석" in html
     assert "미체크" in html
-    assert "수업없는 날과 아직 오지 않은 날은 별도 표시하지 않았어" in html
+    assert "결석 사유" in html
+    assert "05/03 일" in html
+    assert "개인사정" in html
+    assert "수업없는 날과 아직 오지 않은 날은 별도 표시하지 않았어" not in html
     assert "수업없음" not in html
     assert "010-" not in html
+
+
+def test_student_attendance_calendar_html_marks_makeup_with_green_heart() -> None:
+    payload = _payload(
+        _student_attendance_range_tool_handler(
+            {
+                "student_query": "김민준",
+                "start_date": "2026-05-04",
+                "end_date": "2026-05-04",
+                "today": "2026-05-05",
+            },
+            client=MakeupAttendanceClient(),
+        )
+    )
+
+    html = render_attendance_calendar_html(payload)
+
+    assert "보충" in html
+    assert "badge makeup" in html
+    assert ".makeup .heart" in html
+    assert "&hearts;" in html
 
 
 def test_student_attendance_calendar_hides_future_unchecked_days() -> None:
@@ -254,7 +432,7 @@ def test_student_attendance_calendar_hides_future_unchecked_days() -> None:
 
     assert "badge unchecked" not in html
     assert "<b>0</b><span>미체크</span>" in html
-    assert "아직 오지 않은 날은 별도 표시하지 않았어" in html
+    assert "아직 오지 않은 날은 별도 표시하지 않았어" not in html
 
 
 def test_student_attendance_calendar_tool_returns_media_tag(tmp_path) -> None:
