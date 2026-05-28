@@ -2143,6 +2143,7 @@ class TestPtyWebSocket:
         assert exc.value.code == 4401
 
     def test_streams_child_stdout_to_client(self, monkeypatch):
+        pytest.importorskip("ptyprocess", reason="/api/pty streaming requires ptyprocess")
         monkeypatch.setattr(
             self.ws_module,
             "_resolve_chat_argv",
@@ -2173,6 +2174,7 @@ class TestPtyWebSocket:
     def test_client_input_reaches_child_stdin(self, monkeypatch):
         # ``cat`` echoes stdin back, so a write → read round-trip proves
         # the full duplex path.
+        pytest.importorskip("ptyprocess", reason="/api/pty streaming requires ptyprocess")
         monkeypatch.setattr(
             self.ws_module,
             "_resolve_chat_argv",
@@ -2196,6 +2198,7 @@ class TestPtyWebSocket:
         # Resize escape gets intercepted and applied via TIOCSWINSZ, then the
         # child reads the TTY ioctl directly. Avoid tput because CI may not set
         # TERM for non-interactive shells.
+        pytest.importorskip("ptyprocess", reason="/api/pty streaming requires ptyprocess")
         import sys
 
         winsize_script = (

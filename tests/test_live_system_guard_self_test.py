@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import signal
+import shutil
 import subprocess
 
 import pytest
@@ -204,6 +205,13 @@ def test_subprocess_killall_miho_blocked():
 # ──────────────────── pass-through cases (must NOT raise) ──────
 
 
+pytestmark_systemctl = pytest.mark.skipif(
+    shutil.which("systemctl") is None,
+    reason="systemctl is not installed on this host",
+)
+
+
+@pytestmark_systemctl
 def test_systemctl_status_passes_through():
     """Read-only systemctl probes (status/show/list-units) are fine."""
     # Run with check=False so we don't fail on the gateway's exit code.
@@ -216,6 +224,7 @@ def test_systemctl_status_passes_through():
     assert r is not None  # Did not raise — the guard let it through.
 
 
+@pytestmark_systemctl
 def test_systemctl_show_passes_through():
     r = subprocess.run(
         ["systemctl", "--user", "show", "miho-gateway", "--no-pager"],
@@ -226,6 +235,7 @@ def test_systemctl_show_passes_through():
     assert r is not None
 
 
+@pytestmark_systemctl
 def test_systemctl_list_units_passes_through():
     r = subprocess.run(
         ["systemctl", "--user", "list-units", "fake-not-real-unit*", "--no-pager"],
@@ -236,6 +246,7 @@ def test_systemctl_list_units_passes_through():
     assert r is not None
 
 
+@pytestmark_systemctl
 def test_systemctl_unrelated_unit_passes_through():
     """systemctl restart of a non-miho unit is allowed (we only protect miho)."""
     # Use --dry-run so we don't actually try to restart anything; just

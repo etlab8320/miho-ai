@@ -15,6 +15,7 @@ from plugins.academy_ops.natural_router import (
 import plugins.academy_ops.response_synthesis as response_synthesis
 from plugins.academy_ops.response_synthesis import compact_payload
 from plugins.academy_ops.thread_context import clear_thread_contexts, remember_thread_context
+from tests.plugins.academy_router_helpers import router_allow, router_execute
 
 
 class _Response:
@@ -33,13 +34,9 @@ async def test_natural_router_uses_llm_json_not_keyword_parsing() -> None:
 
     async def fake_resolver(_: list[dict[str, str]]) -> object:
         return _Response(
-            json.dumps(
-                {
-                    "action": "execute",
-                    "tool": "academy_schedule_range",
-                    "args": {"start_date": "2026-05-01", "end_date": "2026-05-31"},
-                    "confidence": 0.96,
-                }
+            router_execute(
+                "academy_schedule_range",
+                {"start_date": "2026-05-01", "end_date": "2026-05-31"},
             )
         )
 
@@ -67,7 +64,7 @@ async def test_natural_router_uses_llm_json_not_keyword_parsing() -> None:
 @pytest.mark.asyncio
 async def test_natural_router_allows_non_academy_requests() -> None:
     async def fake_resolver(_: list[dict[str, str]]) -> object:
-        return _Response(json.dumps({"action": "allow", "confidence": 0.2}))
+        return _Response(router_allow(confidence=0.2))
 
     route = await resolve_and_execute_academy_request(
         "그냥 잡담",
@@ -113,13 +110,9 @@ async def test_natural_router_retries_resolver_timeout_before_user_failure() -> 
         if calls == 1:
             await asyncio.sleep(0.05)
         return _Response(
-            json.dumps(
-                {
-                    "action": "execute",
-                    "tool": "academy_schedule_range",
-                    "args": {"start_date": "2026-05-01", "end_date": "2026-05-31"},
-                    "confidence": 0.96,
-                }
+            router_execute(
+                "academy_schedule_range",
+                {"start_date": "2026-05-01", "end_date": "2026-05-31"},
             )
         )
 
@@ -153,14 +146,11 @@ async def test_attendance_image_followup_forces_calendar_tool_after_llm_decision
 
     async def image_resolver(_: list[dict[str, str]]) -> object:
         return _Response(
-            json.dumps(
-                {
-                    "action": "execute",
-                    "tool": "academy_student_attendance_range",
-                    "args": {"student_query": "", "start_date": "", "end_date": ""},
-                    "response_focus": "daily_attendance",
-                    "confidence": 0.95,
-                }
+            router_execute(
+                "academy_student_attendance_range",
+                {"student_query": "", "start_date": "", "end_date": ""},
+                response_focus="daily_attendance",
+                confidence=0.95,
             )
         )
 
@@ -202,14 +192,7 @@ async def test_attendance_image_followup_forces_calendar_tool_after_llm_decision
 async def test_natural_router_can_route_student_followup_to_context_tool() -> None:
     async def resolver(_: list[dict[str, str]]) -> object:
         return _Response(
-            json.dumps(
-                {
-                    "action": "execute",
-                    "tool": "academy_student_context",
-                    "args": {"student_query": "서하"},
-                    "confidence": 0.95,
-                }
-            )
+            router_execute("academy_student_context", {"student_query": "서하"}, confidence=0.95)
         )
 
     def handler(args: dict, **_: object) -> str:
@@ -242,13 +225,10 @@ async def test_student_followup_reuses_thread_context_without_name_guessing() ->
 
     async def first_resolver(_: list[dict[str, str]]) -> object:
         return _Response(
-            json.dumps(
-                {
-                    "action": "execute",
-                    "tool": "academy_student_attendance_range",
-                    "args": {"student_query": "학생A", "start_date": "2026-05-01", "end_date": "2026-05-31"},
-                    "confidence": 0.95,
-                }
+            router_execute(
+                "academy_student_attendance_range",
+                {"student_query": "학생A", "start_date": "2026-05-01", "end_date": "2026-05-31"},
+                confidence=0.95,
             )
         )
 
@@ -257,13 +237,10 @@ async def test_student_followup_reuses_thread_context_without_name_guessing() ->
         assert '"student_query": "학생A"' in prompt
         assert "학생명을 추측하지 마" in messages[0]["content"]
         return _Response(
-            json.dumps(
-                {
-                    "action": "execute",
-                    "tool": "academy_student_attendance_range",
-                    "args": {"student_query": "", "start_date": "", "end_date": ""},
-                    "confidence": 0.91,
-                }
+            router_execute(
+                "academy_student_attendance_range",
+                {"student_query": "", "start_date": "", "end_date": ""},
+                confidence=0.91,
             )
         )
 
@@ -314,13 +291,9 @@ async def test_login_required_request_is_retried_from_thread_context() -> None:
 
     async def first_resolver(_: list[dict[str, str]]) -> object:
         return _Response(
-            json.dumps(
-                {
-                    "action": "execute",
-                    "tool": "academy_student_attendance_calendar_image",
-                    "args": {"student_query": "학생A", "start_date": "2026-05-01", "end_date": "2026-05-31"},
-                    "confidence": 0.96,
-                }
+            router_execute(
+                "academy_student_attendance_calendar_image",
+                {"student_query": "학생A", "start_date": "2026-05-01", "end_date": "2026-05-31"},
             )
         )
 
@@ -380,14 +353,11 @@ def test_compact_payload_keeps_attendance_rows_for_followup_details() -> None:
 async def test_daily_attendance_focus_formats_rows_without_synthesis(monkeypatch) -> None:
     async def resolver(_: list[dict[str, str]]) -> object:
         return _Response(
-            json.dumps(
-                {
-                    "action": "execute",
-                    "tool": "academy_student_attendance_range",
-                    "args": {"student_query": "학생A", "start_date": "2026-05-01", "end_date": "2026-05-03"},
-                    "response_focus": "daily_attendance",
-                    "confidence": 0.95,
-                }
+            router_execute(
+                "academy_student_attendance_range",
+                {"student_query": "학생A", "start_date": "2026-05-01", "end_date": "2026-05-03"},
+                response_focus="daily_attendance",
+                confidence=0.95,
             )
         )
 
@@ -430,14 +400,11 @@ async def test_daily_attendance_focus_formats_rows_without_synthesis(monkeypatch
 async def test_daily_attendance_focus_labels_future_classes_as_scheduled() -> None:
     async def resolver(_: list[dict[str, str]]) -> object:
         return _Response(
-            json.dumps(
-                {
-                    "action": "execute",
-                    "tool": "academy_student_attendance_range",
-                    "args": {"student_query": "학생A", "start_date": "2026-05-03", "end_date": "2026-05-04"},
-                    "response_focus": "daily_attendance",
-                    "confidence": 0.95,
-                }
+            router_execute(
+                "academy_student_attendance_range",
+                {"student_query": "학생A", "start_date": "2026-05-03", "end_date": "2026-05-04"},
+                response_focus="daily_attendance",
+                confidence=0.95,
             )
         )
 

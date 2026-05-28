@@ -478,7 +478,7 @@ from miho_constants import get_miho_dir, get_miho_home
 
 GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE = (
     "Secure secret entry is not supported over messaging. "
-    "Load this skill in the local CLI to be prompted, or add the key to ~/.miho/.env manually."
+    "Load this skill in the local CLI to be prompted, or add the key to the Miho env file manually."
 )
 
 
@@ -875,16 +875,7 @@ def _media_delivery_allowed_roots() -> List[Path]:
 
 
 def _media_delivery_recency_seconds() -> float:
-    raw = os.environ.get(MEDIA_DELIVERY_TRUST_RECENT_ENV, "1").strip().lower()
-    if raw in {"0", "false", "no", "off", ""}:
-        return 0.0
-    try:
-        custom = os.environ.get(MEDIA_DELIVERY_TRUST_RECENT_SECONDS_ENV, "").strip()
-        if custom:
-            return max(0.0, float(custom))
-    except (TypeError, ValueError):
-        pass
-    return float(_MEDIA_DELIVERY_TRUST_RECENT_DEFAULT_SECONDS)
+    return 0.0
 
 
 def _media_delivery_denied_paths() -> List[Path]:

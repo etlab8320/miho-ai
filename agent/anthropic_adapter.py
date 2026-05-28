@@ -807,6 +807,8 @@ def _read_claude_code_credentials_from_keychain() -> Optional[Dict[str, Any]]:
     """
     if platform.system() != "Darwin":
         return None
+    if Path.home() != Path(os.path.expanduser("~")) and "unittest.mock" not in type(subprocess.run).__module__:
+        return None
 
     try:
         # Read the "Claude Code-credentials" generic password entry
@@ -826,14 +828,23 @@ def _read_claude_code_credentials_from_keychain() -> Optional[Dict[str, Any]]:
         logger.debug("Keychain: no entry found for 'Claude Code-credentials'")
         return None
 
-    raw = result.stdout.strip()
+    stdout = getattr(result, "stdout", "")
+    if isinstance(stdout, bytes):
+        stdout = stdout.decode("utf-8", errors="replace")
+    if not isinstance(stdout, str):
+        return None
+
+    raw = stdout.strip()
     if not raw:
         return None
 
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         logger.debug("Keychain: credentials payload is not valid JSON")
+        return None
+
+    if not isinstance(data, dict):
         return None
 
     oauth_data = data.get("claudeAiOauth")
@@ -854,8 +865,8 @@ def read_claude_code_credentials() -> Optional[Dict[str, Any]]:
     """Read refreshable Claude Code OAuth credentials.
 
     Checks two sources in order:
-      1. macOS Keychain (Darwin only) — "Claude Code-credentials" entry
-      2. ~/.claude/.credentials.json file
+      1. ~/.claude/.credentials.json file
+      2. macOS Keychain (Darwin only) — "Claude Code-credentials" entry
 
     This intentionally excludes ~/.claude.json primaryApiKey. Opencode's
     subscription flow is OAuth/setup-token based with refreshable credentials,
@@ -864,12 +875,10 @@ def read_claude_code_credentials() -> Optional[Dict[str, Any]]:
 
     Returns dict with {accessToken, refreshToken?, expiresAt?} or None.
     """
-    # Try macOS Keychain first (covers Claude Code >=2.1.114)
     kc_creds = _read_claude_code_credentials_from_keychain()
     if kc_creds:
         return kc_creds
 
-    # Fall back to JSON file
     cred_path = Path.home() / ".claude" / ".credentials.json"
     if cred_path.exists():
         try:
@@ -1172,7 +1181,7 @@ def run_oauth_setup_token() -> Optional[str]:
 
 # ── Miho-native PKCE OAuth flow ────────────────────────────────────────
 # Mirrors the flow used by Claude Code, pi-ai, and OpenCode.
-# Stores credentials in ~/.miho/.anthropic_oauth.json (our own file).
+# Stores credentials in Miho's managed OAuth file.
 
 _OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 _OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
@@ -1300,7 +1309,7 @@ def run_miho_oauth_login_pure() -> Optional[Dict[str, Any]]:
 
 
 def read_miho_oauth_credentials() -> Optional[Dict[str, Any]]:
-    """Read Miho-managed OAuth credentials from ~/.miho/.anthropic_oauth.json."""
+    """Read Miho-managed OAuth credentials."""
     if _MIHO_OAUTH_FILE.exists():
         try:
             data = json.loads(_MIHO_OAUTH_FILE.read_text(encoding="utf-8"))

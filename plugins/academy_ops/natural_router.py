@@ -43,7 +43,7 @@ from .student_context_tool import _student_context_tool_handler
 from .response_commentary import append_summary_comment_or_fallback
 from .response_focus import focused_response
 from .response_synthesis import compact_payload, synthesize_or_fallback
-from .route_preflight import academy_preflight_decision
+from .routing_decision import reject_execute_reason
 from .thread_context import (
     STAFF_CONTEXT_TOOLS,
     STUDENT_CONTEXT_TOOLS,
@@ -207,31 +207,34 @@ async def resolve_and_execute_academy_request(
     )
     if pending_route is not None:
         return pending_route
-    decision = academy_preflight_decision(clean, today or _today(), get_thread_context(context_key))
-    if decision is None:
-        try:
-            decision = await _resolve_decision_with_retry(
-                clean,
-                resolver,
-                today=today,
-                context_key=context_key,
-                resolver_timeout=resolver_timeout,
-                attempts=resolver_attempts,
-            )
-        except TimeoutError:
-            return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, TIMEOUT_RESPONSE, "resolver_timeout")
-        except Exception as exc:
-            logger.info("academy request resolver failed: %s", exc)
-            return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="resolver_error")
-
-    if decision.get("action") != "execute" or _confidence(decision) < MIN_CONFIDENCE:
-        return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="not_academy")
+    try:
+        decision = await _resolve_decision_with_retry(
+            clean,
+            resolver,
+            today=today,
+            context_key=context_key,
+            resolver_timeout=resolver_timeout,
+            attempts=resolver_attempts,
+        )
+    except TimeoutError:
+        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, TIMEOUT_RESPONSE, "resolver_timeout")
+    except Exception as exc:
+        logger.info("academy request resolver failed: %s", exc)
+        return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="resolver_error")
 
     tool_name = str(decision.get("tool") or "").strip()
+    active_handlers = handlers or TOOL_HANDLERS
+    reject_reason = reject_execute_reason(
+        decision,
+        allowed_tools=active_handlers.keys(),
+        min_confidence=MIN_CONFIDENCE,
+    )
+    if reject_reason:
+        return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason=reject_reason)
     force_default_response = _should_force_attendance_calendar(clean, tool_name)
     if force_default_response:
         tool_name = "academy_student_attendance_calendar_image"
-    handler = (handlers or TOOL_HANDLERS).get(tool_name)
+    handler = active_handlers.get(tool_name)
     if handler is None:
         return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="unknown_tool")
     args = _resolved_args(
@@ -317,9 +320,13 @@ def _resolver_messages(text: str, today: str, thread_context: dict[str, Any] | N
         {
             "role": "system",
             "content": (
-                "너는 Discord 학원업무 요청을 구조화하는 라우터야. "
+                "너는 Discord 학원업무 요청을 구조화하는 의미 기반 라우터야. "
                 "사용자 문장을 직접 답하지 말고 JSON만 반환해. "
-                "PACA/Peak 학원업무면 action=execute, 아니면 action=allow. "
+                "PACA/Peak 학원 운영 도메인으로 확정되면 domain=academy_ops와 action=execute, "
+                "그 외 대화/건강/식단/잡담/상담이면 domain=non_academy와 action=allow로 반환해. "
+                "키워드 하나가 아니라 전체 문맥, 사용자의 목적, 직전 학원업무 맥락을 함께 판단해. "
+                "학원 도구를 실행하려면 ambiguous=false, intent, evidence를 반드시 채워. "
+                "도메인이 조금이라도 불명확하면 action=allow, ambiguous=true로 둬. "
                 "상대 날짜와 범위는 기준일로 계산해서 ISO 날짜로 넣어. "
                 "도구 계약에 없는 인자는 만들지 말고, 모르는 값은 빈 문자열이나 false로 둬. "
                 "출력 초점이 있으면 response_focus를 함께 반환해. "
@@ -336,10 +343,6 @@ def _resolver_messages(text: str, today: str, thread_context: dict[str, Any] | N
                 "직전 맥락이 pending_request이고 현재 요청이 로그인 완료/재시도 후속이면 "
                 "pending_request의 도구와 인자를 이어받아 실행해. "
                 "현재 요청에 새 학생이 명시되지 않았다면 예시나 다른 대화에서 학생명을 추측하지 마. "
-                "PACA/Peak 단어만으로 도구를 실행하지 마. 조회/목록/몇 명/누구/기록/이미지처럼 읽기 의도가 분명할 때만 execute해. "
-                "출근해서 보면, 출근하고 확인, 내일 출근 같은 일상 표현은 강사 출근 조회가 아니므로 action=allow로 둬. "
-                "더 추가해야 할까, 어떻게 운영할까, 괜찮을까 같은 판단/상담 질문은 먼저 데이터를 가져오라고 명시하지 않으면 action=allow야. "
-                "강사 출근 조회는 누구/누가/몇 명/출근 기록/출근 횟수처럼 조회 의도가 분명할 때만 실행해. "
                 "쓰기/반영/결제 완료 요청은 실행하지 말고 action=allow로 둬."
             ),
         },
@@ -349,8 +352,10 @@ def _resolver_messages(text: str, today: str, thread_context: dict[str, Any] | N
                 f"기준일: {today}\n"
                 f"직전 학원업무 맥락: {context_text}\n"
                 f"도구 계약: {contracts}\n"
-                '반환 형식: {"action":"execute|allow","tool":"도구명","args":{},'
-                '"response_focus":"summary|daily_attendance|unchecked_dates","confidence":0.0}\n'
+                '반환 형식: {"action":"execute|allow","domain":"academy_ops|non_academy|ambiguous",'
+                '"intent":"사용자 목적","evidence":["학원업무로 판단한 근거"],"ambiguous":false,'
+                '"tool":"도구명","args":{},"response_focus":"summary|daily_attendance|unchecked_dates",'
+                '"confidence":0.0}\n'
                 f"사용자 문장: {text}"
             ),
         },
@@ -462,13 +467,6 @@ def _is_login_required_payload(payload: dict[str, Any]) -> bool:
         return False
     message = str(payload.get("message") or "")
     return "/academy login" in message or "학원 계정 연결" in message
-
-
-def _confidence(payload: dict[str, Any]) -> float:
-    try:
-        return float(payload.get("confidence", 0))
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _today() -> str:

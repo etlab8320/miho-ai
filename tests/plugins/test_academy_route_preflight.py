@@ -11,6 +11,7 @@ import plugins.academy_ops.natural_router as natural_router
 from plugins.academy_ops.commentary_config import ROUTER_MODEL
 from plugins.academy_ops.natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
 from plugins.academy_ops.route_preflight import academy_preflight_decision
+from tests.plugins.academy_router_helpers import router_allow, router_execute
 
 
 class _Response:
@@ -25,19 +26,15 @@ async def test_routes_trial_lesson_schedule_through_router() -> None:
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
         assert "오늘 체험수업 학생있어?" in messages[-1]["content"]
         return _Response(
-            json.dumps(
+            router_execute(
+                "academy_consultation_schedule_range",
                 {
-                    "action": "execute",
-                    "tool": "academy_consultation_schedule_range",
-                    "args": {
-                        "start_date": "2026-05-27",
-                        "end_date": "2026-05-27",
-                        "new_registration_only": False,
-                        "trial_only": True,
-                    },
-                    "confidence": 0.95,
+                    "start_date": "2026-05-27",
+                    "end_date": "2026-05-27",
+                    "new_registration_only": False,
+                    "trial_only": True,
                 },
-                ensure_ascii=False,
+                confidence=0.95,
             )
         )
 
@@ -75,20 +72,15 @@ async def test_routes_explicit_student_month_attendance_through_router() -> None
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
         assert "백지민 5월 출석조회좀" in messages[-1]["content"]
         return _Response(
-            json.dumps(
+            router_execute(
+                "academy_student_attendance_range",
                 {
-                    "action": "execute",
-                    "tool": "academy_student_attendance_range",
-                    "args": {
-                        "student_query": "백지민",
-                        "start_date": "2026-05-01",
-                        "end_date": "2026-05-31",
-                        "today": "2026-05-27",
-                    },
-                    "response_focus": "summary",
-                    "confidence": 0.96,
+                    "student_query": "백지민",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-31",
+                    "today": "2026-05-27",
                 },
-                ensure_ascii=False,
+                response_focus="summary",
             )
         )
 
@@ -126,19 +118,14 @@ async def test_routes_colloquial_student_attendance_suffix_through_router() -> N
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
         assert "백지민 5월 출석 조회좀해봐" in messages[-1]["content"]
         return _Response(
-            json.dumps(
+            router_execute(
+                "academy_student_attendance_range",
                 {
-                    "action": "execute",
-                    "tool": "academy_student_attendance_range",
-                    "args": {
-                        "student_query": "백지민",
-                        "start_date": "2026-05-01",
-                        "end_date": "2026-05-31",
-                        "today": "2026-05-27",
-                    },
-                    "confidence": 0.96,
+                    "student_query": "백지민",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-31",
+                    "today": "2026-05-27",
                 },
-                ensure_ascii=False,
             )
         )
 
@@ -167,19 +154,15 @@ async def test_routes_explicit_student_attendance_image_through_router() -> None
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
         assert "백지민 5월 출석조회 이미지로 줘" in messages[-1]["content"]
         return _Response(
-            json.dumps(
+            router_execute(
+                "academy_student_attendance_calendar_image",
                 {
-                    "action": "execute",
-                    "tool": "academy_student_attendance_calendar_image",
-                    "args": {
-                        "student_query": "백지민",
-                        "start_date": "2026-05-01",
-                        "end_date": "2026-05-31",
-                        "today": "2026-05-27",
-                    },
-                    "confidence": 0.97,
+                    "student_query": "백지민",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-31",
+                    "today": "2026-05-27",
                 },
-                ensure_ascii=False,
+                confidence=0.97,
             )
         )
 
@@ -216,18 +199,13 @@ async def test_routes_staff_month_count_through_router() -> None:
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
         assert "정의솔 강사 5월 총 몇번 출근했어?" in messages[-1]["content"]
         return _Response(
-            json.dumps(
+            router_execute(
+                "academy_staff_attendance_range",
                 {
-                    "action": "execute",
-                    "tool": "academy_staff_attendance_range",
-                    "args": {
-                        "staff_query": "정의솔",
-                        "start_date": "2026-05-01",
-                        "end_date": "2026-05-31",
-                    },
-                    "confidence": 0.96,
+                    "staff_query": "정의솔",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-31",
                 },
-                ensure_ascii=False,
             )
         )
 
@@ -261,31 +239,27 @@ async def test_routes_staff_month_count_through_router() -> None:
 async def test_routes_staff_followup_month_count_from_thread_context_through_router() -> None:
     calls: list[dict] = []
     decisions = [
-        {
-            "action": "execute",
-            "tool": "academy_staff_attendance_range",
-            "args": {
+        router_execute(
+            "academy_staff_attendance_range",
+            {
                 "staff_query": "김세희",
                 "start_date": "2026-05-18",
                 "end_date": "2026-05-24",
             },
-            "confidence": 0.96,
-        },
-        {
-            "action": "execute",
-            "tool": "academy_staff_attendance_range",
-            "args": {
+        ),
+        router_execute(
+            "academy_staff_attendance_range",
+            {
                 "staff_query": "",
                 "start_date": "2026-05-01",
                 "end_date": "2026-05-31",
             },
-            "confidence": 0.96,
-        },
+        ),
     ]
 
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
         assert "도구 계약" in messages[-1]["content"]
-        return _Response(json.dumps(decisions.pop(0), ensure_ascii=False))
+        return _Response(decisions.pop(0))
 
     def handler(args: dict, **_: object) -> str:
         calls.append(args)
@@ -355,7 +329,7 @@ def test_preflight_defers_staff_attendance_advice_question_to_router() -> None:
 async def test_casual_tomorrow_work_phrase_does_not_execute_staff_attendance() -> None:
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
         assert "내일 출근해서" in messages[-1]["content"]
-        return _Response(json.dumps({"action": "allow", "confidence": 0.1}))
+        return _Response(router_allow())
 
     def handler(args: dict, **_: object) -> str:
         raise AssertionError(f"staff attendance tool should not run for casual phrasing: {args!r}")
@@ -375,7 +349,7 @@ async def test_casual_tomorrow_work_phrase_does_not_execute_staff_attendance() -
 async def test_staff_attendance_advice_question_does_not_execute_preflight() -> None:
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
         assert "출근한 강사가 너무 적은데" in messages[-1]["content"]
-        return _Response(json.dumps({"action": "allow", "confidence": 0.1}))
+        return _Response(router_allow())
 
     def handler(args: dict, **_: object) -> str:
         raise AssertionError(f"staff attendance tool should not run for advice question: {args!r}")
@@ -430,8 +404,8 @@ def test_staff_attendance_false_positive_guard_is_visible_to_llm_router() -> Non
         )
     )
 
-    assert "출근해서" in prompt
-    assert "일상 표현" in prompt
+    assert "키워드 하나가 아니라 전체 문맥" in prompt
+    assert "ambiguous=true" in prompt
     assert "action=allow" in prompt
 
 
@@ -444,8 +418,8 @@ def test_staff_advice_guard_is_visible_to_llm_router() -> None:
         )
     )
 
-    assert "단어만으로 도구를 실행하지 마" in prompt
-    assert "더 추가해야 할까" in prompt
+    assert "건강/식단/잡담/상담" in prompt
+    assert "intent" in prompt
     assert "action=allow" in prompt
 
 
@@ -455,7 +429,7 @@ async def test_default_router_resolver_omits_reasoning_extra_body(monkeypatch) -
 
     async def fake_call_llm(**kwargs):
         calls.append(kwargs)
-        return _Response(json.dumps({"action": "allow", "confidence": 0.1}))
+        return _Response(router_allow())
 
     monkeypatch.setattr("agent.auxiliary_client.async_call_llm", fake_call_llm)
 

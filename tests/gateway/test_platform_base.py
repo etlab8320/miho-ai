@@ -20,7 +20,7 @@ class TestSecretCaptureGuidance:
     def test_gateway_secret_capture_message_points_to_local_setup(self):
         message = GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE
         assert "local cli" in message.lower()
-        assert "~/.miho/.env" in message
+        assert "Miho env file" in message
 
 
 class TestSafeUrlForLog:
@@ -400,14 +400,24 @@ class TestMediaDeliveryPathValidation:
 
         assert BasePlatformAdapter.validate_media_delivery_path(str(secret)) is None
 
-    def test_allows_recent_agent_output_outside_safe_root(self, tmp_path, monkeypatch):
+    def test_rejects_recent_agent_output_outside_safe_root_even_when_legacy_flag_is_enabled(self, tmp_path, monkeypatch):
+        root = tmp_path / "media-cache"
+        root.mkdir()
+        report = tmp_path / "report.pdf"
+        report.write_bytes(b"%PDF-1.4")
+        self._patch_roots(monkeypatch, root)
+        monkeypatch.setenv("MIHO_MEDIA_TRUST_RECENT_FILES", "true")
+
+        assert BasePlatformAdapter.validate_media_delivery_path(str(report)) is None
+
+    def test_rejects_recent_agent_output_outside_safe_root_by_default(self, tmp_path, monkeypatch):
         root = tmp_path / "media-cache"
         root.mkdir()
         report = tmp_path / "report.pdf"
         report.write_bytes(b"%PDF-1.4")
         self._patch_roots(monkeypatch, root)
 
-        assert BasePlatformAdapter.validate_media_delivery_path(str(report)) == str(report.resolve())
+        assert BasePlatformAdapter.validate_media_delivery_path(str(report)) is None
 
     def test_recent_trust_rejects_sensitive_home_paths(self, tmp_path, monkeypatch):
         root = tmp_path / "media-cache"

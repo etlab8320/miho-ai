@@ -383,7 +383,7 @@ class TestGatewaySurfacesNullResponse:
             agent_result, response, history_len=60,
         )
 
-        assert "context window" in response
+        assert "대화가 너무 커져서" in response
         assert "/compact" in response
 
     def test_failed_generic_error(self):

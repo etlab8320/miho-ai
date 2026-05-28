@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -122,6 +123,35 @@ def test_record_turn_retrieves_relevant_vector_memory(tmp_path):
     retrieved_section = prompt.split("### Retrieved Relevant Memory", 1)[1]
     retrieved_section = retrieved_section.split("### Recent Thread Messages", 1)[0]
     assert "김밥" not in retrieved_section
+
+
+def test_record_turn_stores_kst_date_in_messages_and_vectors(tmp_path):
+    source = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="channel-7",
+        chat_name="health",
+        chat_type="group",
+        user_id="u1",
+        user_name="Max",
+        guild_id="guild-1",
+    )
+
+    with patch.dict("os.environ", {"MIHO_HOME": str(tmp_path), "OPENAI_API_KEY": ""}):
+        prompt = record_turn_and_build_prompt(
+            source=source,
+            text="오늘은 바나나 1개랑 324칼로리 도시락을 먹었어.",
+            message_id="m-health",
+            timestamp=datetime(2026, 5, 28, 23, 30, tzinfo=timezone.utc),
+        )
+
+    rag_dir = next((tmp_path / "discord" / "guilds" / "guild-1" / "channels").glob("*/rag"))
+    message = json.loads((rag_dir / "messages.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    vector = json.loads((rag_dir / "vectors.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert message["date"] == "2026-05-29"
+    assert message["timezone"] == "Asia/Seoul"
+    assert vector["date"] == "2026-05-29"
+    assert "[2026-05-29 user:Max]" in str(prompt)
+    assert "do not merge today/yesterday or different dates" in str(prompt)
 
 
 def test_assistant_turn_is_indexed_in_thread_and_parent(tmp_path):

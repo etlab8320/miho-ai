@@ -7,7 +7,7 @@ Discovers, loads, and manages plugins from four sources:
 1. **Bundled plugins** – ``<repo>/plugins/<name>/`` (shipped with miho-agent;
    ``memory/`` and ``context_engine/`` subdirs are excluded — they have their
    own discovery paths)
-2. **User plugins**   – ``~/.miho/plugins/<name>/``
+2. **User plugins**   – the configured Miho plugins directory
 3. **Project plugins** – ``./.miho/plugins/<name>/`` (opt-in via
    ``MIHO_ENABLE_PROJECT_PLUGINS``)
 4. **Pip plugins**     – packages that expose the ``miho_agent.plugins``
@@ -77,7 +77,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 #
 # Set ``MIHO_PLUGINS_DEBUG=1`` to surface verbose plugin-discovery logs to
-# stderr in addition to ~/.miho/logs/agent.log. Aimed at plugin authors
+# stderr in addition to Miho's agent log. Aimed at plugin authors
 # trying to figure out why their plugin isn't showing up: which directories
 # were scanned, which manifests parsed, which plugins were skipped (and why),
 # what each ``register(ctx)`` call registered, and full tracebacks on load
@@ -166,6 +166,20 @@ VALID_HOOKS: Set[str] = {
     "pre_approval_request",
     "post_approval_response",
 }
+
+_BUILTIN_AUX_TASK_KEYS = frozenset({
+    "vision",
+    "compression",
+    "web_extract",
+    "approval",
+    "mcp",
+    "title_generation",
+    "skills_hub",
+    "triage_specifier",
+    "kanban_decomposer",
+    "profile_describer",
+    "curator",
+})
 
 ENTRY_POINTS_GROUP = "miho_agent.plugins"
 
@@ -256,7 +270,7 @@ class PluginManifest:
     # ``platform``: gateway messaging platform adapter (e.g. IRC). Bundled
     #              platform plugins auto-load so every shipped platform is
     #              available out of the box; user-installed platform plugins
-    #              in ~/.miho/plugins/ still gated by ``plugins.enabled``
+    #              in the user plugins directory still gated by ``plugins.enabled``
     #              (untrusted code).
     kind: str = "standalone"
     # Registry key — path-derived, used by ``plugins.enabled``/``disabled``
@@ -763,11 +777,7 @@ class PluginContext:
                 f"must contain only alphanumeric characters and underscores"
             )
 
-        # Lazy import to avoid circular: miho_cli.main imports plugins indirectly
-        from miho_cli.main import _AUX_TASKS as _BUILTIN_AUX_TASKS
-
-        builtin_keys = {k for k, _name, _desc in _BUILTIN_AUX_TASKS}
-        if key in builtin_keys:
+        if key in _BUILTIN_AUX_TASK_KEYS:
             raise ValueError(
                 f"Plugin '{self.manifest.name}' cannot register auxiliary task "
                 f"{key!r} — that key is reserved for a built-in task. "
@@ -840,7 +850,7 @@ class PluginContext:
 
         The skill becomes resolvable as ``'<plugin_name>:<name>'`` via
         ``skill_view()``.  It does **not** enter the flat
-        ``~/.miho/skills/`` tree and is **not** listed in the system
+        user skills tree and is **not** listed in the system
         prompt's ``<available_skills>`` index — plugin skills are
         opt-in explicit loads only.
 
@@ -953,7 +963,7 @@ class PluginManager:
         logger.debug("  bundled/platforms: %d manifest(s)", len(bundled_platforms))
         manifests.extend(bundled_platforms)
 
-        # 2. User plugins (~/.miho/plugins/)
+        # 2. User plugins
         user_dir = get_miho_home() / "plugins"
         logger.debug("Scanning user plugins: %s", user_dir)
         user_manifests = self._scan_directory(user_dir, source="user")
@@ -1435,6 +1445,10 @@ class PluginManager:
         for cb in callbacks:
             try:
                 ret = cb(**kwargs)
+                if inspect.isawaitable(ret):
+                    if inspect.iscoroutine(ret):
+                        ret.close()
+                    continue
                 if ret is not None:
                     results.append(ret)
             except Exception as exc:

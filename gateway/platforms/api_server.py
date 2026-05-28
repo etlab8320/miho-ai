@@ -882,7 +882,11 @@ class APIServerAdapter(BasePlatformAdapter):
         model = _resolve_gateway_model()
 
         user_config = _load_gateway_config()
-        enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+        configured_toolsets = (user_config.get("platform_toolsets") or {}).get("api_server")
+        if isinstance(configured_toolsets, list):
+            enabled_toolsets = sorted(str(toolset) for toolset in configured_toolsets)
+        else:
+            enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
 
         max_iterations = int(os.getenv("MIHO_MAX_ITERATIONS", "90"))
 

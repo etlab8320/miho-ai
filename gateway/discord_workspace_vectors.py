@@ -229,6 +229,8 @@ def index_rag_record(rag_dir: Path, record: dict[str, Any]) -> dict[str, Any]:
     payload = {
         "id": record.get("message_id") or f"memory-{count + 1}",
         "timestamp": record.get("timestamp") or "",
+        "date": record.get("date") or "",
+        "timezone": record.get("timezone") or "",
         "role": record.get("role") or "",
         "user_id": record.get("user_id") or "",
         "user_name": record.get("user_name") or "",

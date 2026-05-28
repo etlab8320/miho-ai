@@ -6,8 +6,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from utils import atomic_json_write
 from gateway.discord_workspace_archive import (
@@ -27,6 +29,7 @@ from gateway.discord_workspace_vectors import index_rag_record, retrieve_rag_con
 
 _MAX_CONTEXT_MESSAGES = 8
 _MAX_MESSAGE_CHARS = 500
+_WORKSPACE_TIMEZONE = "Asia/Seoul"
 logger = logging.getLogger(__name__)
 
 
@@ -181,6 +184,23 @@ def _compact_text(text: str) -> str:
     return compact
 
 
+def _timestamp_fields(timestamp: Any = None) -> dict[str, str]:
+    raw = timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp or utc_now())
+    parsed = raw.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(parsed)
+    except ValueError:
+        dt = datetime.now(ZoneInfo(_WORKSPACE_TIMEZONE))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo(_WORKSPACE_TIMEZONE))
+    local_dt = dt.astimezone(ZoneInfo(_WORKSPACE_TIMEZONE))
+    return {
+        "timestamp": raw,
+        "date": local_dt.date().isoformat(),
+        "timezone": _WORKSPACE_TIMEZONE,
+    }
+
+
 def _append_message(path: Path, record: dict[str, Any]) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
@@ -292,11 +312,7 @@ def record_turn_and_build_prompt(
         return None
 
     record = {
-        "timestamp": (
-            timestamp.isoformat()
-            if hasattr(timestamp, "isoformat")
-            else str(timestamp or utc_now())
-        ),
+        **_timestamp_fields(timestamp),
         "message_id": str(message_id or getattr(source, "message_id", "") or ""),
         "user_id": str(getattr(source, "user_id", "") or ""),
         "user_name": str(getattr(source, "user_name", "") or ""),
@@ -361,11 +377,7 @@ def record_assistant_turn(
     if workspace is None:
         return
     record = {
-        "timestamp": (
-            timestamp.isoformat()
-            if hasattr(timestamp, "isoformat")
-            else str(timestamp or utc_now())
-        ),
+        **_timestamp_fields(timestamp),
         "message_id": str(message_id or ""),
         "user_id": "miho",
         "user_name": "Miho",
