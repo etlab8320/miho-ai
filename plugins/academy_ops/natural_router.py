@@ -335,6 +335,8 @@ def _resolver_messages(text: str, today: str, thread_context: dict[str, Any] | N
                 "직전 맥락이 pending_request이고 현재 요청이 로그인 완료/재시도 후속이면 "
                 "pending_request의 도구와 인자를 이어받아 실행해. "
                 "현재 요청에 새 학생이 명시되지 않았다면 예시나 다른 대화에서 학생명을 추측하지 마. "
+                "출근해서 보면, 출근하고 확인, 내일 출근 같은 일상 표현은 강사 출근 조회가 아니므로 action=allow로 둬. "
+                "강사 출근 조회는 누구/누가/강사/선생/출근한/출근했/출근 기록/출근 횟수처럼 조회 의도가 분명할 때만 실행해. "
                 "쓰기/반영/결제 완료 요청은 실행하지 말고 action=allow로 둬."
             ),
         },

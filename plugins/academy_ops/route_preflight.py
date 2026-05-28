@@ -11,7 +11,8 @@ IMAGE_MARKERS = ("이미지", "사진", "png", "달력", "캘린더", "카드")
 ATTENDANCE_MARKERS = ("출석", "결석", "지각", "미체크")
 TRIAL_ALIASES = ("체험수업", "무료체험", "체험상담", "trial", "trial lesson")
 DATE_ALIASES = ("오늘", "금일", "내일", "어제", "이번주", "저번주", "지난주", "이번달", "이번 달", "저번달", "지난달")
-STAFF_MARKERS = ("강사", "선생", "출근")
+STAFF_MARKERS = ("강사", "선생")
+STAFF_ATTENDANCE_INTENT_MARKERS = ("누구출근", "누가출근", "출근한", "출근했", "출근기록", "출근자")
 STAFF_FUTURE_MARKERS = ("예정", "해야", "배정")
 STAFF_RANGE_MARKERS = ("총", "몇번", "몇회", "횟수", "일정", "기록")
 STAFF_STOPWORDS = (
@@ -134,7 +135,7 @@ def _staff_attendance_decision(
     today: str,
     thread_context: dict[str, Any],
 ) -> dict[str, Any] | None:
-    if "출근" not in normalized or not _contains_any(normalized, STAFF_MARKERS):
+    if "출근" not in normalized or not _is_staff_attendance_intent(normalized, thread_context):
         return None
     if _contains_any(normalized, STAFF_FUTURE_MARKERS) and _single_day_from_alias(normalized, today) > today[:10]:
         return None
@@ -164,6 +165,14 @@ def _staff_attendance_decision(
         "skip_synthesis": True,
         "confidence": 0.98,
     }
+
+
+def _is_staff_attendance_intent(normalized: str, thread_context: dict[str, Any]) -> bool:
+    if _contains_any(normalized, STAFF_MARKERS):
+        return True
+    if _staff_query_from_context(thread_context):
+        return _contains_any(normalized, STAFF_RANGE_MARKERS + DATE_ALIASES)
+    return _contains_any(normalized, STAFF_ATTENDANCE_INTENT_MARKERS)
 
 
 def _date_range_from_text(normalized: str, today: str) -> tuple[str, str] | None:

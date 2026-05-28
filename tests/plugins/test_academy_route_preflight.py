@@ -10,6 +10,7 @@ import pytest
 import plugins.academy_ops.natural_router as natural_router
 from plugins.academy_ops.commentary_config import ROUTER_MODEL
 from plugins.academy_ops.natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
+from plugins.academy_ops.route_preflight import academy_preflight_decision
 
 
 class _Response:
@@ -229,6 +230,46 @@ async def test_routes_staff_followup_month_count_from_thread_context_without_llm
     }
 
 
+def test_preflight_ignores_casual_tomorrow_work_phrase() -> None:
+    decision = academy_preflight_decision(
+        "일단 지금 75프로까지 내려갔으니까 내일 출근해서 보면 되겠지~",
+        today="2026-05-28",
+    )
+
+    assert decision is None
+
+
+@pytest.mark.asyncio
+async def test_casual_tomorrow_work_phrase_does_not_execute_staff_attendance() -> None:
+    async def fake_resolver(messages: list[dict[str, str]]) -> object:
+        assert "내일 출근해서" in messages[-1]["content"]
+        return _Response(json.dumps({"action": "allow", "confidence": 0.1}))
+
+    def handler(args: dict, **_: object) -> str:
+        raise AssertionError(f"staff attendance tool should not run for casual phrasing: {args!r}")
+
+    route = await resolve_and_execute_academy_request(
+        "일단 지금 75프로까지 내려갔으니까 내일 출근해서 보면 되겠지~",
+        resolver=fake_resolver,
+        handlers={"academy_staff_attendance_day": handler},
+        today="2026-05-28",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.ALLOW
+
+
+def test_preflight_keeps_explicit_staff_day_lookup() -> None:
+    decision = academy_preflight_decision(
+        "어제 누구 출근했는지 알려줘",
+        today="2026-05-28",
+    )
+
+    assert decision is not None
+    assert decision["tool"] == "academy_staff_attendance_day"
+    assert decision["args"] == {"date": "2026-05-27"}
+
+
 def test_trial_lesson_contract_is_visible_to_llm_router() -> None:
     prompt = "\n".join(
         message["content"]
@@ -239,6 +280,20 @@ def test_trial_lesson_contract_is_visible_to_llm_router() -> None:
     )
 
     assert "trial_only" in prompt
+
+
+def test_staff_attendance_false_positive_guard_is_visible_to_llm_router() -> None:
+    prompt = "\n".join(
+        message["content"]
+        for message in natural_router._resolver_messages(
+            "내일 출근해서 보면 되겠지",
+            "2026-05-28",
+        )
+    )
+
+    assert "출근해서" in prompt
+    assert "일상 표현" in prompt
+    assert "action=allow" in prompt
 
 
 @pytest.mark.asyncio
