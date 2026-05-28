@@ -25,6 +25,7 @@ from gateway.discord_workspace_paths import (
 )
 from gateway.discord_workspace_prompt import build_workspace_prompt
 from gateway.discord_workspace_vectors import index_rag_record, retrieve_rag_context
+from gateway.owner_profile_context import build_relevant_owner_profile_context
 
 
 _MAX_CONTEXT_MESSAGES = 8
@@ -348,6 +349,7 @@ def record_turn_and_build_prompt(
         text=text,
         message_id=record["message_id"],
     )
+    owner_profile_context = build_relevant_owner_profile_context(text)
     top_score = max((float(item.get("score") or 0.0) for item in retrieved), default=0.0)
     scope = "thread" if workspace.thread_dir else "channel"
     logger.info(
@@ -359,6 +361,7 @@ def record_turn_and_build_prompt(
         rag_dir=workspace.rag_dir,
         source=source,
         context_seed=context_seed,
+        owner_profile_context=owner_profile_context,
         recent=recent,
         retrieved=retrieved,
         max_recent=_MAX_CONTEXT_MESSAGES,

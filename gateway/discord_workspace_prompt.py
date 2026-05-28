@@ -34,6 +34,7 @@ def build_workspace_prompt(
     rag_dir: Path,
     source: Any,
     context_seed: str,
+    owner_profile_context: str = "",
     recent: list[dict[str, Any]],
     retrieved: list[dict[str, Any]],
     max_recent: int,
@@ -61,6 +62,9 @@ def build_workspace_prompt(
             "### Durable Context Seed",
             _compact_body(context_seed, _MAX_CONTEXT_SEED_CHARS),
         ])
+
+    if owner_profile_context:
+        lines.extend(["", owner_profile_context.strip()])
 
     if retrieved:
         lines.extend(["", "### Retrieved Relevant Memory"])

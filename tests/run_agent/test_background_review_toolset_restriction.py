@@ -125,6 +125,7 @@ def test_background_review_installs_thread_local_whitelist():
     whitelist = captured["whitelist"]
     # memory + skills tools must be allowed
     assert "memory" in whitelist
+    assert "owner_profile" in whitelist
     assert "skill_manage" in whitelist
     assert "skill_view" in whitelist
     assert "skills_list" in whitelist
@@ -145,9 +146,10 @@ def test_background_review_agent_tools_are_limited():
     """
     from toolsets import resolve_multiple_toolsets
 
-    expected_tools = set(resolve_multiple_toolsets(["memory", "skills"]))
+    expected_tools = set(resolve_multiple_toolsets(["memory", "owner_profile", "skills"]))
 
     assert "memory" in expected_tools
+    assert "owner_profile" in expected_tools
     assert "skill_manage" in expected_tools
     assert "skill_view" in expected_tools
     assert "skills_list" in expected_tools

@@ -25,11 +25,14 @@ def test_workspace_prompt_applies_context_and_rag_budget():
         rag_dir=Path("/tmp/workspace/rag"),
         source=source,
         context_seed="seed " + ("z" * 3000),
+        owner_profile_context="### Relevant Owner Profile\n- [user] 날짜별 건강 기록",
         recent=recent,
         retrieved=retrieved,
         max_recent=3,
     )
 
+    assert "Relevant Owner Profile" in prompt
+    assert "날짜별 건강 기록" in prompt
     assert "retrieved-0" in prompt
     assert "retrieved-3" in prompt
     assert "retrieved-4" not in prompt

@@ -154,6 +154,37 @@ def test_record_turn_stores_kst_date_in_messages_and_vectors(tmp_path):
     assert "do not merge today/yesterday or different dates" in str(prompt)
 
 
+def test_record_turn_injects_relevant_owner_profile_context(tmp_path):
+    source = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="channel-7",
+        chat_name="health",
+        chat_type="group",
+        user_id="u1",
+        user_name="Max",
+        guild_id="guild-1",
+    )
+    memories_dir = tmp_path / "memories"
+    memories_dir.mkdir(parents=True)
+    (memories_dir / "USER.md").write_text(
+        "- 식단/건강: Max는 칼로리와 체중을 날짜별로 분리해서 정리해야 한다.\n"
+        "§\n"
+        "- 개발: ET는 커밋 전 스모크 테스트를 선호한다.\n",
+        encoding="utf-8",
+    )
+
+    with patch.dict("os.environ", {"MIHO_HOME": str(tmp_path), "OPENAI_API_KEY": ""}):
+        prompt = record_turn_and_build_prompt(
+            source=source,
+            text="오늘 먹은 전체 칼로리를 날짜 기준으로 다시 계산해줘.",
+            message_id="m-health-profile",
+        )
+
+    assert "Relevant Owner Profile" in str(prompt)
+    assert "칼로리와 체중을 날짜별로" in str(prompt)
+    assert "커밋 전 스모크" not in str(prompt)
+
+
 def test_assistant_turn_is_indexed_in_thread_and_parent(tmp_path):
     source = SessionSource(
         platform=Platform.DISCORD,

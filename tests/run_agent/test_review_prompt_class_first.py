@@ -233,3 +233,10 @@ def test_memory_review_prompt_still_focused_on_user_facts():
     assert "skills_list" not in prompt
     assert "SURVEY" not in prompt
     assert "memory tool" in prompt
+
+
+def test_memory_review_prompt_mentions_owner_profile_for_deep_context():
+    prompt = AIAgent._MEMORY_REVIEW_PROMPT
+
+    assert "owner_profile" in prompt
+    assert "dated" in prompt

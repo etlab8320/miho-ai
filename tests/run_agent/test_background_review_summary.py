@@ -112,6 +112,24 @@ def test_added_message_relabels_by_target():
     assert actions == ["Memory updated"]
 
 
+def test_owner_profile_event_is_summarized():
+    review_messages = [
+        _tool_msg(
+            "c1",
+            {
+                "success": True,
+                "id": 7,
+                "category": "health",
+                "title": "Dinner log",
+            },
+        )
+    ]
+
+    actions = _summarize(review_messages, [])
+
+    assert actions == ["Owner profile updated"]
+
+
 def test_removed_or_replaced_relabels_by_target():
     review_messages = [
         _tool_msg(
