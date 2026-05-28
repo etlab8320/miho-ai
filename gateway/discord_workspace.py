@@ -25,8 +25,11 @@ from gateway.discord_workspace_paths import (
     write_manifest,
 )
 from gateway.discord_workspace_prompt import build_workspace_prompt
+from gateway.discord_user_profile import build_discord_user_profile_context
 from gateway.discord_workspace_vectors import index_rag_record, retrieve_rag_context
+from gateway.config import load_gateway_config
 from gateway.owner_profile_context import build_relevant_owner_profile_context
+from gateway.slash_access import policy_for_source
 
 
 _MAX_CONTEXT_MESSAGES = 8
@@ -354,7 +357,18 @@ def record_turn_and_build_prompt(
         text=text,
         message_id=record["message_id"],
     )
-    owner_profile_context = build_relevant_owner_profile_context(text)
+    user_id = str(getattr(source, "user_id", "") or "")
+    owner_profile_context = "\n\n".join(
+        part
+        for part in [
+            build_discord_user_profile_context(
+                user_id,
+                str(getattr(source, "user_name", "") or ""),
+            ),
+            _build_owner_profile_context_for_discord(source, text),
+        ]
+        if part
+    )
     top_score = max((float(item.get("score") or 0.0) for item in retrieved), default=0.0)
     scope = "thread" if workspace.thread_dir else "channel"
     logger.info(
@@ -374,6 +388,18 @@ def record_turn_and_build_prompt(
         retrieved=retrieved,
         max_recent=_MAX_CONTEXT_MESSAGES,
     )
+
+
+def _build_owner_profile_context_for_discord(source: Any, text: str) -> str:
+    try:
+        policy = policy_for_source(load_gateway_config(), source)
+    except Exception as exc:
+        logger.warning("Discord owner profile gate failed closed: %s", exc)
+        return ""
+    user_id = str(getattr(source, "user_id", "") or "")
+    if not policy.enabled or not policy.is_admin(user_id):
+        return ""
+    return build_relevant_owner_profile_context(text)
 
 
 def record_assistant_turn(

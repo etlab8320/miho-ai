@@ -208,6 +208,10 @@ def test_record_turn_injects_relevant_owner_profile_context(tmp_path):
         "- 개발: ET는 커밋 전 스모크 테스트를 선호한다.\n",
         encoding="utf-8",
     )
+    (tmp_path / "config.yaml").write_text(
+        "discord:\n  group_allow_admin_from:\n    - u1\n",
+        encoding="utf-8",
+    )
 
     with patch.dict("os.environ", {"MIHO_HOME": str(tmp_path), "OPENAI_API_KEY": ""}):
         prompt = record_turn_and_build_prompt(

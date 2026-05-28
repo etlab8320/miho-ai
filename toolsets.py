@@ -406,6 +406,7 @@ TOOLSETS = {
     "miho-discord": {
         "description": "Discord bot toolset - full access (terminal has safety checks via dangerous command approval)",
         "tools": _MIHO_CORE_TOOLS + [
+            "discord_profile",
             "discord",
             "discord_admin",
         ],
