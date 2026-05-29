@@ -101,6 +101,15 @@ class AcademyApiClient:
         )
         return payload if isinstance(payload, dict) else {}
 
+    def list_peak_monthly_tests(self) -> list[dict[str, Any]]:
+        payload = self._get("/peak/monthly-tests")
+        tests = payload.get("tests") if isinstance(payload, dict) else None
+        return [item for item in tests or [] if isinstance(item, dict)]
+
+    def get_peak_monthly_test_records(self, monthly_test_id: int) -> dict[str, Any]:
+        payload = self._get(f"/peak/monthly-tests/{monthly_test_id}/all-records")
+        return payload if isinstance(payload, dict) else {}
+
     def get_student_context(self, query: str, *, today: date, period_days: int = 14) -> dict[str, Any]:
         payload = self._get(
             "/paca/student-context",

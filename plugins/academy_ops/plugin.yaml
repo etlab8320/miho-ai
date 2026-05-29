@@ -10,6 +10,7 @@ tools:
   - academy_capability_status
   - academy_student_card_image
   - academy_student_summary
+  - academy_monthly_test_records
   - academy_student_attendance_range
   - academy_attendance_day
   - academy_staff_attendance_day

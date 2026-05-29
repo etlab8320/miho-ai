@@ -41,6 +41,7 @@ from .staff_attendance_tool import (
 from .student_attendance_tool import _student_attendance_range_tool_handler
 from .student_card_tool import _student_card_image_tool_handler
 from .student_context_tool import _student_context_tool_handler
+from .monthly_test_records_tool import _monthly_test_records_tool_handler
 from .student_records_tool import _student_record_lookup_tool_handler
 from .response_commentary import append_summary_comment_or_fallback
 from .response_focus import focused_response
@@ -86,6 +87,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_student_card_image": _student_card_image_tool_handler,
     "academy_student_context": _student_context_tool_handler,
     "academy_student_record_lookup": _student_record_lookup_tool_handler,
+    "academy_monthly_test_records": _monthly_test_records_tool_handler,
 }
 
 TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -145,6 +147,7 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "purpose": "특정 학생의 Peak 실기, 측정, 종목별 기록 조회. 출석 기록, 강사 출근, 운동계획서가 아니라 학생 수행 기록일 때 사용",
         "args": ["student_query", "event_query", "date", "today", "period_days"],
     },
+    "academy_monthly_test_records": {"purpose": "월별 또는 정기 실기 평가 참가자 기준 종목 평균, 순위, 학교 제외 집계 조회. 일반 최신 학생 기록이 아니라 평가 참가자 집계를 원할 때 사용", "args": ["event_query", "test_id", "test_month", "exclude_schools", "today"]},
 }
 
 
@@ -359,6 +362,7 @@ def _resolver_messages(
                 "사용자가 텍스트 날짜별, 일자별, 하루씩, 전체 날짜를 명시적으로 원할 때만 daily_attendance를 써. "
                 "미체크 날짜만 원할 때는 unchecked_dates를 써. "
                 "학생의 실기, 측정, 수행, 종목별 기록 조회는 academy_student_record_lookup을 써. "
+                "월별 또는 정기 실기 평가의 남녀 평균, 참가자 집계, 순위, 학교 제외 계산은 academy_monthly_test_records를 써. "
                 "학생 수행 기록 요청을 출석 기록, 강사 출근, 운동계획서 조회로 바꾸지 마. "
                 "직전 학원업무 맥락이 있고 현재 요청이 후속 질문이면 그 맥락의 학생/기간을 이어받아. "
                 "직전 맥락이 pending_request이고 현재 요청이 로그인 완료/재시도 후속이면 "
