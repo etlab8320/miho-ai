@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 
 from plugins.academy_ops.academy_query_tools import (
     _attendance_day_tool_handler,
@@ -24,6 +25,18 @@ from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 from tests.plugins.test_academy_student_card import FakeAcademyClient
+
+
+class FakeCandidateRenderer:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.payloads: list[dict] = []
+
+    def render(self, payload: dict) -> Path:
+        self.payloads.append(payload)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_bytes(b"png")
+        return self.path
 
 
 def _payload(raw: str) -> dict:
@@ -302,6 +315,31 @@ def test_consultation_candidates_use_read_only_attendance_signals() -> None:
     assert result["write_enabled"] is False
 
 
+def test_consultation_candidates_include_media_directive_when_candidates_exist(tmp_path) -> None:
+    class AttendanceClient(FakeAcademyClient):
+        def list_peak_students(self) -> list[dict]:
+            return [{"id": 502, "name": "박지안"}]
+
+        def get_peak_attendance(self, day: date) -> dict:
+            return {"slots": {"evening": [{"student_id": 502, "attendance_status": "absent"}]}}
+
+    renderer = FakeCandidateRenderer(tmp_path / "consultation.png")
+
+    result = _payload(
+        _consultation_candidates_tool_handler(
+            {"period_days": 2, "today": "2026-05-25", "limit": 5},
+            client=AttendanceClient(),
+            renderer=renderer,
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["image_path"] == str(tmp_path / "consultation.png")
+    assert result["media_tag"] == f"MEDIA:{tmp_path / 'consultation.png'}"
+    assert result["media_tag"] in result["message"]
+    assert renderer.payloads[0]["candidates"][0]["name"] == "박지안"
+
+
 def test_consultation_candidates_prefers_server_side_analysis() -> None:
     class ServerCandidateClient(FakeAcademyClient):
         def get_consultation_candidates(self, *, today: date, attendance_days: int = 14, limit: int = 10) -> dict:
@@ -355,6 +393,35 @@ def test_consultation_candidates_prefers_server_side_analysis() -> None:
     assert result["period"]["attendance_start_date"] == "2026-05-14"
     assert result["candidates"][0]["student"]["peak_student_id"] == 900
     assert "최근 14일 출결" in result["basis"]
+
+
+def test_server_consultation_candidates_include_media_directive(tmp_path) -> None:
+    class ServerCandidateClient(FakeAcademyClient):
+        def get_consultation_candidates(self, *, today: date, attendance_days: int = 14, limit: int = 10) -> dict:
+            return {
+                "candidates": [
+                    {
+                        "student": {"paca_student_id": 10, "peak_student_id": 900, "name": "김민준"},
+                        "priority": "high",
+                        "score": 92,
+                        "reasons": ["최근 14일 안에 연속 결석 2회"],
+                    }
+                ],
+            }
+
+    renderer = FakeCandidateRenderer(tmp_path / "server-consultation.png")
+
+    result = _payload(
+        _consultation_candidates_tool_handler(
+            {"period_days": 14, "today": "2026-05-27", "limit": 5},
+            client=ServerCandidateClient(),
+            renderer=renderer,
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["media_tag"] == f"MEDIA:{tmp_path / 'server-consultation.png'}"
+    assert result["candidates"][0]["student"]["name"] == "김민준"
 
 
 def test_write_action_draft_blocks_mutation_and_requires_confirmation() -> None:

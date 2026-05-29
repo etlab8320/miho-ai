@@ -426,7 +426,7 @@ def register(ctx: Any) -> None:
         },
         handler=_consultation_candidates_tool_handler,
         description=(
-            "Return read-only consultation candidates from recent Peak attendance signals. "
+            "Return read-only consultation candidates from recent Peak attendance signals and attach a PNG image when candidates exist. "
             "Does not use payment data or private memos."
         ),
     )

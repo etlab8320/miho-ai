@@ -31,6 +31,10 @@ def test_student_card_contract_excludes_summary_for_card_image_requests() -> Non
     assert "학생관리카드" in TOOL_CONTRACTS["academy_student_card_image"]["purpose"]
 
 
+def test_consultation_candidate_contract_supports_png_image_requests() -> None:
+    assert "PNG 이미지" in TOOL_CONTRACTS["academy_consultation_candidates"]["purpose"]
+
+
 @pytest.mark.asyncio
 async def test_student_management_card_request_forces_card_image_when_resolver_picks_summary() -> None:
     calls: list[dict] = []

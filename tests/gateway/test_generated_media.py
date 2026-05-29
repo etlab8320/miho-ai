@@ -59,3 +59,22 @@ def test_preserves_existing_tts_media_tag_promotion():
     )
 
     assert response.endswith("[[audio_as_voice]]\nMEDIA:/tmp/speech.ogg")
+
+
+def test_appends_academy_consultation_candidate_media_when_final_text_omits_it():
+    result = json.dumps(
+        {
+            "ok": True,
+            "operation": "consultation.candidates",
+            "message": "상담 후보 5명\nMEDIA:/tmp/consultation-candidates.png",
+            "media_tag": "MEDIA:/tmp/consultation-candidates.png",
+        },
+        ensure_ascii=False,
+    )
+
+    response = append_missing_generated_media_directives(
+        "상담 후보 목록 만들었어.",
+        [_tool_message(result, "academy_consultation_candidates")],
+    )
+
+    assert response.endswith("MEDIA:/tmp/consultation-candidates.png")

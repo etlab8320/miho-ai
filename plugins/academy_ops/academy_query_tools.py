@@ -11,6 +11,10 @@ from .academy_api import AcademyApiClient, AcademyApiError
 from .auth_store import decrypt_token, get_binding
 from .catalog import OperationSpec, find_operation
 from .consultation_candidate_format import consultation_candidates_message
+from .consultation_candidate_renderer import (
+    ConsultationCandidateImageRenderer,
+    ConsultationCandidateRenderError,
+)
 from .context import current_discord_user_id
 from .paca_client import DEFAULT_PACA_BASE_URL
 from .plan_lookup import plan_lookup_for_day
@@ -137,22 +141,22 @@ def _consultation_candidates_tool_handler(args: dict[str, Any] | None = None, **
         server_lookup = getattr(client_or_error, "get_consultation_candidates", None)
         if callable(server_lookup):
             result = server_lookup(today=target_day, attendance_days=period_days, limit=limit)
-            return _json_ok(_server_consultation_candidates_payload(result, target_day, period_days))
+            payload = _server_consultation_candidates_payload(result, target_day, period_days)
+            return _json_ok(_with_consultation_candidate_image(payload, kwargs.get("renderer")))
         candidates = _consultation_candidates(client_or_error, target_day, period_days, limit)
     except AcademyApiError as exc:
         return _json_error(str(exc))
-    return _json_ok(
-        {
-            "operation": "consultation.candidates",
-            "period_days": period_days,
-            "today": target_day.isoformat(),
-            "write_enabled": False,
-            "basis": "최근 출결만 사용한 읽기 전용 후보 목록이야. 결제/상담 메모는 아직 섞지 않았어.",
-            "candidates": candidates,
-            "message": consultation_candidates_message(candidates, period_days),
-            "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
-        }
-    )
+    payload = {
+        "operation": "consultation.candidates",
+        "period_days": period_days,
+        "today": target_day.isoformat(),
+        "write_enabled": False,
+        "basis": "최근 출결만 사용한 읽기 전용 후보 목록이야. 결제/상담 메모는 아직 섞지 않았어.",
+        "candidates": candidates,
+        "message": consultation_candidates_message(candidates, period_days),
+        "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
+    }
+    return _json_ok(_with_consultation_candidate_image(payload, kwargs.get("renderer")))
 
 
 def _server_consultation_candidates_payload(
@@ -173,6 +177,33 @@ def _server_consultation_candidates_payload(
         "message": consultation_candidates_message(candidates, period_days),
         "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
     }
+
+
+def _with_consultation_candidate_image(
+    payload: dict[str, Any],
+    renderer: Any = None,
+) -> dict[str, Any]:
+    candidates = [item for item in payload.get("candidates") or [] if isinstance(item, dict)]
+    if not candidates:
+        return payload
+    active_renderer = renderer or ConsultationCandidateImageRenderer()
+    try:
+        image_path = active_renderer.render(payload)
+    except ConsultationCandidateRenderError as exc:
+        enriched = dict(payload)
+        enriched["image_error"] = str(exc)
+        enriched["message"] = (
+            "상담 후보 목록은 조회했지만 이미지 파일 생성에 실패했어. "
+            "아래 텍스트로 먼저 확인해줘.\n"
+            f"{payload.get('message', '')}"
+        ).strip()
+        return enriched
+    enriched = dict(payload)
+    media_tag = f"MEDIA:{image_path}"
+    enriched["image_path"] = str(image_path)
+    enriched["media_tag"] = media_tag
+    enriched["message"] = f"{payload.get('message', '')}\n{media_tag}".strip()
+    return enriched
 
 
 def _write_action_draft_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
