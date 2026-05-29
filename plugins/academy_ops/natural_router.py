@@ -257,9 +257,11 @@ async def resolve_and_execute_academy_request(
     if should_render_attendance_day_image(clean, tool_name):
         args["image"] = True
     args = _with_reference_today(tool_name, args, today)
+    # 원문을 kwargs로 함께 넘겨, LLM이 event 인자를 잘못 추출해도 도구가 원문에서 회수.
+    handler_kwargs = {"source_text": clean} if tool_name in MONTHLY_TEST_CONTEXT_TOOLS else {}
     try:
         raw_result = await asyncio.wait_for(
-            asyncio.to_thread(handler, args),
+            asyncio.to_thread(handler, args, **handler_kwargs),
             timeout=tool_timeout,
         )
     except TimeoutError:

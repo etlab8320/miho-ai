@@ -153,3 +153,44 @@ async def test_monthly_assessment_average_routes_to_monthly_records_tool() -> No
         }
     ]
     assert "남학생 270cm" in route.response_text
+
+
+def test_matching_event_recovers_event_from_original_text(monkeypatch):
+    """LLM이 event_query를 잘못 추출(테스트명 등)해도 원문에서 종목을 회수해야 한다.
+
+    회귀 방지: '월말테스트'가 종목 슬롯에 들어가 매칭 실패하던 버그(2026-05-30).
+    """
+    import plugins.academy_ops.monthly_test_records_tool as mt
+
+    record_types = [{"name": "제자리멀리뛰기", "id": 1}, {"name": "메디신볼", "id": 2}]
+
+    def fake_best(query, names, **_):
+        # 종목 신호가 있으면 0번(제자리멀리뛰기), 그 외(테스트명 등)는 abstain.
+        return 0 if ("멀리" in query or query.endswith("뛰기") or "점프" in query) else None
+
+    monkeypatch.setattr(mt.semantic_intents, "best_match_index", fake_best)
+
+    # event_query는 종목이 아닌 테스트명 → 매칭 실패하지만 원문에서 회수.
+    event = mt._matching_event(record_types, "월말테스트", fallback_text="이번 월말 멀리 평균 알려줘")
+    assert event is not None and event["id"] == 1
+
+
+def test_matching_event_text_fallback_without_embedding(monkeypatch):
+    """임베딩 제공자가 없으면(abstain) 기존 텍스트 매칭으로 떨어진다(회귀 0)."""
+    import plugins.academy_ops.monthly_test_records_tool as mt
+
+    monkeypatch.setattr(mt.semantic_intents, "best_match_index", lambda *a, **k: None)
+    record_types = [{"name": "제자리멀리뛰기", "id": 1}, {"name": "좌전굴", "id": 2}]
+
+    # 임베딩 None → _event_matches(ordered subsequence)로 약칭 매칭.
+    event = mt._matching_event(record_types, "제자리멀리")
+    assert event is not None and event["id"] == 1
+
+
+def test_matching_event_abstains_on_unrelated_text(monkeypatch):
+    """종목과 무관한 텍스트는 임베딩·텍스트 둘 다 매칭 안 돼 None."""
+    import plugins.academy_ops.monthly_test_records_tool as mt
+
+    monkeypatch.setattr(mt.semantic_intents, "best_match_index", lambda *a, **k: None)
+    record_types = [{"name": "제자리멀리뛰기", "id": 1}]
+    assert mt._matching_event(record_types, "로그인", fallback_text="로그인 상태 확인") is None

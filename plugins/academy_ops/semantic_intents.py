@@ -129,3 +129,42 @@ def classify(
     if best_score < (threshold if threshold is not None else _threshold()):
         return None
     return best_label
+
+
+def best_match_index(query: str, candidates: list[str], *, threshold: float | None = None) -> int | None:
+    """Return the index of the runtime *candidate* most semantically similar to *query*.
+
+    Unlike :func:`classify` (fixed, cached anchors), candidates here are dynamic
+    (e.g. a test's record-type names loaded from the DB), so they are embedded
+    per call. Returns ``None`` to abstain — disabled, non-semantic provider,
+    empty input, or below threshold — so callers fall back to text matching.
+    """
+    if not semantic_routing_enabled():
+        return None
+    query = (query or "").strip()
+    cleaned = [(i, str(c or "").strip()) for i, c in enumerate(candidates)]
+    cleaned = [(i, c) for i, c in cleaned if c]
+    if not query or not cleaned:
+        return None
+    try:
+        query_vector, query_method = _embed(query, "query")
+    except Exception:
+        return None
+    if not _is_semantic(query_method):
+        return None
+    best_index: int | None = None
+    best_score = -1.0
+    for index, candidate in cleaned:
+        try:
+            candidate_vector, candidate_method = _embed(candidate, "document")
+        except Exception:
+            return None
+        if not _is_semantic(candidate_method):
+            return None
+        score = _cosine(query_vector, candidate_vector)
+        if score > best_score:
+            best_score = score
+            best_index = index
+    if best_score < (threshold if threshold is not None else _threshold()):
+        return None
+    return best_index

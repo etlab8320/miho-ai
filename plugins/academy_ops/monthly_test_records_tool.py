@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from . import semantic_intents
 from .academy_api import AcademyApiError
 from .academy_query_tools import _date_arg, _json_error, _json_ok, _resolve_client
 from .response_guidance import academy_response_guidance
@@ -31,7 +32,12 @@ def _monthly_test_records_tool_handler(args: dict[str, Any] | None = None, **kwa
         data = client_or_error.get_peak_monthly_test_records(int(selected.get("id") or 0))
     except (AcademyApiError, ValueError) as exc:
         return _json_error(str(exc))
-    result = _aggregate(data, event_query=event_query, exclude_schools=_exclude_schools(payload.get("exclude_schools")))
+    result = _aggregate(
+        data,
+        event_query=event_query,
+        exclude_schools=_exclude_schools(payload.get("exclude_schools")),
+        source_text=str(kwargs.get("source_text") or ""),
+    )
     if result is None:
         return _json_error("해당 월별 실기 평가에서 요청한 종목 기록을 찾지 못했어.")
     result["assistant_guidance"] = academy_response_guidance(use_message_as_facts=True)
@@ -91,8 +97,9 @@ def _aggregate(
     *,
     event_query: str,
     exclude_schools: set[str],
+    source_text: str = "",
 ) -> dict[str, Any] | None:
-    event = _matching_event(payload.get("record_types"), event_query)
+    event = _matching_event(payload.get("record_types"), event_query, fallback_text=source_text)
     if event is None:
         return None
     event_id = str(event.get("record_type_id") or event.get("id") or "")
@@ -131,10 +138,26 @@ def _aggregate(
     }
 
 
-def _matching_event(value: Any, event_query: str) -> dict[str, Any] | None:
-    for item in _list_dicts(value):
-        names = [str(item.get("name") or ""), str(item.get("short_name") or "")]
-        if any(_event_matches(event_query, name) for name in names):
+def _matching_event(value: Any, event_query: str, *, fallback_text: str = "") -> dict[str, Any] | None:
+    items = _list_dicts(value)
+    if not items:
+        return None
+    # 1) Semantic embedding match against the test's actual event names. Tries the
+    #    LLM-extracted event_query first, then the raw user message, so a mis-extracted
+    #    event_query (e.g. a test name landing in the event slot) is still recovered
+    #    from the original phrasing. Unrelated text matches nothing above threshold,
+    #    so it abstains rather than mismatching.
+    names = [str(item.get("name") or "") for item in items]
+    for query in (event_query, fallback_text):
+        if not str(query or "").strip():
+            continue
+        index = semantic_intents.best_match_index(query, names)
+        if index is not None:
+            return items[index]
+    # 2) Text fallback when no semantic provider is available (keeps prior behaviour).
+    for item in items:
+        candidate_names = [str(item.get("name") or ""), str(item.get("short_name") or "")]
+        if any(_event_matches(event_query, name) for name in candidate_names):
             return item
     return None
 
