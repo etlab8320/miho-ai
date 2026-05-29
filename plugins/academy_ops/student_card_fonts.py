@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 from zipfile import ZipFile
+import base64
 import io
 import os
 
@@ -36,9 +37,13 @@ def goyang_font_css() -> str:
     font_path = resolve_goyang_font()
     if font_path is None:
         return ""
+    try:
+        encoded = base64.b64encode(font_path.read_bytes()).decode("ascii")
+    except OSError:
+        return ""
     return (
         "@font-face{font-family:'GoyangDeogyang';"
-        f"src:url('{font_path.as_uri()}') format('truetype');"
+        f"src:url('data:font/ttf;base64,{encoded}') format('truetype');"
         "font-weight:700;font-style:normal;font-display:block;}"
     )
 

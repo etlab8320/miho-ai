@@ -6,6 +6,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from .brand_assets import academy_brand_logo_src
 from .consultation_candidate_format import _priority_label
 
 
@@ -93,6 +94,7 @@ def _profile_text(student: dict[str, Any]) -> str:
 
 
 def _logo_html(path: Path | None) -> str:
-    if path and path.exists():
-        return f"<img class='logo' src='{path.as_uri()}' alt='MAX 체대입시'>"
+    logo_src = academy_brand_logo_src(path)
+    if logo_src:
+        return f"<img class='logo' src='{escape(logo_src, quote=True)}' alt='MAX 체대입시'>"
     return "<div class='logo-text'>MAX</div>"

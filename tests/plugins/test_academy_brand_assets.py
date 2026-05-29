@@ -24,3 +24,13 @@ def test_academy_brand_logo_falls_back_to_bundled_stamp(monkeypatch) -> None:
     assert logo == brand_assets.BUNDLED_STAMP_PATH
     assert logo.exists()
     assert logo.name == "stamp.png"
+
+
+def test_academy_brand_logo_src_embeds_logo_data(monkeypatch, tmp_path: Path) -> None:
+    logo = tmp_path / "custom.png"
+    logo.write_bytes(b"png")
+    monkeypatch.setenv(brand_assets.BRAND_LOGO_ENV, str(logo))
+
+    src = brand_assets.academy_brand_logo_src()
+
+    assert src == "data:image/png;base64,cG5n"

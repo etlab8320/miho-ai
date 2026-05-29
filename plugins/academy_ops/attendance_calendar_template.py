@@ -7,6 +7,8 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from .brand_assets import academy_brand_logo_src
+
 
 STATUS_LABELS = {
     "present": "출석",
@@ -234,8 +236,9 @@ def _month_label(start_day: date, end_day: date) -> str:
 
 
 def _logo_html(logo_path: Path | None) -> str:
-    if logo_path and logo_path.exists():
-        return f"<img class='logo' src='{escape(logo_path.as_uri(), quote=True)}' alt='MAX'>"
+    logo_src = academy_brand_logo_src(logo_path)
+    if logo_src:
+        return f"<img class='logo' src='{escape(logo_src, quote=True)}' alt='MAX'>"
     return "<div class='logo-text'>MAX</div>"
 
 

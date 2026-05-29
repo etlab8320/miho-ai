@@ -6,6 +6,7 @@ from datetime import date
 from html import escape
 from pathlib import Path
 
+from .brand_assets import academy_brand_logo_src
 from .student_card import RecordItem, StudentCard
 from .student_card_fonts import goyang_font_css
 from .student_card_styles import student_card_css
@@ -181,8 +182,9 @@ def _record_graph(item: RecordItem) -> str:
 
 
 def _logo_html(logo_path: Path | None) -> str:
-    if logo_path and logo_path.exists():
-        return f"<img class='logo' src='{logo_path.as_uri()}' alt='MAX'>"
+    logo_src = academy_brand_logo_src(logo_path)
+    if logo_src:
+        return f"<img class='logo' src='{escape(logo_src, quote=True)}' alt='MAX'>"
     return "<div class='logo-fallback'>MAX</div>"
 
 

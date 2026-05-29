@@ -6,6 +6,8 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from .brand_assets import academy_brand_logo_src
+
 
 STATUS_LABELS = {"present": "출석", "late": "지각", "absent": "결석", "unknown": "미체크"}
 SLOT_LABELS = {"morning": "오전반", "afternoon": "오후반", "evening": "저녁반"}
@@ -110,6 +112,7 @@ def _metric_html(label: str, value: int) -> str:
 
 
 def _logo_html(path: Path | None) -> str:
-    if path and path.exists():
-        return f"<img class='logo' src='{path.as_uri()}' alt='MAX 체대입시'>"
+    logo_src = academy_brand_logo_src(path)
+    if logo_src:
+        return f"<img class='logo' src='{escape(logo_src, quote=True)}' alt='MAX 체대입시'>"
     return "<div class='logo-text'>MAX</div>"

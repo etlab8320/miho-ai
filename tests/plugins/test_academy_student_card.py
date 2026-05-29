@@ -196,6 +196,21 @@ def test_student_card_html_is_rich_and_still_excludes_sensitive_fields() -> None
     assert "민감 메모" not in html
 
 
+def test_student_card_html_embeds_logo_without_file_url(tmp_path: Path) -> None:
+    card = AcademyStudentCardService(FakeAcademyClient()).build(
+        "김민준",
+        today=date(2026, 5, 25),
+        period_days=3,
+    )
+    logo = tmp_path / "stamp.png"
+    logo.write_bytes(b"png")
+
+    html = render_student_card_html(card, logo_path=logo)
+
+    assert "src='data:image/png;base64,cG5n'" in html
+    assert "file://" not in html
+
+
 def test_student_card_html_limits_record_rows_to_prevent_footer_overlap() -> None:
     card = AcademyStudentCardService(FakeAcademyClient()).build(
         "김민준",
