@@ -1,7 +1,7 @@
 {
   "id": "miho-agent",
   "name": "Miho Agent",
-  "version": "0.15.46",
+  "version": "0.15.47",
   "description": "Self-improving open-source AI agent by Nous Research with ACP editor integration, persistent memory, skills, and rich tool support.",
   "repository": "https://github.com/NousResearch/miho-agent",
   "website": "https://miho-agent.nousresearch.com/docs/user-guide/features/acp",
@@ -11,7 +11,7 @@
   "license": "MIT",
   "distribution": {
     "uvx": {
-      "package": "miho-agent[acp]==0.15.46",
+      "package": "miho-agent[acp]==0.15.47",
       "args": [
         "miho-acp"
       ]
