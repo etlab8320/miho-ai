@@ -15,6 +15,22 @@ from plugins.academy_ops.auth_store import AcademyBinding, encrypt_token, save_b
 from plugins.academy_ops.login_preflight import is_academy_login_request, is_academy_login_status_request
 
 
+@pytest.fixture(autouse=True)
+def _force_keyword_routing(monkeypatch):
+    """Pin this module to the keyword fallback path (semantic embeddings off).
+
+    These tests assert the behaviour used whenever no semantic embedding
+    provider is available; pinning the flag keeps them deterministic even when
+    VOYAGE_API_KEY happens to be set locally.
+    """
+    monkeypatch.setenv("MIHO_ACADEMY_SEMANTIC_ROUTING", "0")
+    from plugins.academy_ops import login_preflight, semantic_intents
+
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+    semantic_intents._anchor_cache.clear()
+    yield
+
+
 def test_academy_login_request_detection_is_intent_based() -> None:
     assert is_academy_login_request("파카로그인 하자")
     assert is_academy_login_request("피크 계정 연결해줘")
