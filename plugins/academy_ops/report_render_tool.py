@@ -1,0 +1,167 @@
+"""General-purpose table-report image tool.
+
+The model supplies the data contract (columns/groups/rows); this tool renders
+it to a PNG via the shared design system + Chromium capture. The model never
+positions values — the renderer places them strictly by column order, so a
+header and its values can't drift. Reusable for any tabular report, not just
+academy data.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from typing import Any
+
+from miho_constants import get_miho_home
+
+from .report_design import ColumnSpec, GroupSpec, ReportSpec, render_report_html
+from .student_card_capture import StudentCardCaptureError, capture_html_to_png
+
+
+def _json_error(message: str) -> str:
+    return json.dumps({"ok": False, "message": message}, ensure_ascii=False)
+
+
+def _estimate_height(groups: list[GroupSpec]) -> int:
+    """Window height so Chromium's fixed-size screenshot doesn't clip rows."""
+    height = 320  # body/sheet padding + title + subtitle + footer
+    for group in groups:
+        height += 50   # section label
+        height += 60   # table head
+        height += (len(group.rows) + (1 if group.avg_label else 0)) * 53
+    return max(720, height + 80)
+
+
+def _report_image_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    payload = args or {}
+    title = str(payload.get("title") or "보고서").strip()
+    raw_cols = payload.get("columns") or []
+    raw_groups = payload.get("groups") or []
+    if not raw_cols:
+        return _json_error("보고서를 만들 컬럼(columns)이 필요해.")
+    if not raw_groups:
+        return _json_error("보고서를 만들 데이터(groups)가 필요해.")
+
+    try:
+        columns = [
+            ColumnSpec(
+                key=str(c["key"]),
+                label=str(c.get("label") or c["key"]),
+                unit=str(c.get("unit") or ""),
+                best=str(c.get("best") or "high"),
+            )
+            for c in raw_cols
+        ]
+        groups = [
+            GroupSpec(
+                label=str(g.get("label") or ""),
+                rows=list(g.get("rows") or []),
+                kind=str(g.get("kind") or ""),
+                avg_label=str(g.get("avg_label") or ""),
+            )
+            for g in raw_groups
+        ]
+    except (KeyError, TypeError) as exc:
+        return _json_error(f"보고서 형식이 올바르지 않아: {exc}")
+
+    spec = ReportSpec(
+        title=title,
+        subtitle=str(payload.get("subtitle") or ""),
+        columns=columns,
+        groups=groups,
+        highlight_best=bool(payload.get("highlight_best", True)),
+        show_group_avg=bool(payload.get("show_group_avg", True)),
+        rank_by=str(payload.get("rank_by") or ""),
+        note=str(payload.get("note") or ""),
+    )
+    html = render_report_html(spec)
+
+    out_dir = get_miho_home() / "media_cache" / "academy_reports"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = uuid.uuid4().hex[:12]
+    html_path = out_dir / f"{stem}.html"
+    image_path = out_dir / f"{stem}.png"
+    html_path.write_text(html, encoding="utf-8")
+
+    try:
+        capture_html_to_png(html_path, image_path, width=1240, height=_estimate_height(groups))
+    except StudentCardCaptureError as exc:
+        return _json_error(str(exc))
+
+    media_tag = f"MEDIA:{image_path}"
+    return json.dumps(
+        {
+            "ok": True,
+            "message": f"{title} 보고서야. {media_tag}",
+            "image_path": str(image_path),
+            "media_tag": media_tag,
+        },
+        ensure_ascii=False,
+    )
+
+
+def register_report_image_tool(ctx: Any) -> None:
+    ctx.register_tool(
+        name="academy_report_image",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "보고서 제목."},
+                "subtitle": {"type": "string", "description": "부제/설명 (대상 인원·기준 등)."},
+                "columns": {
+                    "type": "array",
+                    "description": "표의 데이터 컬럼 정의. 순서대로 표시된다.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string", "description": "rows의 값 키."},
+                            "label": {"type": "string", "description": "헤더에 보일 이름."},
+                            "unit": {"type": "string", "description": "단위 (cm, 초, kg 등)."},
+                            "best": {
+                                "type": "string",
+                                "enum": ["high", "low", "none"],
+                                "description": "우수 방향. 큰 값이 좋으면 high, 시간처럼 작은 값이 좋으면 low, 강조 안 하면 none.",
+                            },
+                        },
+                        "required": ["key", "label"],
+                        "additionalProperties": False,
+                    },
+                },
+                "groups": {
+                    "type": "array",
+                    "description": "데이터 그룹. 성별처럼 평균을 분리해야 하면 그룹을 나눈다.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string", "description": "그룹 제목 (예: 남학생)."},
+                            "kind": {"type": "string", "enum": ["male", "female", ""], "description": "색상/라벨용 구분."},
+                            "avg_label": {"type": "string", "description": "평균 행 라벨 (예: 남자 평균). 비우면 평균 행 없음."},
+                            "rows": {
+                                "type": "array",
+                                "description": "행 목록. 각 행은 name, meta(구분), 그리고 columns의 key별 값.",
+                                "items": {"type": "object", "additionalProperties": True},
+                            },
+                        },
+                        "required": ["rows"],
+                        "additionalProperties": False,
+                    },
+                },
+                "rank_by": {"type": "string", "description": "그룹 내 정렬 기준 컬럼 key (내림차순). 비우면 입력 순서."},
+                "highlight_best": {"type": "boolean", "description": "컬럼별 최고기록 강조 여부 (기본 true)."},
+                "show_group_avg": {"type": "boolean", "description": "그룹 평균 행 표시 여부 (기본 true)."},
+                "note": {"type": "string", "description": "하단 각주."},
+            },
+            "required": ["title", "columns", "groups"],
+            "additionalProperties": False,
+        },
+        handler=_report_image_tool_handler,
+        description=(
+            "Render ANY tabular data as a polished report image (PNG). Use when the user wants a "
+            "table/report/기록 AS AN IMAGE and no existing specific tool fits. The caller decides what "
+            "columns/groups/rows to show; the renderer guarantees header-value alignment, computes group "
+            "averages and per-column bests in code, and stamps the brand. Split groups (e.g. by gender) "
+            "when averages must not be mixed. Not for fetching data — provide the rows you already have."
+        ),
+    )
