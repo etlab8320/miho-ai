@@ -12,6 +12,10 @@ def _tool_message(content, tool_name="image_generate"):
     }
 
 
+def _user_message(content):
+    return {"role": "user", "content": content}
+
+
 def test_appends_image_generate_url_when_final_text_omits_it():
     result = json.dumps({
         "success": True,
@@ -81,6 +85,30 @@ def test_appends_academy_consultation_candidate_media_when_final_text_omits_it()
     assert response.endswith("MEDIA:/tmp/consultation-candidates.png")
 
 
+def test_only_promotes_current_turn_tool_media(tmp_path, monkeypatch):
+    miho_home = tmp_path / ".miho"
+    old_image = miho_home / "cache" / "media" / "academy_consultation_candidates" / "old.png"
+    current_image = miho_home / "cache" / "media" / "academy_consultation_candidates" / "current.png"
+    old_image.parent.mkdir(parents=True)
+    old_image.write_bytes(b"old")
+    current_image.write_bytes(b"current")
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", miho_home / "cache" / "media" / "gateway_promoted")
+    old_result = json.dumps({"ok": True, "message": f"예전 이미지\nMEDIA:{old_image}"}, ensure_ascii=False)
+    current_result = json.dumps({"ok": True, "message": f"현재 이미지\nMEDIA:{current_image}"}, ensure_ascii=False)
+
+    response = append_missing_generated_media_directives(
+        "상담 후보 5명 만들었어.",
+        [
+            _tool_message(old_result, "academy_consultation_candidates"),
+            _user_message("5명 줘~"),
+            _tool_message(current_result, "academy_consultation_candidates"),
+        ],
+    )
+
+    assert f"MEDIA:{current_image}" in response
+    assert f"MEDIA:{old_image}" not in response
+
+
 def test_appends_generated_discord_export_image_path_from_tool_output(tmp_path, monkeypatch):
     miho_home = tmp_path / ".miho"
     image = miho_home / "discord_exports" / "attendance_2026-05-29_table.png"
@@ -98,6 +126,25 @@ def test_appends_generated_discord_export_image_path_from_tool_output(tmp_path, 
     promoted = promoted_dir / image.name
     assert response.endswith(f"MEDIA:{promoted}")
     assert promoted.read_bytes() == b"\x89PNG\r\n\x1a\n"
+
+
+def test_removes_dangling_attachment_label_when_appending_media():
+    result = json.dumps(
+        {
+            "ok": True,
+            "message": "상담 후보 5명\nMEDIA:/tmp/consultation-candidates.png",
+            "media_tag": "MEDIA:/tmp/consultation-candidates.png",
+        },
+        ensure_ascii=False,
+    )
+
+    response = append_missing_generated_media_directives(
+        "상담 후보 5명 만들었어.\n\n첨부:",
+        [_tool_message(result, "academy_consultation_candidates")],
+    )
+
+    assert "첨부:" not in response
+    assert response.endswith("MEDIA:/tmp/consultation-candidates.png")
 
 
 def test_ignores_bare_local_paths_outside_generated_media_roots(tmp_path):

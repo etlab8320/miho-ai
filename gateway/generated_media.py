@@ -53,7 +53,8 @@ def append_missing_generated_media_directives(
     )
     if not directives:
         return final_response
-    return final_response + "\n" + "\n".join(directives)
+    clean_response = _strip_dangling_attachment_label(final_response)
+    return clean_response + "\n" + "\n".join(directives)
 
 
 def _collect_missing_media_directives(
@@ -65,7 +66,7 @@ def _collect_missing_media_directives(
     directives: list[str] = []
     has_voice_directive = False
 
-    for msg in messages or []:
+    for msg in _current_turn_messages(messages):
         if not isinstance(msg, dict) or msg.get("role") not in {"tool", "function"}:
             continue
         content = str(msg.get("content") or "")
@@ -91,6 +92,21 @@ def _collect_missing_media_directives(
     if has_voice_directive and any(item.startswith("MEDIA:") for item in unique):
         unique.insert(0, "[[audio_as_voice]]")
     return unique
+
+
+def _current_turn_messages(messages: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    message_list = [msg for msg in messages or [] if isinstance(msg, dict)]
+    last_user_index = -1
+    for index, msg in enumerate(message_list):
+        if msg.get("role") == "user":
+            last_user_index = index
+    if last_user_index < 0:
+        return message_list
+    return message_list[last_user_index + 1 :]
+
+
+def _strip_dangling_attachment_label(text: str) -> str:
+    return re.sub(r"(?:\n\s*)+(?:첨부|이미지)\s*:\s*$", "", text).rstrip()
 
 
 def _media_paths_from_tool_content(content: str) -> list[str]:
