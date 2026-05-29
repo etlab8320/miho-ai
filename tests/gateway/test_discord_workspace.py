@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
+import gateway.discord_workspace_vectors as _vectors
 from gateway.config import Platform
 from gateway.discord_workspace import (
     archive_workspace_for_channel,
@@ -14,6 +15,26 @@ from gateway.discord_workspace import (
     record_turn_and_build_prompt,
 )
 from gateway.session import SessionSource
+
+# Topic anchors for the semantic-retrieval test double below. A real embedding
+# places "로그인 방식" near "로그인 OAuth" and far from "점심 김밥"; this fixture
+# reproduces that proximity deterministically by projecting each text onto a few
+# topic axes. It is a TEST DOUBLE for an embedding provider, not production
+# routing logic — retrieval tests must not depend on the hash fallback, which
+# carries no meaning and is now correctly ignored by retrieve_rag_context.
+_TOPIC_AXES = (
+    ("로그인", "oauth", "인증", "login", "계정", "discord", "처리"),
+    ("점심", "김밥", "식사", "메뉴"),
+    ("결제", "반영", "확인", "규칙", "안전", "실행", "버튼"),
+)
+
+
+def _bow_embed(text: str, input_type: str = "document"):
+    """Deterministic topic embedding standing in for a real provider."""
+    tokens = set(_vectors._tokens(text))
+    vec = [float(sum(1 for w in axis if w in tokens)) for axis in _TOPIC_AXES]
+    vec.append(0.1)  # small bias so unrelated text is never a zero vector
+    return vec, "voyage-4-large"
 
 
 def test_record_turn_creates_channel_thread_rag_workspace(tmp_path):
@@ -137,7 +158,9 @@ def test_record_turn_retrieves_relevant_vector_memory(tmp_path):
         guild_id="guild-1",
     )
 
-    with patch.dict("os.environ", {"MIHO_HOME": str(tmp_path), "OPENAI_API_KEY": ""}):
+    with patch.dict("os.environ", {"MIHO_HOME": str(tmp_path), "OPENAI_API_KEY": ""}), patch(
+        "gateway.discord_workspace_vectors.embed_text", _bow_embed
+    ):
         record_turn_and_build_prompt(
             source=source,
             text="Peak Paka 로그인은 Discord OAuth로 처리한다.",
@@ -358,7 +381,9 @@ def test_thread_prompt_can_retrieve_parent_channel_common_memory(tmp_path):
         parent_chat_id="channel-7",
     )
 
-    with patch.dict("os.environ", {"MIHO_HOME": str(tmp_path), "OPENAI_API_KEY": ""}):
+    with patch.dict("os.environ", {"MIHO_HOME": str(tmp_path), "OPENAI_API_KEY": ""}), patch(
+        "gateway.discord_workspace_vectors.embed_text", _bow_embed
+    ):
         record_turn_and_build_prompt(
             source=parent,
             text="학원 업무 공통 규칙: 결제 반영은 확인 버튼 없이는 실행하지 않는다.",

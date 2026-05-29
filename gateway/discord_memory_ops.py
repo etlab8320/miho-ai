@@ -9,7 +9,11 @@ from typing import Any
 
 from gateway.config import Platform
 from gateway.discord_workspace import ensure_workspace
-from gateway.discord_workspace_vectors import index_rag_record, retrieve_rag_context
+from gateway.discord_workspace_vectors import (
+    index_rag_record,
+    retrieve_rag_context,
+    stored_embedding_method,
+)
 from gateway.session import SessionSource
 from miho_cli.owner_profile import append_profile_event
 
@@ -68,14 +72,21 @@ def memory_status(source: SessionSource) -> str:
     messages = _count_jsonl(rag_dir / "messages.jsonl")
     vectors = _count_jsonl(rag_dir / "vectors.jsonl")
     parent_messages = _count_jsonl(workspace.channel_rag_dir / "messages.jsonl")
+    method = stored_embedding_method(rag_dir) or "unknown"
     lines = [
         "Miho Discord memory",
         f"- Scope: {_format_scope(workspace)}",
         f"- Messages: {messages}",
         f"- Vectors: {vectors}",
         f"- Parent channel messages: {parent_messages}",
+        f"- Embedding: {method}",
         f"- Path: {workspace.active_dir}",
     ]
+    if method == "local-hash-v1":
+        lines.append(
+            "- ⚠️ 의미검색 비활성(키워드 매칭만): 임베딩 provider(Voyage/OpenAI)나 "
+            "로컬 임베딩 모델을 설정하면 의미검색이 켜져. 설정 후 `/memory rebuild`."
+        )
     return "\n".join(lines)
 
 

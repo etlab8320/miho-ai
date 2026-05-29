@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -13,6 +14,12 @@ from typing import Any
 
 from utils import atomic_json_write
 from gateway.discord_workspace_paths import count_lines, path_lock
+
+logger = logging.getLogger(__name__)
+
+# Track rag_dirs we've already warned about so a keyless install (hash
+# fallback on every query) doesn't flood the log — one warning per dir/process.
+_warned_hash_dirs: set[str] = set()
 
 
 _LOCAL_EMBEDDING_DIMENSIONS = 256
@@ -323,12 +330,43 @@ def _dedupe_key(item: dict[str, Any]) -> str:
     return f"{role}:{text}"
 
 
+def stored_embedding_method(rag_dir: Path) -> str:
+    """Return the embedding method recorded in vector_index.json, or ''."""
+    index_path = rag_dir / "vector_index.json"
+    if not index_path.exists():
+        return ""
+    try:
+        data = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if isinstance(data, dict):
+        return str(data.get("embedding_method") or "")
+    return ""
+
+
 def index_rag_record(rag_dir: Path, record: dict[str, Any]) -> dict[str, Any]:
     """Append a searchable vector record for one RAG message."""
     text = _vector_record_text(record)
     vector, method = embed_text(text, input_type="document")
     vector_path = rag_dir / "vectors.jsonl"
     vector_path.parent.mkdir(parents=True, exist_ok=True)
+    # Detect an embedding-model switch: previously stored vectors live in a
+    # different space and won't rank correctly until /memory rebuild. Warn once
+    # at the transition (ignore hash-fallback flapping, which is transient).
+    prior_method = stored_embedding_method(rag_dir)
+    if (
+        prior_method
+        and prior_method != method
+        and _HASH_METHOD not in (prior_method, method)
+    ):
+        logger.warning(
+            "discord workspace embedding method changed (%s -> %s) in %s; "
+            "existing vectors use the old embedding space and will rank poorly "
+            "until '/memory rebuild' re-indexes them.",
+            prior_method,
+            method,
+            rag_dir,
+        )
     with path_lock(vector_path):
         count = count_lines(vector_path)
         payload = {
@@ -371,7 +409,17 @@ def retrieve_rag_context(
     vector_path = rag_dir / "vectors.jsonl"
     if not query or not vector_path.exists():
         return []
-    query_vector, _query_method = embed_text(query, input_type="query")
+    query_vector, query_method = embed_text(query, input_type="query")
+    query_is_hash = query_method == _HASH_METHOD
+    if query_is_hash and str(rag_dir) not in _warned_hash_dirs:
+        _warned_hash_dirs.add(str(rag_dir))
+        logger.warning(
+            "discord workspace RAG query embedding fell back to %s in %s; "
+            "semantic ranking is disabled (keyword-only). Configure an embedding "
+            "provider (Voyage/OpenAI) or the local model for semantic search.",
+            _HASH_METHOD,
+            rag_dir,
+        )
     query_term_count = len(_keyword_terms(query))
     tuning = _retrieval_tuning()
     matches: list[dict[str, Any]] = []
@@ -398,9 +446,17 @@ def retrieve_rag_context(
             stored_vector = [float(value) for value in vector]
         except (TypeError, ValueError):
             continue
+        # Hash-fallback embeddings carry no semantic meaning, so their cosine is
+        # noise. Trust semantic only when neither side is hash-fallback and the
+        # dimensions match; otherwise fall back to keyword-only ranking.
+        usable_semantic = (
+            not query_is_hash
+            and method != _HASH_METHOD
+            and len(query_vector) == len(stored_vector)
+        )
         semantic = (
             max(0.0, _cosine_similarity(query_vector, stored_vector))
-            if len(query_vector) == len(stored_vector)
+            if usable_semantic
             else 0.0
         )
         keyword = _keyword_score(
