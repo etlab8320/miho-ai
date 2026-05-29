@@ -21,23 +21,44 @@ def capture_html_to_png(html_path: Path, image_path: Path, *, width: int = 1200,
             "학생카드 이미지를 만들 브라우저를 찾지 못했어. Chrome 또는 Edge 설치가 필요해."
         )
     image_path.parent.mkdir(parents=True, exist_ok=True)
+    if _should_use_home_staging(html_path, image_path):
+        staged_result = _capture_through_home_staging(
+            browser, html_path, image_path, width=width, height=height
+        )
+        if staged_result.returncode == 0 and image_path.exists():
+            return
+        _raise_capture_error(staged_result)
+
     result = _run_capture(browser, html_path, image_path, width=width, height=height)
     if result.returncode == 0 and image_path.exists():
         return
 
-    if _should_retry_with_home_staging(image_path):
-        staged_path = _home_staging_path(image_path)
-        staged_path.parent.mkdir(parents=True, exist_ok=True)
-        staged_result = _run_capture(browser, html_path, staged_path, width=width, height=height)
-        if staged_result.returncode == 0 and staged_path.exists():
-            shutil.copy2(staged_path, image_path)
+    _raise_capture_error(result)
+
+
+def _capture_through_home_staging(
+    browser: str,
+    html_path: Path,
+    image_path: Path,
+    *,
+    width: int,
+    height: int,
+) -> subprocess.CompletedProcess[str]:
+    staged_html = _home_staging_path(html_path)
+    staged_image = _home_staging_path(image_path)
+    staged_html.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(html_path, staged_html)
+    try:
+        result = _run_capture(browser, staged_html, staged_image, width=width, height=height)
+        if result.returncode == 0 and staged_image.exists():
+            shutil.copy2(staged_image, image_path)
+        return result
+    finally:
+        for path in (staged_html, staged_image):
             try:
-                staged_path.unlink()
+                path.unlink()
             except OSError:
                 pass
-            return
-
-    _raise_capture_error(result)
 
 
 def _run_capture(
@@ -69,8 +90,12 @@ def _run_capture(
         raise StudentCardCaptureError("학생카드 이미지 캡처가 시간 안에 끝나지 않았어.") from exc
 
 
-def _should_retry_with_home_staging(image_path: Path) -> bool:
-    return any(part.startswith(".") for part in image_path.expanduser().parts)
+def _should_use_home_staging(html_path: Path, image_path: Path) -> bool:
+    return _path_has_hidden_part(html_path) or _path_has_hidden_part(image_path)
+
+
+def _path_has_hidden_part(path: Path) -> bool:
+    return any(part.startswith(".") for part in path.expanduser().parts)
 
 
 def _home_staging_path(image_path: Path) -> Path:
