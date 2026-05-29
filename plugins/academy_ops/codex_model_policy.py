@@ -6,7 +6,7 @@ import os
 
 
 CODEX_PROVIDER = "openai-codex"
-ROUTER_MODEL = "gpt-5.3-codex-spark"
+ROUTER_MODEL = "gpt-5.4-mini"
 COMMENTARY_MODEL = "gpt-5.4-mini"
 SESSION_MODEL = "gpt-5.4-mini"
 CRITICAL_MODEL = "gpt-5.4"
@@ -47,7 +47,7 @@ def router_fallback_models() -> tuple[str, ...]:
 def commentary_fallback_models() -> tuple[str, ...]:
     return _fallbacks(
         "MIHO_ACADEMY_CODEX_COMMENTARY_FALLBACK_MODELS",
-        (router_model(), critical_model(), "gpt-5.2"),
+        (critical_model(), "gpt-5.2"),
     )
 
 

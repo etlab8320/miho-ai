@@ -45,6 +45,7 @@ from .student_records_tool import _student_record_lookup_tool_handler
 from .response_commentary import append_summary_comment_or_fallback
 from .response_focus import focused_response
 from .response_synthesis import compact_payload, synthesize_or_fallback
+from .route_overrides import forced_tool_for_output_request
 from .routing_decision import reject_execute_reason
 from .thread_context import (
     STAFF_CONTEXT_TOOLS,
@@ -66,7 +67,6 @@ ROUTER_MAX_ATTEMPTS = 1
 TOOL_TIMEOUT_SECONDS = 70
 MIN_CONFIDENCE = 0.55
 TIMEOUT_RESPONSE = "지금 학원 서버 응답이 불안정해서 요청을 처리하지 못했어. 잠시 후 다시 한 번 보내줘."
-IMAGE_OUTPUT_MARKERS = ("이미지", "사진", "png", "달력", "캘린더")
 
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
@@ -132,8 +132,8 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "purpose": "특정 학생 상담 기록 저장. 사용자가 상담 내용, 팔로업, 등원 사유 등을 기록해달라고 할 때 사용",
         "args": ["student_query", "note", "consulted_at"],
     },
-    "academy_student_summary": {"purpose": "학생 요약 텍스트 조회", "args": ["student_query", "today", "period_days"]},
-    "academy_student_card_image": {"purpose": "학생 카드를 이미지로 생성", "args": ["student_query", "today", "period_days"]},
+    "academy_student_summary": {"purpose": "학생 요약 텍스트 조회. 카드/이미지/파일 전달 요청에는 쓰지 않음", "args": ["student_query", "today", "period_days"]},
+    "academy_student_card_image": {"purpose": "학생관리카드, 학생 카드, 카드 이미지를 PNG로 생성", "args": ["student_query", "today", "period_days"]},
     "academy_student_context": {
         "purpose": (
             "특정 학생의 수업 요일, 시간대, 최근 출석 요일, PACA/Peak ID 매핑, "
@@ -238,9 +238,10 @@ async def resolve_and_execute_academy_request(
     )
     if reject_reason:
         return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason=reject_reason)
-    force_default_response = _should_force_attendance_calendar(clean, tool_name)
-    if force_default_response:
-        tool_name = "academy_student_attendance_calendar_image"
+    forced_tool = forced_tool_for_output_request(clean, tool_name)
+    force_default_response = forced_tool == "academy_student_attendance_calendar_image"
+    if forced_tool:
+        tool_name = forced_tool
     handler = active_handlers.get(tool_name)
     if handler is None:
         return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="unknown_tool")
@@ -346,10 +347,11 @@ def _resolver_messages(
                 "출력 초점이 있으면 response_focus를 함께 반환해. "
                 "가능한 response_focus는 summary, daily_attendance, unchecked_dates 중 하나야. "
                 "기본 출석 조회는 response_focus=summary야. "
-                "출석 요청에 이미지, 사진, PNG, 달력, 캘린더, 카드가 포함되면 "
+                "출석 요청에 이미지, 사진, PNG, 달력, 캘린더가 포함되면 "
                 "텍스트 날짜별보다 academy_student_attendance_calendar_image를 우선해. "
-                "출석을 달력, 이미지, 카드, 긴 날짜별 화면으로 보려는 요청은 academy_student_attendance_calendar_image를 써. "
-                "직전 학원업무 맥락이 출석 조회이고 현재 후속 요청에 이미지, 사진, PNG, 달력, 캘린더, 카드가 있으면 "
+                "출석을 달력, 이미지, 긴 날짜별 화면으로 보려는 요청은 academy_student_attendance_calendar_image를 써. "
+                "학생관리카드, 학생 카드, 카드 이미지 요청은 academy_student_summary가 아니라 academy_student_card_image를 써. "
+                "직전 학원업무 맥락이 출석 조회이고 현재 후속 요청에 이미지, 사진, PNG, 달력, 캘린더가 있으면 "
                 "academy_student_attendance_calendar_image를 써. "
                 "사용자가 텍스트 날짜별, 일자별, 하루씩, 전체 날짜를 명시적으로 원할 때만 daily_attendance를 써. "
                 "미체크 날짜만 원할 때는 unchecked_dates를 써. "
@@ -408,13 +410,6 @@ def _with_reference_today(tool_name: str, args: dict[str, Any], today: str | Non
     resolved = dict(args)
     resolved["today"] = today or _today()
     return resolved
-
-
-def _should_force_attendance_calendar(text: str, tool_name: str) -> bool:
-    if tool_name != "academy_student_attendance_range":
-        return False
-    normalized = text.lower()
-    return any(marker in normalized for marker in IMAGE_OUTPUT_MARKERS)
 
 
 async def _try_pending_request_retry(

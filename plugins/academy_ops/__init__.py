@@ -223,9 +223,8 @@ def register(ctx: Any) -> None:
         handler=_student_card_image_tool_handler,
         description=(
             "Create a safe PACA/Peak student-card PNG from live academy data. "
-            "Use for natural-language requests asking for a student card or student overview. "
-            "Excludes phone numbers, tuition, discounts, payment details, and internal memos. "
-            "Returns a MEDIA:<path> tag for Discord image delivery."
+            "Use for student card, student management card, or student-card image requests. "
+            "Excludes sensitive finance/contact details and returns a MEDIA:<path> tag for Discord image delivery."
         ),
     )
     ctx.register_tool(
@@ -250,7 +249,8 @@ def register(ctx: Any) -> None:
         handler=_student_summary_tool_handler,
         description=(
             "Return safe structured PACA/Peak student overview data without creating an image. "
-            "Use for natural-language student overview, 상담 포인트, or student-card planning requests. "
+            "Use for natural-language student overview or 상담 포인트 requests. "
+            "Do not use for student-card, image, or file-delivery requests; use academy_student_card_image. "
             "The assistant should write persona commentary from the returned facts, not from a fixed template."
         ),
     )
