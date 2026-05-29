@@ -72,9 +72,21 @@ A bright, trendy sports-magazine cover — NOT a dark, heavy broadcast card.
 밝은 크림 베이스 + 비비드한 팀 컬러 + 큰 임팩트 타이포 + 등번호 워터마크형 키플레이어 카드.
 이 톤·레이아웃 감각을 참고하되, **점수·선수·기록 데이터는 매 경기 실제 값으로 교체**하고 예시의 값을 절대 재사용하지 마라.
 
+## Postgame review layout (풍부한 리뷰)
+
+경기 리뷰 카드는 스코어만 말고 아래를 충실히 담는다 (참고: example-trendy.html 톤 + 이 구조):
+- 헤드라인 + FINAL 스코어
+- 한 줄 총평 (cold read — 경기를 가른 핵심)
+- 득점 흐름 또는 이닝 박스스코어 (확인된 데이터만; 모르는 이닝은 비워두고 지어내지 않는다)
+- 승부가 갈린 장면 3~4개 (번호로)
+- 키 플레이어 카드 3~4명 (역할 태그 WIN/POWER/CLUTCH/KEY + 이름 + 핵심 기록)
+- 마운드 운영 (선발/불펜 핵심)
+- 수확과 숙제 (사실에 근거한 짧은 논평)
+- 출처/날짜/다음 경기
+
 ## Guardrails
 
-- Never invent player photos, records, scores, lineups, injuries, or quotes.
-- If the user asks for a prediction, show confidence as a range, not a guarantee.
-- If a key player photo cannot be sourced safely, say so briefly and use a non-photo design fallback.
-- Image quality matters more than speed when the user explicitly asks for an image.
+- 점수·기록·라인업·부상·발언은 절대 지어내지 않는다. 확인된 출처의 값만 쓴다.
+- 선수 사진: 사용자의 개인 용도면 공개된 선수/팀 사진을 적극 활용해도 된다 (소스가 있으면 박는다). 다만 "그 선수가 맞는" 사진만 — 엉뚱한 사람/합성/조작은 금지. 안전한 사진이 없으면 등번호·이름 대형 타이포 + 팀컬러 그라데이션으로 대체한다.
+- 예측 요청 시 확신은 범위로 표시하고 단정하지 않는다.
+- 사용자가 이미지를 명시 요청하면 속도보다 품질이 우선.
