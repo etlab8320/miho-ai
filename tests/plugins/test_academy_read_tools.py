@@ -17,6 +17,7 @@ from plugins.academy_ops.staff_attendance_tool import (
     _staff_attendance_range_tool_handler,
 )
 from plugins.academy_ops.student_context_tool import _student_context_tool_handler
+from plugins.academy_ops.student_records_tool import _student_record_lookup_tool_handler
 from plugins.academy_ops import _capture_gateway_context
 from plugins.academy_ops.student_card import AcademyStudentCardService
 from gateway.config import Platform
@@ -101,6 +102,71 @@ def test_student_context_tool_returns_class_days_without_guessing() -> None:
     assert result["message"] == "이서하 수업 요일: 일 오후반, 수 저녁반"
     assert result["student"]["peak_student_id"] == 77
     assert result["assistant_guidance"]["avoid_hardcoded_judgment"] is True
+
+
+def test_student_record_lookup_returns_exact_event_date_without_attendance_mixup() -> None:
+    class RecordClient(FakeAcademyClient):
+        def search_paca_students(self, query: str) -> list[dict]:
+            assert query == "여민석"
+            return [{"id": 301, "name": "여민석", "school": "백마고", "grade": "고2"}]
+
+        def list_peak_students(self) -> list[dict]:
+            return [{"id": 901, "paca_student_id": 301, "name": "여민석"}]
+
+        def list_peak_records(self, peak_student_id: int) -> list[dict]:
+            assert peak_student_id == 901
+            return [
+                {
+                    "record_type_name": "제자리멀리뛰기",
+                    "measured_at": "2026-05-28",
+                    "value": "248",
+                    "unit": "cm",
+                    "direction": "higher",
+                },
+                {
+                    "record_type_name": "배근력",
+                    "measured_at": "2026-05-28",
+                    "value": "132",
+                    "unit": "kg",
+                    "direction": "higher",
+                },
+                {
+                    "record_type_name": "제자리멀리뛰기",
+                    "measured_at": "2026-05-20",
+                    "value": "242",
+                    "unit": "cm",
+                    "direction": "higher",
+                },
+            ]
+
+    result = _payload(
+        _student_record_lookup_tool_handler(
+            {
+                "student_query": "여민석",
+                "event_query": "제멀",
+                "date": "2026-05-28",
+                "today": "2026-05-29",
+            },
+            client=RecordClient(),
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["operation"] == "student.record_lookup"
+    assert result["student"]["name"] == "여민석"
+    assert result["records"] == [
+        {
+            "event_name": "제자리멀리뛰기",
+            "measured_at": "2026-05-28",
+            "value": 248.0,
+            "unit": "cm",
+            "direction": "higher",
+        }
+    ]
+    assert "여민석 2026-05-28 제멀 기록" in result["message"]
+    assert "제자리멀리뛰기 248cm" in result["message"]
+    assert "출석" not in result["message"]
+    assert "운동계획서" not in result["message"]
 
 
 def test_attendance_day_tool_summarizes_peak_slots_without_sensitive_fields() -> None:

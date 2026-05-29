@@ -13,6 +13,10 @@ FORBIDDEN_SNIPPETS = (
     "student_attendance_quick",
     "re.search(",
     "re.finditer(",
+    "제멀",
+    "여민석",
+    "제자리멀리뛰기",
+    "오철민",
     '"신규" in',
     '"등록" in',
 )

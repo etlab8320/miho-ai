@@ -47,6 +47,7 @@ from .staff_schedule_tool import _staff_schedule_day_tool_handler
 from .student_attendance_tool import register_student_attendance_tool
 from .student_card_tool import _student_card_image_tool_handler
 from .student_context_tool import _student_context_tool_handler
+from .student_records_tool import register_student_records_tool
 def _catalog_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     """Return the academy operation catalog.
     Plugin tools may receive execution metadata such as ``task_id`` as keyword
@@ -281,6 +282,7 @@ def register(ctx: Any) -> None:
         ),
     )
     register_student_attendance_tool(ctx)
+    register_student_records_tool(ctx)
     register_consultation_note_tool(ctx)
     ctx.register_tool(
         name="academy_student_attendance_calendar_image",
