@@ -158,10 +158,14 @@ def register_report_image_tool(ctx: Any) -> None:
         },
         handler=_report_image_tool_handler,
         description=(
-            "Render ANY tabular data as a polished report image (PNG). Use when the user wants a "
-            "table/report/기록 AS AN IMAGE and no existing specific tool fits. The caller decides what "
-            "columns/groups/rows to show; the renderer guarantees header-value alignment, computes group "
-            "averages and per-column bests in code, and stamps the brand. Split groups (e.g. by gender) "
-            "when averages must not be mixed. Not for fetching data — provide the rows you already have."
+            "학원(PACA/Peak) 데이터를 표·명단·기록 이미지로 보여줄 때 쓰는 전용 보고서 렌더러. "
+            "사용자가 학생 기록/명단/월말테스트 등을 '표로' 또는 '이미지로' 달라고 하고 기존 전용 도구가 "
+            "정확히 맞지 않으면, sports-report-card 같은 일반 보고서 스킬을 쓰지 말고 반드시 이 도구를 써라 "
+            "(일반 스킬은 열이 어긋나고 학원 도메인을 모른다). "
+            "데이터는 직접 가져오지 않는다 — 이미 가진 행을 rows로 넘겨라. 보통 academy_monthly_test_records / "
+            "academy_student_record_lookup 등 기존 조회 도구의 결과에서 개별 항목을 뽑아 columns/groups/rows로 구성한다. "
+            "Render ANY tabular data as a polished PNG: the caller decides columns/groups/rows; the renderer "
+            "guarantees header-value alignment, computes group averages and per-column bests in code, and stamps "
+            "the brand. 남녀처럼 평균을 섞으면 안 될 땐 groups로 나눠라 (체대는 성별 기준이 다르다)."
         ),
     )
