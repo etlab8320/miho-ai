@@ -16,6 +16,10 @@ def forced_tool_for_output_request(text: str, tool_name: str) -> str:
     return ""
 
 
+def should_render_attendance_day_image(text: str, tool_name: str) -> bool:
+    return tool_name == "academy_attendance_day" and _has_any(text.lower(), IMAGE_OUTPUT_MARKERS)
+
+
 def _asks_for_card_image(text: str) -> bool:
     return _has_any(text, CARD_OUTPUT_MARKERS) or _has_any(text, IMAGE_OUTPUT_MARKERS)
 

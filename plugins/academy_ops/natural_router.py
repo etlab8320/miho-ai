@@ -45,7 +45,7 @@ from .student_records_tool import _student_record_lookup_tool_handler
 from .response_commentary import append_summary_comment_or_fallback
 from .response_focus import focused_response
 from .response_synthesis import compact_payload, synthesize_or_fallback
-from .route_overrides import forced_tool_for_output_request
+from .route_overrides import forced_tool_for_output_request, should_render_attendance_day_image
 from .routing_decision import reject_execute_reason
 from .thread_context import (
     STAFF_CONTEXT_TOOLS,
@@ -106,7 +106,7 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "purpose": "특정 학생의 출석을 달력 PNG 이미지로 생성. 날짜별 긴 출석 목록, 달력, 이미지 요청에 사용",
         "args": ["student_query", "start_date", "end_date", "today"],
     },
-    "academy_attendance_day": {"purpose": "특정 날짜의 학생 전체 출석 현황 조회", "args": ["date"]},
+    "academy_attendance_day": {"purpose": "특정 날짜의 학생 전체 출석 현황/명단 조회와 PNG 이미지 생성", "args": ["date", "image"]},
     "academy_staff_attendance_day": {
         "purpose": "이미 출근한 강사, 출근 기록, 어제/과거 출근자 조회",
         "args": ["date"],
@@ -250,6 +250,8 @@ async def resolve_and_execute_academy_request(
         decision.get("args") if isinstance(decision.get("args"), dict) else {},
         context_key,
     )
+    if should_render_attendance_day_image(clean, tool_name):
+        args["image"] = True
     args = _with_reference_today(tool_name, args, today)
     try:
         raw_result = await asyncio.wait_for(
@@ -347,11 +349,12 @@ def _resolver_messages(
                 "출력 초점이 있으면 response_focus를 함께 반환해. "
                 "가능한 response_focus는 summary, daily_attendance, unchecked_dates 중 하나야. "
                 "기본 출석 조회는 response_focus=summary야. "
-                "출석 요청에 이미지, 사진, PNG, 달력, 캘린더가 포함되면 "
-                "텍스트 날짜별보다 academy_student_attendance_calendar_image를 우선해. "
-                "출석을 달력, 이미지, 긴 날짜별 화면으로 보려는 요청은 academy_student_attendance_calendar_image를 써. "
+                "출석 요청에 이미지, 사진, PNG가 포함되고 특정 학생이 없으며 전체/명단/대상/해야할 학생 목적이면 "
+                "academy_attendance_day에 image=true를 넣어. "
+                "특정 학생 출석을 달력, 캘린더, 이미지, 긴 날짜별 화면으로 보려는 요청은 "
+                "academy_student_attendance_calendar_image를 써. "
                 "학생관리카드, 학생 카드, 카드 이미지 요청은 academy_student_summary가 아니라 academy_student_card_image를 써. "
-                "직전 학원업무 맥락이 출석 조회이고 현재 후속 요청에 이미지, 사진, PNG, 달력, 캘린더가 있으면 "
+                "직전 학원업무 맥락이 특정 학생 출석 조회이고 현재 후속 요청에 이미지, 사진, PNG, 달력, 캘린더가 있으면 "
                 "academy_student_attendance_calendar_image를 써. "
                 "사용자가 텍스트 날짜별, 일자별, 하루씩, 전체 날짜를 명시적으로 원할 때만 daily_attendance를 써. "
                 "미체크 날짜만 원할 때는 unchecked_dates를 써. "

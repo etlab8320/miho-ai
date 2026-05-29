@@ -1,5 +1,4 @@
 """Academy operations plugin for PACA/Peak Discord workflows."""
-
 from __future__ import annotations
 
 import json
@@ -312,13 +311,14 @@ def register(ctx: Any) -> None:
             "type": "object",
             "properties": {
                 "date": {"type": "string", "description": "조회 날짜. YYYY-MM-DD 형식."},
+                "image": {"type": "boolean", "default": False, "description": "하루 전체 출석 명단 PNG 필요 여부."},
             },
             "required": ["date"],
             "additionalProperties": False,
         },
         handler=_attendance_day_tool_handler,
         description=(
-            "Return a safe Peak attendance summary for one explicit date, grouped by slot. "
+            "Return a safe Peak attendance summary or roster PNG for one explicit date, grouped by slot. "
             "Do not call with empty arguments; resolve natural-language dates to YYYY-MM-DD first."
         ),
     )

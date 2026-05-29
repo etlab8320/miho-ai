@@ -15,6 +15,7 @@ from .consultation_candidate_renderer import (
     ConsultationCandidateImageRenderer,
     ConsultationCandidateRenderError,
 )
+from .attendance_day_image_payload import with_attendance_day_image
 from .context import current_discord_user_id
 from .paca_client import DEFAULT_PACA_BASE_URL
 from .plan_lookup import plan_lookup_for_day
@@ -84,16 +85,17 @@ def _attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwargs: A
     except AcademyApiError as exc:
         return _json_error(str(exc))
     slots, summary = _safe_attendance_slots(attendance)
-    return _json_ok(
-        {
-            "operation": "attendance.day",
-            "date": target_day.isoformat(),
-            "summary": summary,
-            "slots": slots,
-            "message": _attendance_message(target_day, summary),
-            "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
-        }
-    )
+    result = {
+        "operation": "attendance.day",
+        "date": target_day.isoformat(),
+        "summary": summary,
+        "slots": slots,
+        "message": _attendance_message(target_day, summary),
+        "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
+    }
+    if bool(payload.get("image")):
+        result = with_attendance_day_image(result, kwargs.get("renderer"))
+    return _json_ok(result)
 
 
 def _plan_by_date_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
