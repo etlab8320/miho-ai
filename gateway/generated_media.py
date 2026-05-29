@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+from pathlib import Path
 from typing import Any, Iterable
+
+from miho_constants import get_miho_dir
 
 
 _TOOL_MEDIA_RE = re.compile(
@@ -14,6 +19,16 @@ _TOOL_MEDIA_RE = re.compile(
     r"txt|csv|apk|ipa))",
     re.IGNORECASE,
 )
+_TOOL_LOCAL_MEDIA_RE = re.compile(
+    r"(?P<path>(?:/|~/)\S+\.(?:png|jpe?g|gif|webp|mp4|mov|avi|mkv|webm|"
+    r"ogg|opus|mp3|wav|m4a|flac|pdf|zip|docx?|xlsx?|pptx?|txt|csv))",
+    re.IGNORECASE,
+)
+_TOOL_LOCAL_MEDIA_SAFE_PARTS = (
+    "/.miho/cache/media/",
+    "/.miho/discord_exports/",
+)
+_MEDIA_CACHE_DIR = get_miho_dir("cache/media", "media_cache") / "gateway_promoted"
 
 
 def append_missing_generated_media_directives(
@@ -60,6 +75,9 @@ def _collect_missing_media_directives(
         for media_path in _media_paths_from_tool_content(content):
             if media_path and media_path not in history_media_paths:
                 directives.append(f"MEDIA:{media_path}")
+        for media_path in _local_media_paths_from_tool_content(content):
+            if media_path and media_path not in history_media_paths:
+                directives.append(f"MEDIA:{media_path}")
         if "[[audio_as_voice]]" in content:
             has_voice_directive = True
 
@@ -82,6 +100,49 @@ def _media_paths_from_tool_content(content: str) -> list[str]:
         if path:
             paths.append(path)
     return paths
+
+
+def _local_media_paths_from_tool_content(content: str) -> list[str]:
+    paths: list[str] = []
+    for match in _TOOL_LOCAL_MEDIA_RE.finditer(content):
+        path = _clean_path(match.group("path"))
+        if _is_safe_generated_media_path(path):
+            promoted = _delivery_path_for_generated_media(path)
+            if promoted:
+                paths.append(promoted)
+    return paths
+
+
+def _clean_path(path: str) -> str:
+    return os.path.expanduser(path.strip().rstrip('",}.)]'))
+
+
+def _is_safe_generated_media_path(path: str) -> bool:
+    if not path:
+        return False
+    try:
+        resolved = Path(path).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    normalized = str(resolved)
+    return resolved.is_file() and any(part in normalized for part in _TOOL_LOCAL_MEDIA_SAFE_PARTS)
+
+
+def _delivery_path_for_generated_media(path: str) -> str:
+    try:
+        resolved = Path(path).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return ""
+    normalized = str(resolved)
+    if "/.miho/cache/media/" in normalized:
+        return str(resolved)
+    try:
+        _MEDIA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        target = _MEDIA_CACHE_DIR / resolved.name
+        shutil.copy2(resolved, target)
+    except OSError:
+        return ""
+    return str(target)
 
 
 def _is_image_generate_result(msg: dict[str, Any], content: str) -> bool:

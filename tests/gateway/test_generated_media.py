@@ -1,5 +1,6 @@
 import json
 
+import gateway.generated_media as generated_media
 from gateway.generated_media import append_missing_generated_media_directives
 
 
@@ -78,3 +79,34 @@ def test_appends_academy_consultation_candidate_media_when_final_text_omits_it()
     )
 
     assert response.endswith("MEDIA:/tmp/consultation-candidates.png")
+
+
+def test_appends_generated_discord_export_image_path_from_tool_output(tmp_path, monkeypatch):
+    miho_home = tmp_path / ".miho"
+    image = miho_home / "discord_exports" / "attendance_2026-05-29_table.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+    promoted_dir = miho_home / "cache" / "media" / "gateway_promoted"
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", promoted_dir)
+    tool_output = json.dumps({"path": str(image), "status": "created"}, ensure_ascii=False)
+
+    response = append_missing_generated_media_directives(
+        "이미지로 바로 뽑아놨어. 첨부:",
+        [_tool_message(tool_output, "terminal")],
+    )
+
+    promoted = promoted_dir / image.name
+    assert response.endswith(f"MEDIA:{promoted}")
+    assert promoted.read_bytes() == b"\x89PNG\r\n\x1a\n"
+
+
+def test_ignores_bare_local_paths_outside_generated_media_roots(tmp_path):
+    image = tmp_path / "private.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    response = append_missing_generated_media_directives(
+        "완료",
+        [_tool_message(f"created {image}", "terminal")],
+    )
+
+    assert response == "완료"
