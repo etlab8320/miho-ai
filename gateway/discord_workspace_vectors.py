@@ -20,6 +20,48 @@ _TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣_]{2,}")
 _KOREAN_PARTICLE_RE = re.compile(r"(으로|에서|에게|한테|부터|까지|처럼|보다|은|는|이|가|을|를|로|에|와|과|도|만|랑)$")
 _SPACE_RE = re.compile(r"\s+")
 _DEFAULT_MAX_SCAN_RECORDS = 2500
+_HASH_METHOD = "local-hash-v1"
+
+# Hybrid retrieval tuning. These were inline magic numbers; named here and
+# overridable via config (discord.workspace_rag.retrieval) so search quality
+# can be tuned without editing code — matching how the semantic-intent
+# threshold is configurable. Keys mirror the dict returned by _retrieval_tuning.
+_DEFAULT_RETRIEVAL_TUNING: dict[str, float] = {
+    "semantic_weight": 0.65,
+    "keyword_weight": 0.35,
+    "keyword_coverage_weight": 0.85,
+    "keyword_precision_weight": 0.15,
+    "min_semantic_no_keyword": 0.18,
+    "min_keyword": 0.15,
+    "min_semantic": 0.12,
+    "long_query_terms": 3,
+    "long_query_min_keyword": 0.5,
+    "long_query_min_semantic": 0.18,
+}
+
+
+def _retrieval_tuning() -> dict[str, float]:
+    """Return hybrid-retrieval weights/thresholds, config-overridable.
+
+    Falls back to _DEFAULT_RETRIEVAL_TUNING; any subset of keys may be
+    overridden under config discord.workspace_rag.retrieval.
+    """
+    tuning = dict(_DEFAULT_RETRIEVAL_TUNING)
+    try:
+        from miho_cli.config import load_config
+
+        cfg = load_config()
+        override = cfg.get("discord", {}).get("workspace_rag", {}).get("retrieval", {})
+        if isinstance(override, dict):
+            for key in tuning:
+                if key in override:
+                    try:
+                        tuning[key] = float(override[key])
+                    except (TypeError, ValueError):
+                        pass
+    except Exception:
+        pass
+    return tuning
 
 
 def _embedding_settings() -> tuple[str, str]:
@@ -247,7 +289,12 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     return dot / (left_norm * right_norm)
 
 
-def _keyword_score(query: str, text: str) -> float:
+def _keyword_score(
+    query: str,
+    text: str,
+    coverage_weight: float = _DEFAULT_RETRIEVAL_TUNING["keyword_coverage_weight"],
+    precision_weight: float = _DEFAULT_RETRIEVAL_TUNING["keyword_precision_weight"],
+) -> float:
     query_terms = _keyword_terms(query)
     text_terms = _keyword_terms(text)
     if not query_terms or not text_terms:
@@ -257,7 +304,7 @@ def _keyword_score(query: str, text: str) -> float:
         return 0.0
     coverage = len(overlap) / len(query_terms)
     precision = len(overlap) / len(text_terms)
-    return (coverage * 0.85) + (precision * 0.15)
+    return (coverage * coverage_weight) + (precision * precision_weight)
 
 
 def _vector_record_text(record: dict[str, Any]) -> str:
@@ -326,6 +373,7 @@ def retrieve_rag_context(
         return []
     query_vector, _query_method = embed_text(query, input_type="query")
     query_term_count = len(_keyword_terms(query))
+    tuning = _retrieval_tuning()
     matches: list[dict[str, Any]] = []
     lines = _read_recent_vector_lines(vector_path, _max_scan_records())
     if not lines:
@@ -355,16 +403,25 @@ def retrieve_rag_context(
             if len(query_vector) == len(stored_vector)
             else 0.0
         )
-        keyword = _keyword_score(query, text)
-        if keyword == 0 and method == "local-hash-v1":
+        keyword = _keyword_score(
+            query,
+            text,
+            tuning["keyword_coverage_weight"],
+            tuning["keyword_precision_weight"],
+        )
+        if keyword == 0 and method == _HASH_METHOD:
             continue
-        if keyword == 0 and semantic < 0.18:
+        if keyword == 0 and semantic < tuning["min_semantic_no_keyword"]:
             continue
-        if keyword < 0.15 and semantic < 0.12:
+        if keyword < tuning["min_keyword"] and semantic < tuning["min_semantic"]:
             continue
-        if query_term_count >= 3 and keyword < 0.5 and semantic < 0.18:
+        if (
+            query_term_count >= tuning["long_query_terms"]
+            and keyword < tuning["long_query_min_keyword"]
+            and semantic < tuning["long_query_min_semantic"]
+        ):
             continue
-        score = (semantic * 0.65) + (keyword * 0.35)
+        score = (semantic * tuning["semantic_weight"]) + (keyword * tuning["keyword_weight"])
         if score <= 0:
             continue
         matches.append({
