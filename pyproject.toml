@@ -221,6 +221,7 @@ gateway = ["assets/**/*"]
 plugins = [
   "**/plugin.yaml",
   "**/plugin.yml",
+  "academy_ops/assets/*",
   "*/dashboard/manifest.json",
   "*/dashboard/dist/*",
   "*/dashboard/dist/**/*",

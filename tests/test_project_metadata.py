@@ -151,3 +151,10 @@ def test_bundled_plugin_manifests_are_packaged():
 
     assert "**/plugin.yaml" in plugin_data
     assert "**/plugin.yml" in plugin_data
+
+
+def test_academy_brand_assets_are_packaged():
+    package_data = _load_package_data()
+    plugin_data = package_data["plugins"]
+
+    assert "academy_ops/assets/*" in plugin_data
