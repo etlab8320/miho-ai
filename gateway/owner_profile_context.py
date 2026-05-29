@@ -9,6 +9,7 @@ from miho_cli.owner_profile import (
     get_master_profile_path,
     get_timeline_db_path,
     list_profile_events,
+    search_profile_events,
 )
 from miho_constants import get_miho_home
 
@@ -62,8 +63,6 @@ _STOP_TOKENS = {
     "한다",
     "있다",
     "없다",
-    "max",
-    "et",
 }
 
 
@@ -86,7 +85,7 @@ def build_relevant_owner_profile_context(
         return ""
 
     scored: list[tuple[int, _Candidate]] = []
-    for candidate in _load_candidates():
+    for candidate in _load_candidates(query_tokens):
         score = _score_candidate(query, query_tokens, candidate)
         if score > 0:
             scored.append((score, candidate))
@@ -113,11 +112,11 @@ def build_relevant_owner_profile_context(
     return _fit_chars("\n".join(lines), max_chars)
 
 
-def _load_candidates() -> list[_Candidate]:
+def _load_candidates(query_tokens: set[str]) -> list[_Candidate]:
     candidates: list[_Candidate] = []
     candidates.extend(_user_profile_candidates())
     candidates.extend(_master_profile_candidates())
-    candidates.extend(_timeline_candidates())
+    candidates.extend(_timeline_candidates(query_tokens))
     return candidates
 
 
@@ -142,11 +141,20 @@ def _master_profile_candidates() -> list[_Candidate]:
     ]
 
 
-def _timeline_candidates() -> list[_Candidate]:
+def _timeline_candidates(query_tokens: set[str]) -> list[_Candidate]:
     if not get_timeline_db_path().exists():
         return []
+    events = list_profile_events(limit=60)
+    seen_ids = {event.get("id") for event in events}
+    # Pull older events that match the query so recall isn't capped at the most
+    # recent window — otherwise things the owner said long ago are unreachable.
+    if query_tokens:
+        for event in search_profile_events(sorted(query_tokens), limit=40):
+            if event.get("id") not in seen_ids:
+                events.append(event)
+                seen_ids.add(event.get("id"))
     candidates: list[_Candidate] = []
-    for event in list_profile_events(limit=60):
+    for event in events:
         category = str(event.get("category") or "general")
         created_at = str(event.get("created_at") or "")[:10]
         title = str(event.get("title") or "").strip()

@@ -8,6 +8,7 @@ This store is intentionally separate from USER.md:
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,18 @@ from typing import Any
 
 from miho_constants import get_miho_home
 from utils import atomic_replace
+
+# Safety cap so a runaway writer (buggy loop / promote spam) can't grow
+# timeline.db without bound. Generous by default — normal use adds a handful of
+# events per day — and overridable for special cases. Oldest events drop first.
+_DEFAULT_TIMELINE_MAX_EVENTS = 20000
+
+
+def _timeline_max_events() -> int:
+    raw = os.getenv("MIHO_OWNER_TIMELINE_MAX_EVENTS", "").strip()
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    return _DEFAULT_TIMELINE_MAX_EVENTS
 
 OWNER_PROFILE_DIRNAME = "owner_profile"
 MASTER_PROFILE_FILENAME = "MASTER_PROFILE.md"
@@ -182,7 +195,25 @@ def append_profile_event(
             (_now_iso(), category, title, content, source),
         )
         event_id = int(cursor.lastrowid)
+        _prune_timeline(conn, _timeline_max_events())
     return {"success": True, "id": event_id, "category": category, "title": title}
+
+
+def _prune_timeline(conn: sqlite3.Connection, max_events: int) -> None:
+    """Drop oldest events beyond max_events to bound timeline.db growth."""
+    if max_events <= 0:
+        return
+    conn.execute(
+        """
+        DELETE FROM profile_events
+        WHERE id NOT IN (
+            SELECT id FROM profile_events
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+        )
+        """,
+        (max_events,),
+    )
 
 
 def list_profile_events(limit: int = 20, category: str | None = None) -> list[dict[str, Any]]:
@@ -202,6 +233,46 @@ def list_profile_events(limit: int = 20, category: str | None = None) -> list[di
             SELECT id, created_at, category, title, content, source
             FROM profile_events
             {where}
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def search_profile_events(
+    terms: list[str], limit: int = 40, category: str | None = None
+) -> list[dict[str, Any]]:
+    """Return events whose title/content contains any term (recent first).
+
+    Lets relevant older owner memories surface even when they fall outside the
+    most-recent window list_profile_events returns, so recall isn't capped at
+    the latest N events. Terms are matched as case-insensitive substrings.
+    """
+    cleaned = [t.strip() for t in (terms or []) if t and t.strip()]
+    if not cleaned:
+        return []
+    ensure_owner_profile_store()
+    safe_limit = max(1, min(int(limit or 40), 200))
+    clauses: list[str] = []
+    params: list[Any] = []
+    for term in cleaned:
+        clauses.append("(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)")
+        like = f"%{term.lower()}%"
+        params.extend([like, like])
+    where = "(" + " OR ".join(clauses) + ")"
+    if category:
+        where += " AND category = ?"
+        params.append(category.strip().lower().replace(" ", "_"))
+    params.append(safe_limit)
+    with sqlite3.connect(get_timeline_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"""
+            SELECT id, created_at, category, title, content, source
+            FROM profile_events
+            WHERE {where}
             ORDER BY created_at DESC, id DESC
             LIMIT ?
             """,
