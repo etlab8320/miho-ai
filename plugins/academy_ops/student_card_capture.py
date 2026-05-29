@@ -139,6 +139,7 @@ def _browser_candidates() -> list[str]:
             "google-chrome",
             "chromium",
             "chrome",
+            *_playwright_browser_candidates(),
         ]
     if os.name == "nt":
         local = os.environ.get("LOCALAPPDATA", "")
@@ -155,5 +156,52 @@ def _browser_candidates() -> list[str]:
                         Path(root) / "Microsoft/Edge/Application/msedge.exe",
                     ]
                 )
-        return [str(path) for path in paths] + ["chrome.exe", "msedge.exe"]
-    return ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"]
+        return [
+            str(path) for path in paths
+        ] + ["chrome.exe", "msedge.exe", *_playwright_browser_candidates()]
+    return [
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+        "chrome",
+        *_playwright_browser_candidates(),
+    ]
+
+
+def _playwright_browser_candidates() -> list[str]:
+    candidates: list[str] = []
+    for root in _playwright_search_roots():
+        if not root.is_dir():
+            continue
+        for child in root.iterdir():
+            if not child.name.startswith(("chromium-", "chromium_headless_shell-")):
+                continue
+            candidates.extend(str(path) for path in _playwright_executables(child))
+    return candidates
+
+
+def _playwright_search_roots() -> list[Path]:
+    roots: list[Path] = []
+    env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    if env_path and env_path != "0":
+        roots.append(Path(os.path.expanduser(env_path)))
+    home = Path.home()
+    roots.append(home / ".cache" / "ms-playwright")
+    if sys.platform == "darwin":
+        roots.append(home / "Library" / "Caches" / "ms-playwright")
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA") or str(home / "AppData" / "Local")
+        roots.append(Path(local) / "ms-playwright")
+    return roots
+
+
+def _playwright_executables(browser_dir: Path) -> list[Path]:
+    if os.name == "nt":
+        return [browser_dir / "chrome-win" / "chrome.exe", browser_dir / "chrome-win" / "headless_shell.exe"]
+    if sys.platform == "darwin":
+        return [
+            browser_dir / "chrome-mac" / "Chromium.app" / "Contents" / "MacOS" / "Chromium",
+            browser_dir / "chrome-mac" / "headless_shell",
+        ]
+    return [browser_dir / "chrome-linux" / "chrome", browser_dir / "chrome-linux" / "headless_shell"]

@@ -1,7 +1,39 @@
 from pathlib import Path
+import stat
 from types import SimpleNamespace
 
 from plugins.academy_ops import student_card_capture
+
+
+def test_find_browser_executable_uses_playwright_chromium_cache(monkeypatch, tmp_path: Path) -> None:
+    browser = tmp_path / ".cache/ms-playwright/chromium-123/chrome-linux/chrome"
+    browser.parent.mkdir(parents=True)
+    browser.write_text("#!/bin/sh\n", encoding="utf-8")
+    browser.chmod(browser.stat().st_mode | stat.S_IXUSR)
+
+    monkeypatch.delenv("AGENT_BROWSER_EXECUTABLE_PATH", raising=False)
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.setattr(student_card_capture.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(student_card_capture.sys, "platform", "linux")
+    monkeypatch.setattr(student_card_capture.shutil, "which", lambda _candidate: None)
+
+    assert student_card_capture.find_browser_executable() == str(browser)
+
+
+def test_find_browser_executable_uses_playwright_browsers_path(monkeypatch, tmp_path: Path) -> None:
+    cache = tmp_path / "pw"
+    browser = cache / "chromium_headless_shell-456/chrome-linux/headless_shell"
+    browser.parent.mkdir(parents=True)
+    browser.write_text("#!/bin/sh\n", encoding="utf-8")
+    browser.chmod(browser.stat().st_mode | stat.S_IXUSR)
+
+    monkeypatch.delenv("AGENT_BROWSER_EXECUTABLE_PATH", raising=False)
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(cache))
+    monkeypatch.setattr(student_card_capture.Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(student_card_capture.sys, "platform", "linux")
+    monkeypatch.setattr(student_card_capture.shutil, "which", lambda _candidate: None)
+
+    assert student_card_capture.find_browser_executable() == str(browser)
 
 
 def test_capture_html_to_png_stages_hidden_output_path(
