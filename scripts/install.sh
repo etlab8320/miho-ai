@@ -2036,6 +2036,35 @@ postinstall_mode() {
 # Main
 # ============================================================================
 
+prefetch_embedding_model() {
+    # Pre-download the on-device embedding model so first use isn't blocked by a
+    # ~2GB download. Best-effort: skips cleanly if fastembed isn't installed
+    # (keyword fallback stays active) and never fails the install.
+    if [ "${MIHO_SKIP_MODEL_PREFETCH:-}" = "1" ]; then
+        log_info "Skipping embedding model prefetch (MIHO_SKIP_MODEL_PREFETCH=1)"
+        return 0
+    fi
+    local py="$INSTALL_DIR/venv/bin/python"
+    [ -x "$py" ] || return 0
+    if ! "$py" -c "import fastembed" >/dev/null 2>&1; then
+        log_info "fastembed not installed — embedding model prefetch skipped (keyword fallback active)"
+        return 0
+    fi
+    log_info "Prefetching on-device embedding model (one-time ~2GB; enables keyless semantic routing)..."
+    if "$py" - <<'PYEOF'
+import os
+from fastembed import TextEmbedding
+name = os.getenv("MIHO_LOCAL_EMBEDDING_MODEL", "").strip() or "intfloat/multilingual-e5-large"
+TextEmbedding(name)
+print(f"  embedding model ready: {name}")
+PYEOF
+    then
+        log_success "Embedding model prefetched"
+    else
+        log_warn "Embedding model prefetch failed — it will download on first use"
+    fi
+}
+
 main() {
     print_banner
 
@@ -2052,6 +2081,7 @@ main() {
     setup_venv
     install_deps
     install_node_deps
+    prefetch_embedding_model
     setup_path
     copy_config_templates
     run_setup_wizard

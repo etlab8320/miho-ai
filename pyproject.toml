@@ -70,6 +70,9 @@ dependencies = [
 # Native Anthropic provider — only needed when provider=anthropic (not via
 # OpenRouter or other aggregators).
 anthropic = ["anthropic==0.86.0"]
+# On-device embeddings (fastembed / ONNX, no torch) — enables keyless semantic
+# routing and memory RAG. embed_text falls back to local-hash when absent.
+local-embeddings = ["fastembed==0.8.0"]
 # Web search backends — each only loaded when the user picks it as their
 # search provider (configured via `miho tools` or config.yaml).
 exa = ["exa-py==2.10.2"]
@@ -205,6 +208,7 @@ all = [
   "miho-agent[google]",
   "miho-agent[web]",
   "miho-agent[youtube]",
+  "miho-agent[local-embeddings]",
 ]
 
 [project.scripts]

@@ -307,3 +307,67 @@ def test_retrieve_rag_context_skips_corrupt_embedding_rows(monkeypatch, tmp_path
     matches = retrieve_rag_context(rag_dir, "학생카드", limit=5)
 
     assert [item["id"] for item in matches] == ["good"]
+
+
+def test_embed_text_uses_local_model_when_no_api_keys(monkeypatch):
+    """No Voyage/OpenAI key → on-device model used (semantic method, not hash)."""
+    import gateway.discord_workspace_vectors as v
+
+    monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("MIHO_DISCORD_EMBEDDING_PROVIDER", "auto")
+    seen = {}
+
+    class FakeModel:
+        def embed(self, texts):
+            seen["texts"] = list(texts)
+            for _ in texts:
+                yield [0.1, 0.2, 0.3]
+
+    monkeypatch.setattr(v, "_get_local_embedding_model", lambda: FakeModel())
+    monkeypatch.setattr(v, "_local_embedding_model_name", lambda: "intfloat/multilingual-e5-large")
+
+    vector, method = v.embed_text("로그인", input_type="query")
+    assert method == "intfloat/multilingual-e5-large"
+    assert vector == [0.1, 0.2, 0.3]
+    assert seen["texts"] == ["query: 로그인"]  # e5 query prefix applied
+
+
+def test_local_model_uses_passage_prefix_for_documents(monkeypatch):
+    import gateway.discord_workspace_vectors as v
+
+    seen = {}
+
+    class FakeModel:
+        def embed(self, texts):
+            seen["texts"] = list(texts)
+            for _ in texts:
+                yield [1.0]
+
+    monkeypatch.setattr(v, "_get_local_embedding_model", lambda: FakeModel())
+    monkeypatch.setattr(v, "_local_embedding_model_name", lambda: "intfloat/multilingual-e5-large")
+
+    v._local_model_embedding("학생 카드", input_type="document")
+    assert seen["texts"] == ["passage: 학생 카드"]
+
+
+def test_embed_text_falls_back_to_hash_without_local_model(monkeypatch):
+    """No keys and no fastembed → non-semantic local-hash (graceful)."""
+    import gateway.discord_workspace_vectors as v
+
+    monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("MIHO_DISCORD_EMBEDDING_PROVIDER", "auto")
+    monkeypatch.setattr(v, "_get_local_embedding_model", lambda: None)
+
+    _vector, method = v.embed_text("로그인", input_type="query")
+    assert method == "local-hash-v1"
+
+
+def test_local_model_disabled_by_env(monkeypatch):
+    import gateway.discord_workspace_vectors as v
+
+    monkeypatch.setenv("MIHO_LOCAL_EMBEDDING", "0")
+    v._LOCAL_MODEL_CACHE.clear()
+    monkeypatch.setattr(v, "_LOCAL_MODEL_DISABLED", False)
+    assert v._get_local_embedding_model() is None

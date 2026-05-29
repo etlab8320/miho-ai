@@ -158,20 +158,82 @@ def _openai_embedding(text: str) -> list[float] | None:
     return [float(value) for value in vector]
 
 
+_LOCAL_MODEL_CACHE: dict[str, Any] = {}
+_LOCAL_MODEL_DISABLED = False
+
+
+def _local_model_enabled() -> bool:
+    value = os.getenv("MIHO_LOCAL_EMBEDDING", "1").strip().lower()
+    return value not in ("0", "false", "no", "off")
+
+
+def _local_embedding_model_name() -> str:
+    return os.getenv("MIHO_LOCAL_EMBEDDING_MODEL", "").strip() or "intfloat/multilingual-e5-large"
+
+
+def _get_local_embedding_model() -> Any | None:
+    """Lazily load the on-device embedding model (fastembed).
+
+    Returns None when fastembed is unavailable or the model fails to load, so
+    callers fall back to the non-semantic hash. The failure is cached so we
+    don't retry a missing dependency on every call.
+    """
+    global _LOCAL_MODEL_DISABLED
+    if _LOCAL_MODEL_DISABLED or not _local_model_enabled():
+        return None
+    name = _local_embedding_model_name()
+    cached = _LOCAL_MODEL_CACHE.get(name)
+    if cached is not None:
+        return cached
+    try:
+        from fastembed import TextEmbedding
+
+        model = TextEmbedding(name)
+    except Exception:
+        _LOCAL_MODEL_DISABLED = True
+        return None
+    _LOCAL_MODEL_CACHE[name] = model
+    return model
+
+
+def _local_model_embedding(text: str, *, input_type: str | None) -> tuple[list[float], str] | None:
+    """On-device semantic embedding (no API key). Returns (vector, model_name) or None."""
+    model = _get_local_embedding_model()
+    if model is None:
+        return None
+    name = _local_embedding_model_name()
+    # e5 models expect "query:"/"passage:" prefixes; other models take raw text.
+    if "e5" in name.lower():
+        prefix = "query: " if input_type == "query" else "passage: "
+    else:
+        prefix = ""
+    try:
+        vector = next(iter(model.embed([prefix + text])))
+    except Exception:
+        return None
+    return [float(value) for value in vector], name
+
+
 def embed_text(text: str, *, input_type: str | None = None) -> tuple[list[float], str]:
-    """Return an embedding vector and the method used to create it."""
+    """Return an embedding vector and the method used to create it.
+
+    Order: Voyage -> OpenAI (API keys) -> on-device model (fastembed, no key)
+    -> local-hash. Only the final hash is non-semantic; everything above is a
+    real embedding so keyless installs still get semantic matching.
+    """
     provider, configured_model = _embedding_settings()
     if provider in {"auto", "voyage"}:
         voyage_result = _voyage_embedding(text, input_type=input_type)
         if voyage_result:
             return voyage_result
-        if provider == "voyage":
-            return _local_embedding(text), "local-hash-v1"
     if provider in {"auto", "openai"}:
         vector = _openai_embedding(text)
         if vector:
             method = configured_model if provider == "openai" else ""
             return vector, method or "text-embedding-3-small"
+    local_result = _local_model_embedding(text, input_type=input_type)
+    if local_result:
+        return local_result
     return _local_embedding(text), "local-hash-v1"
 
 
