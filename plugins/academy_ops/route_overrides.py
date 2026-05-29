@@ -12,6 +12,11 @@ from typing import Any
 
 from . import semantic_intents
 
+# EMERGENCY FALLBACK ONLY — keyword markers used solely when semantic_intents
+# returns None (no embedding provider / routing disabled / ambiguous). The
+# primary path is embedding similarity over OUTPUT_INTENTS below; these
+# substrings must never be the primary classifier (see
+# test_academy_no_hardcoded_nlp).
 IMAGE_OUTPUT_MARKERS = ("이미지", "사진", "png", "달력", "캘린더")
 CARD_OUTPUT_MARKERS = ("카드", "관리카드", "학생관리")
 

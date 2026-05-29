@@ -13,6 +13,11 @@ from typing import Any
 
 from . import semantic_intents
 
+# EMERGENCY FALLBACK ONLY — keyword markers used solely when semantic_intents
+# returns None (no embedding provider / routing disabled / ambiguous). The
+# primary intent path is embedding similarity over LOGIN_INTENTS below; these
+# substrings must never be the primary classifier. Do not add keyword lists
+# like these as a primary routing path (see test_academy_no_hardcoded_nlp).
 ACADEMY_MARKERS = ("paca", "peak", "파카", "피크", "학원", "학원관리", "academy")
 LOGIN_MARKERS = ("로그인", "연결", "연동", "인증", "계정", "바인딩", "login", "connect", "link")
 LOGIN_REQUEST_MARKERS = (
