@@ -1366,7 +1366,37 @@ except Exception:
     }
     
     Pop-Location
-    
+
+    # Pre-download the on-device embedding model so first use isn't blocked by a
+    # ~2GB download. Best-effort: skips cleanly if fastembed isn't installed
+    # (keyword fallback stays active) and never fails the install.
+    if ($env:MIHO_SKIP_MODEL_PREFETCH -eq "1") {
+        Write-Info "Skipping embedding model prefetch (MIHO_SKIP_MODEL_PREFETCH=1)"
+    } elseif (Test-Path $pythonExe) {
+        $prevEAPpf = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & $pythonExe -c "import fastembed" 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Info "Prefetching on-device embedding model (one-time ~2GB; enables keyless semantic routing)..."
+            $prefetchPy = @"
+import os
+from fastembed import TextEmbedding
+name = os.getenv("MIHO_LOCAL_EMBEDDING_MODEL", "").strip() or "intfloat/multilingual-e5-large"
+TextEmbedding(name)
+print(f"  embedding model ready: {name}")
+"@
+            & $pythonExe -c $prefetchPy
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Embedding model prefetched"
+            } else {
+                Write-Warn "Embedding model prefetch failed -- it will download on first use"
+            }
+        } else {
+            Write-Info "fastembed not installed -- embedding model prefetch skipped (keyword fallback active)"
+        }
+        $ErrorActionPreference = $prevEAPpf
+    }
+
     Write-Success "All dependencies installed"
 }
 
