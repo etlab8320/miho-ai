@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root{
+    --hanwha:#ff5a00; --hanwha-deep:#e64500; --ink:#16140f; --muted:#8a8275;
+    --cream:#fff8f2; --card:#ffffff; --line:#f0e7dd; --ssg:#c8102e; --gold:#f4b740;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:"Pretendard","Apple SD Gothic Neo",sans-serif;background:#ece8e3;
+    -webkit-font-smoothing:antialiased;}
+  .card{width:1080px;height:1350px;margin:0 auto;background:var(--cream);position:relative;overflow:hidden;
+    display:flex;flex-direction:column;}
+  /* top bar */
+  .top{display:flex;justify-content:space-between;align-items:center;padding:38px 56px 0;}
+  .league{display:flex;align-items:center;gap:12px;font-weight:800;font-size:22px;letter-spacing:-.01em;color:var(--ink);}
+  .league .kbo{background:var(--ink);color:#fff;padding:6px 14px;border-radius:8px;font-size:18px;}
+  .date{font-size:20px;font-weight:700;color:var(--muted);}
+  /* headline */
+  .headline{padding:30px 56px 0;}
+  .kicker{display:inline-block;background:var(--hanwha);color:#fff;font-weight:800;font-size:21px;
+    padding:8px 18px;border-radius:999px;letter-spacing:-.01em;}
+  .htext{margin-top:20px;font-size:74px;font-weight:900;line-height:1.04;letter-spacing:-.035em;color:var(--ink);}
+  .htext em{color:var(--hanwha);font-style:normal;}
+  /* score hero */
+  .hero{margin:46px 56px 0;background:var(--card);border-radius:28px;padding:42px 46px;position:relative;
+    box-shadow:0 30px 60px -32px rgba(255,90,0,.35),0 2px 6px rgba(0,0,0,.04);
+    display:flex;align-items:center;justify-content:space-between;}
+  .team{display:flex;flex-direction:column;align-items:center;gap:10px;width:300px;}
+  .team .badge{width:96px;height:96px;border-radius:24px;display:flex;align-items:center;justify-content:center;
+    font-weight:900;font-size:40px;color:#fff;letter-spacing:-.03em;}
+  .team.h .badge{background:linear-gradient(135deg,var(--hanwha),var(--hanwha-deep));}
+  .team.s .badge{background:linear-gradient(135deg,#d11f3a,#8f0c20);}
+  .team .name{font-size:30px;font-weight:800;color:var(--ink);}
+  .team .tag{font-size:17px;font-weight:700;}
+  .team.h .tag{color:var(--hanwha);}
+  .team.s .tag{color:var(--muted);}
+  .score{display:flex;align-items:center;gap:22px;}
+  .score .n{font-size:128px;font-weight:900;line-height:1;letter-spacing:-.05em;font-variant-numeric:tabular-nums;}
+  .score .n.win{color:var(--hanwha);}
+  .score .n.lose{color:#cfc6ba;}
+  .score .vs{font-size:30px;font-weight:800;color:#d8cfc3;}
+  .final{position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+    font-size:15px;font-weight:800;padding:6px 16px;border-radius:999px;letter-spacing:.04em;}
+  /* key players */
+  .players{display:flex;gap:22px;margin:26px 56px 0;}
+  .pl{flex:1;height:230px;border-radius:24px;position:relative;overflow:hidden;
+    display:flex;flex-direction:column;justify-content:flex-end;padding:24px;color:#fff;}
+  .pl.a{background:linear-gradient(160deg,#ff7a2e 0%,var(--hanwha) 55%,var(--hanwha-deep) 100%);}
+  .pl.b{background:linear-gradient(160deg,#ff8c42 0%,#ff5a00 55%,#c83b00 100%);}
+  .pl .num{position:absolute;top:-18px;right:8px;font-size:170px;font-weight:900;color:rgba(255,255,255,.16);
+    line-height:1;letter-spacing:-.05em;}
+  .pl .role{font-size:17px;font-weight:800;opacity:.95;letter-spacing:.02em;}
+  .pl .pname{font-size:40px;font-weight:900;letter-spacing:-.03em;margin-top:2px;}
+  .pl .stat{font-size:19px;font-weight:700;opacity:.96;margin-top:6px;}
+  /* timeline */
+  .flow{margin:28px 56px 0;}
+  .flow h3{font-size:21px;font-weight:900;color:var(--ink);letter-spacing:-.02em;margin-bottom:14px;
+    display:flex;align-items:center;gap:10px;}
+  .flow h3::before{content:"";width:8px;height:24px;background:var(--hanwha);border-radius:3px;}
+  .row{display:flex;align-items:center;gap:18px;padding:15px 20px;background:var(--card);border-radius:16px;
+    margin-bottom:10px;border:1px solid var(--line);}
+  .row .inn{font-size:18px;font-weight:900;color:var(--hanwha);width:58px;font-variant-numeric:tabular-nums;}
+  .row .desc{font-size:21px;font-weight:600;color:var(--ink);flex:1;letter-spacing:-.01em;}
+  .row .desc b{font-weight:800;}
+  .row .pts{font-size:19px;font-weight:900;color:var(--ink);font-variant-numeric:tabular-nums;}
+  /* bottom */
+  .bottom{margin-top:auto;padding:24px 56px 30px;display:flex;justify-content:space-between;align-items:flex-end;}
+  .pitcher{background:linear-gradient(135deg,var(--ink),#2c2a24);color:#fff;border-radius:18px;padding:18px 26px;}
+  .pitcher .t{font-size:15px;font-weight:700;color:var(--gold);letter-spacing:.03em;}
+  .pitcher .v{font-size:24px;font-weight:900;margin-top:4px;letter-spacing:-.02em;}
+  .pitcher .v small{font-size:17px;font-weight:700;color:#c9c4ba;}
+  .ssg{text-align:right;}
+  .ssg .streak{font-size:17px;font-weight:800;color:var(--ssg);}
+  .ssg .src{font-size:14px;font-weight:600;color:var(--muted);margin-top:8px;}
+  .ssg .src b{color:var(--ink);}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="top">
+      <div class="league"><span class="kbo">KBO</span> 2026 정규시즌</div>
+      <div class="date">05.29 · 대전 한화생명 볼파크</div>
+    </div>
+
+    <div class="headline">
+      <span class="kicker">⚾ 투런포 두 방, 그대로 끝냈다</span>
+      <div class="htext"><em>한화</em>, 2연속 투런포로<br>SSG를 잡았다</div>
+    </div>
+
+    <div class="hero">
+      <span class="final">FINAL</span>
+      <div class="team h">
+        <div class="badge">한화</div>
+        <div class="name">한화 이글스</div>
+        <div class="tag">2연승 · 단독 5위</div>
+      </div>
+      <div class="score">
+        <span class="n win">4</span>
+        <span class="vs">:</span>
+        <span class="n lose">3</span>
+      </div>
+      <div class="team s">
+        <div class="badge">SSG</div>
+        <div class="name">SSG 랜더스</div>
+        <div class="tag">10연패</div>
+      </div>
+    </div>
+
+    <div class="players">
+      <div class="pl a">
+        <div class="num">10</div>
+        <div class="role">5회말 · 선제 투런포</div>
+        <div class="pname">허인서</div>
+        <div class="stat">시즌 10호 홈런 · 결정적 한 방</div>
+      </div>
+      <div class="pl b">
+        <div class="num">12</div>
+        <div class="role">6회말 · 쐐기 투런포</div>
+        <div class="pname">강백호</div>
+        <div class="stat">시즌 12호 홈런 · 4:1 리드</div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <h3>경기 흐름</h3>
+      <div class="row"><span class="inn">5회말</span><span class="desc"><b>허인서</b> 투런포 — 한화 선제</span><span class="pts">2 : 0</span></div>
+      <div class="row"><span class="inn">6회말</span><span class="desc"><b>강백호</b> 투런포 — 리드 확대</span><span class="pts">4 : 1</span></div>
+      <div class="row"><span class="inn">7회초</span><span class="desc"><b>오태곤</b> 투런포 — SSG 추격</span><span class="pts">4 : 3</span></div>
+      <div class="row"><span class="inn">9회</span><span class="desc"><b>심우준</b> 결정적 유격수 수비로 마무리</span><span class="pts">경기 종료</span></div>
+    </div>
+
+    <div class="bottom">
+      <div class="pitcher">
+        <div class="t">승리투수 · 선발</div>
+        <div class="v">오웬 화이트 <small>7이닝 6K 3실점 (4피안타·2BB)</small></div>
+      </div>
+      <div class="ssg">
+        <div class="streak">SSG, 신세계 인수 후 구단 최다 10연패</div>
+        <div class="src"><b>Miho AI</b> · 출처 스타뉴스 · 2026.05.29</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

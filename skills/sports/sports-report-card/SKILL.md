@@ -56,12 +56,21 @@ MEDIA:/absolute/path/to/report.png
 
 ## Style direction
 
-For Korean baseball, use a sharp sports-broadcast card, not a generic infographic.
+밝고 트렌디한 스포츠 매거진 / 스포츠신문 1면 감성으로. 젊고 세련되게.
+A bright, trendy sports-magazine cover — NOT a dark, heavy broadcast card.
 
-- Strong team color accents, but keep the base clean.
-- Use real baseball texture sparingly: field lines, scorebug, dugout/photo panels.
-- Prefer editorial density over cute decoration.
-- Cards should feel like a professional sports media graphic.
+- **밝은 베이스가 기본** (화이트/크림/연한 톤). 어두운 배경은 사용자가 명시적으로 요청할 때만 — 기본은 밝게.
+- **비비드한 팀 컬러 액센트** + 큰 임팩트 타이포 (스코어·팀명은 크고 대담하게). 칙칙·어두운 톤 지양.
+- **키 플레이어 사진을 크게** — hero에 1~2명 사진 슬롯을 시원하게 배치. 사진 위에 팀 컬러 그라데이션 오버레이를 깔아 텍스트 가독성 확보 (트렌디 스포츠카드 표준 기법).
+  - 안전하게 쓸 사진 소스가 없으면 사진을 지어내지 말고 팀 컬러 그라데이션 + 등번호/이름 대형 타이포 + 실루엣으로 대체 (그래도 충분히 임팩트 있게).
+- 충분한 여백 + 모던 그리드. cute decoration 말고 editorial 한 밀도.
+- 마무리 느낌: "스포츠신문 1면처럼 임팩트 있고 젊고 트렌디" — 30대 이하가 봐도 세련됐다고 느끼게.
+
+## Example
+
+`example-trendy.html` 은 목표로 하는 밝고 트렌디한 룩의 레퍼런스다 (KBO 경기 리뷰 카드).
+밝은 크림 베이스 + 비비드한 팀 컬러 + 큰 임팩트 타이포 + 등번호 워터마크형 키플레이어 카드.
+이 톤·레이아웃 감각을 참고하되, **점수·선수·기록 데이터는 매 경기 실제 값으로 교체**하고 예시의 값을 절대 재사용하지 마라.
 
 ## Guardrails
 
