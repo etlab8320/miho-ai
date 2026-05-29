@@ -410,8 +410,11 @@ def _resolved_args(tool_name: str, args: dict[str, Any], context_key: str | None
     for name in INHERITABLE_ENTITY_ARGS:
         if name in contract_args and _is_blank(resolved.get(name)) and not _is_blank(context.get(name)):
             resolved[name] = context[name]
-    # Carry the date range forward for range queries (preserves prior behaviour).
-    if "start_date" in contract_args:
+    # Carry the date range forward only for subject-scoped queries (a student's
+    # or staff's range). Subject-less tools like academy_schedule_range must not
+    # inherit a prior student's window, so gate on having an entity arg.
+    has_entity_arg = any(name in contract_args for name in INHERITABLE_ENTITY_ARGS)
+    if has_entity_arg and "start_date" in contract_args:
         if _is_blank(resolved.get("start_date")) and context.get("start_date"):
             resolved["start_date"] = context["start_date"]
         if _is_blank(resolved.get("end_date")) and context.get("end_date"):

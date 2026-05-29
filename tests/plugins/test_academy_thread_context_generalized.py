@@ -100,6 +100,35 @@ def test_staff_query_inheritance_preserved():
     assert resolved["start_date"] == "2026-05-01"
 
 
+def test_subjectless_schedule_does_not_inherit_student_dates():
+    # A whole-academy schedule query has no entity arg; it must NOT pick up a
+    # prior student's date window.
+    key = "k"
+    tc.remember_thread_context(
+        key,
+        tool_name="academy_student_attendance_range",
+        args={"student_query": "서하", "start_date": "2026-05-25", "end_date": "2026-05-31"},
+        payload={"ok": True},
+    )
+    resolved = _resolved_args("academy_schedule_range", {}, key)
+    assert not resolved.get("start_date")
+    assert not resolved.get("end_date")
+
+
+def test_student_range_still_inherits_dates():
+    # Subject-scoped range query keeps the prior date window (preserved behaviour).
+    key = "k"
+    tc.remember_thread_context(
+        key,
+        tool_name="academy_student_attendance_range",
+        args={"student_query": "서하", "start_date": "2026-05-25", "end_date": "2026-05-31"},
+        payload={"ok": True},
+    )
+    resolved = _resolved_args("academy_student_attendance_range", {"student_query": "민준"}, key)
+    assert resolved["start_date"] == "2026-05-25"
+    assert resolved["end_date"] == "2026-05-31"
+
+
 def test_cross_subject_args_do_not_leak():
     # A staff subject must never fill a student_query slot (key names gate it).
     key = "k"
