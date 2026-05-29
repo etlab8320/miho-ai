@@ -525,7 +525,12 @@ class BaseEnvironment(ABC):
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
         def _drain():
-            fd = proc.stdout.fileno()
+            try:
+                fd = proc.stdout.fileno()
+            except (AttributeError, ValueError, OSError):
+                # stdout has no real fd (already closed, or a test double) —
+                # exit quietly instead of crashing this daemon thread.
+                return
             # select.select does NOT work on pipe fds on Windows (only sockets).
             # Use blocking os.read in a daemon thread instead — safe because
             # EOF arrives promptly when bash exits.
