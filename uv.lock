@@ -2119,7 +2119,7 @@ wheels = [
 
 [[package]]
 name = "miho-agent"
-version = "0.15.56"
+version = "0.15.57"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },
