@@ -224,6 +224,36 @@ async def test_streaming_delivery_routes_telegram_mp3_media_tag_to_voice_sender(
 
 
 @pytest.mark.asyncio
+async def test_streaming_delivery_routes_markdown_image_to_batch_sender():
+    event = _event(thread_id="topic-1")
+    adapter = SimpleNamespace(
+        name="test",
+        extract_media=BasePlatformAdapter.extract_media,
+        extract_images=BasePlatformAdapter.extract_images,
+        extract_local_files=BasePlatformAdapter.extract_local_files,
+        send_multiple_images=AsyncMock(return_value=None),
+        send_voice=AsyncMock(return_value=SendResult(success=True, message_id="voice")),
+        send_document=AsyncMock(return_value=SendResult(success=True, message_id="doc")),
+        send_image_file=AsyncMock(return_value=SendResult(success=True, message_id="image")),
+        send_video=AsyncMock(return_value=SendResult(success=True, message_id="video")),
+    )
+
+    await GatewayRunner._deliver_media_from_response(
+        _fake_runner({"thread_id": "topic-1"}),
+        "완성했어.\n![generated image](https://fal.media/generated.png)",
+        event,
+        adapter,
+    )
+
+    adapter.send_multiple_images.assert_awaited_once_with(
+        chat_id="chat-1",
+        images=[("https://fal.media/generated.png", "generated image")],
+        metadata={"thread_id": "topic-1"},
+    )
+    adapter.send_document.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_streaming_delivery_blocks_media_path_outside_allowed_roots(tmp_path, monkeypatch):
     event = _event(thread_id="topic-1")
     allowed_root = tmp_path / "media-cache"

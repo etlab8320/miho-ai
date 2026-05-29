@@ -11507,7 +11507,7 @@ class GatewayRunner:
 
             media_files, _ = adapter.extract_media(response)
             media_files = BasePlatformAdapter.filter_media_delivery_paths(media_files)
-            _, cleaned = adapter.extract_images(response)
+            images, cleaned = adapter.extract_images(response)
             local_files, _ = adapter.extract_local_files(cleaned)
             local_files = BasePlatformAdapter.filter_local_delivery_paths(local_files)
 
@@ -11538,6 +11538,16 @@ class GatewayRunner:
                     image_paths.append(file_path)
                 else:
                     non_image_local.append(file_path)
+
+            if images:
+                try:
+                    await adapter.send_multiple_images(
+                        chat_id=event.source.chat_id,
+                        images=images,
+                        metadata=_thread_meta,
+                    )
+                except Exception as e:
+                    logger.warning("[%s] Post-stream URL image delivery failed: %s", adapter.name, e)
 
             if image_paths:
                 try:
@@ -17171,47 +17181,16 @@ class GatewayRunner:
                     "context_length": _context_length,
                 }
             
-            # Scan tool results for MEDIA:<path> tags that need to be delivered
-            # as native audio/file attachments.  The TTS tool embeds MEDIA: tags
-            # in its JSON response, but the model's final text reply usually
-            # doesn't include them.  We collect unique tags from tool results and
-            # append any that aren't already present in the final response, so the
-            # adapter's extract_media() can find and deliver the files exactly once.
-            #
-            # Uses path-based deduplication against _history_media_paths (collected
-            # before run_conversation) instead of index slicing. This is safe even
-            # when context compression shrinks the message list. (Fixes #160)
-            if "MEDIA:" not in final_response:
-                media_tags = []
-                has_voice_directive = False
-                for msg in result.get("messages", []):
-                    if msg.get("role") in {"tool", "function"}:
-                        content = msg.get("content", "")
-                        if "MEDIA:" in content:
-                            _TOOL_MEDIA_RE = re.compile(
-                                r'MEDIA:((?:/|~\/)\S+\.(?:png|jpe?g|gif|webp|'
-                                r'mp4|mov|avi|mkv|webm|ogg|opus|mp3|wav|m4a|'
-                                r'flac|epub|pdf|zip|rar|7z|docx?|xlsx?|pptx?|'
-                                r'txt|csv|apk|ipa))',
-                                re.IGNORECASE
-                            )
-                            for match in _TOOL_MEDIA_RE.finditer(content):
-                                path = match.group(1).strip().rstrip('",}')
-                                if path and path not in _history_media_paths:
-                                    media_tags.append(f"MEDIA:{path}")
-                            if "[[audio_as_voice]]" in content:
-                                has_voice_directive = True
-                
-                if media_tags:
-                    seen = set()
-                    unique_tags = []
-                    for tag in media_tags:
-                        if tag not in seen:
-                            seen.add(tag)
-                            unique_tags.append(tag)
-                    if has_voice_directive:
-                        unique_tags.insert(0, "[[audio_as_voice]]")
-                    final_response = final_response + "\n" + "\n".join(unique_tags)
+            # Promote media references produced by tools but omitted from the
+            # final text. TTS returns MEDIA tags; image_generate returns a JSON
+            # image URL/path. Both must still be delivered as native attachments.
+            from gateway.generated_media import append_missing_generated_media_directives
+
+            final_response = append_missing_generated_media_directives(
+                final_response,
+                result.get("messages", []),
+                history_media_paths=_history_media_paths,
+            )
             
             # Sync session_id: the agent may have created a new session during
             # mid-run context compression (_compress_context splits sessions).
