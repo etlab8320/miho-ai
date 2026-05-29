@@ -18,6 +18,7 @@ from gateway.discord_workspace_archive import (
     archive_workspace_for_thread,
 )
 from gateway.discord_workspace_paths import (
+    append_jsonl_locked,
     clean_component,
     discord_root,
     utc_now,
@@ -211,17 +212,7 @@ def _timestamp_fields(timestamp: Any = None) -> dict[str, str]:
 
 
 def _append_message(path: Path, record: dict[str, Any]) -> int:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    count = 0
-    if path.exists():
-        try:
-            with path.open("r", encoding="utf-8") as fh:
-                count = sum(1 for _ in fh)
-        except OSError:
-            count = 0
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
-    return count + 1
+    return append_jsonl_locked(path, record)
 
 
 def _recent_messages(path: Path, limit: int = _MAX_CONTEXT_MESSAGES) -> list[dict[str, Any]]:
