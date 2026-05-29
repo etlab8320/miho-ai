@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import uuid
 
 
 class StudentCardCaptureError(RuntimeError):
@@ -20,6 +21,33 @@ def capture_html_to_png(html_path: Path, image_path: Path, *, width: int = 1200,
             "학생카드 이미지를 만들 브라우저를 찾지 못했어. Chrome 또는 Edge 설치가 필요해."
         )
     image_path.parent.mkdir(parents=True, exist_ok=True)
+    result = _run_capture(browser, html_path, image_path, width=width, height=height)
+    if result.returncode == 0 and image_path.exists():
+        return
+
+    if _should_retry_with_home_staging(image_path):
+        staged_path = _home_staging_path(image_path)
+        staged_path.parent.mkdir(parents=True, exist_ok=True)
+        staged_result = _run_capture(browser, html_path, staged_path, width=width, height=height)
+        if staged_result.returncode == 0 and staged_path.exists():
+            shutil.copy2(staged_path, image_path)
+            try:
+                staged_path.unlink()
+            except OSError:
+                pass
+            return
+
+    _raise_capture_error(result)
+
+
+def _run_capture(
+    browser: str,
+    html_path: Path,
+    image_path: Path,
+    *,
+    width: int,
+    height: int,
+) -> subprocess.CompletedProcess[str]:
     command = [
         browser,
         "--headless=new",
@@ -36,13 +64,24 @@ def capture_html_to_png(html_path: Path, image_path: Path, *, width: int = 1200,
     if sys.platform.startswith("linux"):
         command.insert(1, "--no-sandbox")
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+        return subprocess.run(command, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise StudentCardCaptureError("학생카드 이미지 캡처가 시간 안에 끝나지 않았어.") from exc
-    if result.returncode != 0 or not image_path.exists():
-        detail = (result.stderr or result.stdout or "").strip()
-        suffix = f" ({detail[:160]})" if detail else ""
-        raise StudentCardCaptureError(f"학생카드 이미지 캡처에 실패했어.{suffix}")
+
+
+def _should_retry_with_home_staging(image_path: Path) -> bool:
+    return any(part.startswith(".") for part in image_path.expanduser().parts)
+
+
+def _home_staging_path(image_path: Path) -> Path:
+    suffix = image_path.suffix or ".png"
+    return Path.home() / "miho_chromium_captures" / f"{image_path.stem}-{uuid.uuid4().hex}{suffix}"
+
+
+def _raise_capture_error(result: subprocess.CompletedProcess[str]) -> None:
+    detail = (result.stderr or result.stdout or "").strip()
+    suffix = f" ({detail[:160]})" if detail else ""
+    raise StudentCardCaptureError(f"학생카드 이미지 캡처에 실패했어.{suffix}")
 
 
 def find_browser_executable() -> str | None:
