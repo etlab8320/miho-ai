@@ -49,9 +49,9 @@ from .response_synthesis import compact_payload, synthesize_or_fallback
 from .route_overrides import forced_tool_for_output_request, should_render_attendance_day_image
 from .routing_decision import reject_execute_reason
 from .thread_context import (
+    INHERITABLE_ENTITY_ARGS,
     MONTHLY_TEST_CONTEXT_TOOLS,
-    STAFF_CONTEXT_TOOLS,
-    STUDENT_CONTEXT_TOOLS,
+    _is_blank,
     get_thread_context,
     pop_pending_request,
     remember_pending_request,
@@ -366,6 +366,8 @@ def _resolver_messages(
                 "미체크 날짜만 원할 때는 unchecked_dates를 써. "
                 "학생의 실기, 측정, 수행, 종목별 기록 조회는 academy_student_record_lookup을 써. "
                 "월별 또는 정기 실기 평가의 남녀 평균, 참가자 집계, 순위, 학교 제외 계산은 academy_monthly_test_records를 써. "
+                "event_query에는 순수 종목명만 넣어. 테스트명, 성별, 월, 평균/순위 같은 수식어는 빼고 "
+                "측정 종목 그 자체만 넣고, 종목을 특정할 수 없으면 빈 문자열로 둬. "
                 "학생 수행 기록 요청을 출석 기록, 강사 출근, 운동계획서 조회로 바꾸지 마. "
                 "직전 학원업무 맥락이 있고 현재 요청이 후속 질문이면 그 맥락의 학생/기간을 이어받아. "
                 "직전 맥락이 pending_request이고 현재 요청이 로그인 완료/재시도 후속이면 "
@@ -392,38 +394,35 @@ def _resolver_messages(
 
 
 def _resolved_args(tool_name: str, args: dict[str, Any], context_key: str | None) -> dict[str, Any]:
-    if (
-        tool_name not in STUDENT_CONTEXT_TOOLS
-        and tool_name not in STAFF_CONTEXT_TOOLS
-        and tool_name not in MONTHLY_TEST_CONTEXT_TOOLS
-    ):
-        return args
+    """Fill args a follow-up question left implicit from the last academy turn.
+
+    Generalised across all tools via TOOL_CONTRACTS: any inheritable entity arg
+    (student/staff/event/trainer) the current tool declares but the user omitted
+    is carried over from the prior context. Previously only 7 whitelisted tools
+    did this, so follow-ups after e.g. a record lookup lost their subject.
+    """
     context = get_thread_context(context_key)
     if not context:
         return args
+    contract_args = TOOL_CONTRACTS.get(tool_name, {}).get("args", [])
     resolved = dict(args)
-    if tool_name in MONTHLY_TEST_CONTEXT_TOOLS:
-        if context.get("kind") == "monthly_test":
-            if not str(resolved.get("event_query") or "").strip():
-                resolved["event_query"] = context.get("event_query", "")
-            # 직전과 같은 테스트를 이어보도록, 명시 안 된 경우에만 test_id/test_month 승계.
-            if resolved.get("test_id") is None and not str(resolved.get("test_month") or "").strip():
-                if context.get("test_id") is not None:
-                    resolved["test_id"] = context["test_id"]
-                elif context.get("test_month"):
-                    resolved["test_month"] = context["test_month"]
-        return resolved
-    if tool_name in STAFF_CONTEXT_TOOLS:
-        if not str(resolved.get("staff_query") or "").strip() and context.get("kind") == "staff":
-            resolved["staff_query"] = context.get("staff_query", "")
-        return resolved
-    if not str(resolved.get("student_query") or "").strip():
-        resolved["student_query"] = context.get("student_query", "")
-    if "start_date" in TOOL_CONTRACTS.get(tool_name, {}).get("args", []):
-        if not str(resolved.get("start_date") or "").strip() and context.get("start_date"):
+    # Carry the subject (학생/강사/종목/트레이너) into follow-ups that omit it.
+    for name in INHERITABLE_ENTITY_ARGS:
+        if name in contract_args and _is_blank(resolved.get(name)) and not _is_blank(context.get(name)):
+            resolved[name] = context[name]
+    # Carry the date range forward for range queries (preserves prior behaviour).
+    if "start_date" in contract_args:
+        if _is_blank(resolved.get("start_date")) and context.get("start_date"):
             resolved["start_date"] = context["start_date"]
-        if not str(resolved.get("end_date") or "").strip() and context.get("end_date"):
+        if _is_blank(resolved.get("end_date")) and context.get("end_date"):
             resolved["end_date"] = context["end_date"]
+    # Monthly test: keep looking at the same test when not re-specified.
+    if "test_id" in contract_args and "test_month" in contract_args:
+        if resolved.get("test_id") is None and _is_blank(resolved.get("test_month")):
+            if context.get("test_id") is not None:
+                resolved["test_id"] = context["test_id"]
+            elif context.get("test_month"):
+                resolved["test_month"] = context["test_month"]
     return resolved
 
 

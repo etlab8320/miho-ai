@@ -19,8 +19,26 @@ STAFF_CONTEXT_TOOLS = {
 MONTHLY_TEST_CONTEXT_TOOLS = {
     "academy_monthly_test_records",
 }
+# Entity args a follow-up question naturally inherits when left unspecified
+# ("그 학생", "여자 평균은?"): the subject carries over from the last turn. The
+# key name encodes meaning, so inheritance only fires between tools that share
+# the arg — student_query never leaks into a staff query, etc. Relative dates
+# are intentionally excluded (carrying "오늘" into "내일은?" would be wrong);
+# only student-range periods carry over, preserving prior behaviour.
+INHERITABLE_ENTITY_ARGS = (
+    "student_query",
+    "staff_query",
+    "event_query",
+    "trainer_query",
+)
 CONTEXT_TTL = timedelta(minutes=30)
 _CONTEXTS: dict[str, dict[str, Any]] = {}
+
+
+def _is_blank(value: Any) -> bool:
+    if value is None:
+        return True
+    return not str(value).strip()
 
 
 def academy_context_key(event: Any) -> str:
@@ -64,8 +82,19 @@ def remember_thread_context(
     if tool_name in STAFF_CONTEXT_TOOLS:
         _remember_staff_context(key, tool_name=tool_name, args=args, payload=payload)
         return
-    if tool_name not in STUDENT_CONTEXT_TOOLS:
+    if tool_name in STUDENT_CONTEXT_TOOLS:
+        _remember_student_context(key, tool_name=tool_name, args=args, payload=payload)
         return
+    _remember_generic_context(key, tool_name=tool_name, args=args)
+
+
+def _remember_student_context(
+    key: str,
+    *,
+    tool_name: str,
+    args: dict[str, Any],
+    payload: dict[str, Any],
+) -> None:
     student = payload.get("student") if isinstance(payload.get("student"), dict) else {}
     card = payload.get("card") if isinstance(payload.get("card"), dict) else {}
     profile = card.get("profile") if isinstance(card.get("profile"), dict) else {}
@@ -83,6 +112,31 @@ def remember_thread_context(
         "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
         "updated_at": datetime.now(timezone.utc),
     }
+
+
+def _remember_generic_context(key: str, *, tool_name: str, args: dict[str, Any]) -> None:
+    """Remember entity args from any other successful tool so follow-ups can
+    inherit them (e.g. record-lookup → '여자 평균은?'). Tools that carry no
+    inheritable entity (e.g. a whole-day attendance lookup) leave the existing
+    context untouched, so an unrelated turn never wipes the active subject.
+    """
+    entities = {
+        name: str(args.get(name)).strip()
+        for name in INHERITABLE_ENTITY_ARGS
+        if not _is_blank(args.get(name))
+    }
+    if not entities:
+        return
+    record: dict[str, Any] = {
+        "kind": "generic",
+        "tool": tool_name,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    record.update(entities)
+    for date_key in ("start_date", "end_date"):
+        if not _is_blank(args.get(date_key)):
+            record[date_key] = str(args[date_key]).strip()
+    _CONTEXTS[key] = record
 
 
 def _remember_monthly_test_context(
