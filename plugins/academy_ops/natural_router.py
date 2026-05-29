@@ -49,6 +49,7 @@ from .response_synthesis import compact_payload, synthesize_or_fallback
 from .route_overrides import forced_tool_for_output_request, should_render_attendance_day_image
 from .routing_decision import reject_execute_reason
 from .thread_context import (
+    MONTHLY_TEST_CONTEXT_TOOLS,
     STAFF_CONTEXT_TOOLS,
     STUDENT_CONTEXT_TOOLS,
     get_thread_context,
@@ -389,12 +390,27 @@ def _resolver_messages(
 
 
 def _resolved_args(tool_name: str, args: dict[str, Any], context_key: str | None) -> dict[str, Any]:
-    if tool_name not in STUDENT_CONTEXT_TOOLS and tool_name not in STAFF_CONTEXT_TOOLS:
+    if (
+        tool_name not in STUDENT_CONTEXT_TOOLS
+        and tool_name not in STAFF_CONTEXT_TOOLS
+        and tool_name not in MONTHLY_TEST_CONTEXT_TOOLS
+    ):
         return args
     context = get_thread_context(context_key)
     if not context:
         return args
     resolved = dict(args)
+    if tool_name in MONTHLY_TEST_CONTEXT_TOOLS:
+        if context.get("kind") == "monthly_test":
+            if not str(resolved.get("event_query") or "").strip():
+                resolved["event_query"] = context.get("event_query", "")
+            # 직전과 같은 테스트를 이어보도록, 명시 안 된 경우에만 test_id/test_month 승계.
+            if resolved.get("test_id") is None and not str(resolved.get("test_month") or "").strip():
+                if context.get("test_id") is not None:
+                    resolved["test_id"] = context["test_id"]
+                elif context.get("test_month"):
+                    resolved["test_month"] = context["test_month"]
+        return resolved
     if tool_name in STAFF_CONTEXT_TOOLS:
         if not str(resolved.get("staff_query") or "").strip() and context.get("kind") == "staff":
             resolved["staff_query"] = context.get("staff_query", "")

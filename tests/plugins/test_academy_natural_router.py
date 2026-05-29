@@ -433,3 +433,69 @@ async def test_daily_attendance_focus_labels_future_classes_as_scheduled() -> No
     assert route == AcademyNaturalRoute.HANDLED
     assert "05/04 월: 예정 / 저녁반" in route.response_text
     assert "05/04 월: 미체크" not in route.response_text
+
+
+@pytest.mark.asyncio
+async def test_monthly_test_followup_reuses_thread_context() -> None:
+    """월말테스트 평균 후 '문산제일고 빼면?' 후속이 직전 test/종목을 이어받아야 한다.
+
+    회귀 방지: monthly_test_records가 thread_context 화이트리스트에서 빠져
+    후속 질문이 직전 테스트·종목을 잃어버리던 버그(2026-05-30).
+    """
+    calls: list[dict] = []
+
+    async def first_resolver(_: list[dict[str, str]]) -> object:
+        return _Response(
+            router_execute(
+                "academy_monthly_test_records",
+                {"event_query": "제멀", "test_id": 13},
+                confidence=0.95,
+            )
+        )
+
+    async def followup_resolver(messages: list[dict[str, str]]) -> object:
+        # 직전 monthly_test 맥락이 라우터 프롬프트에 주입돼야 한다.
+        assert '"event_query": "제멀"' in messages[1]["content"]
+        return _Response(
+            router_execute(
+                "academy_monthly_test_records",
+                {"event_query": "", "exclude_schools": ["문산제일고"]},
+                confidence=0.92,
+            )
+        )
+
+    def handler(args: dict, **_: object) -> str:
+        calls.append(args)
+        return json.dumps(
+            {
+                "ok": True,
+                "test": {"id": 13, "test_month": "2026-05"},
+                "event": {"id": 1, "name": "제자리멀리뛰기"},
+                "summary": {"male": {"count": 32, "average": 267.06}, "female": {"count": 16}},
+                "message": "2026년 5월 월말 테스트 제자리멀리뛰기 평균",
+            },
+            ensure_ascii=False,
+        )
+
+    await resolve_and_execute_academy_request(
+        "5월 월말테스트 제멀 평균",
+        resolver=first_resolver,
+        handlers={"academy_monthly_test_records": handler},
+        context_key="thread-mt",
+        today="2026-05-30",
+        synthesize=False,
+    )
+    route = await resolve_and_execute_academy_request(
+        "문산제일고 빼면?",
+        resolver=followup_resolver,
+        handlers={"academy_monthly_test_records": handler},
+        context_key="thread-mt",
+        today="2026-05-30",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.HANDLED
+    # 후속: event_query·test_id 는 직전에서 이어받고, exclude_schools 는 이번 요청에서.
+    assert calls[1]["event_query"] == "제멀"
+    assert calls[1]["test_id"] == 13
+    assert calls[1]["exclude_schools"] == ["문산제일고"]

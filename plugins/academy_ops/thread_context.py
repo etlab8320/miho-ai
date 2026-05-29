@@ -16,6 +16,9 @@ STUDENT_CONTEXT_TOOLS = {
 STAFF_CONTEXT_TOOLS = {
     "academy_staff_attendance_range",
 }
+MONTHLY_TEST_CONTEXT_TOOLS = {
+    "academy_monthly_test_records",
+}
 CONTEXT_TTL = timedelta(minutes=30)
 _CONTEXTS: dict[str, dict[str, Any]] = {}
 
@@ -55,6 +58,9 @@ def remember_thread_context(
 ) -> None:
     if not key or not payload.get("ok"):
         return
+    if tool_name in MONTHLY_TEST_CONTEXT_TOOLS:
+        _remember_monthly_test_context(key, tool_name=tool_name, args=args, payload=payload)
+        return
     if tool_name in STAFF_CONTEXT_TOOLS:
         _remember_staff_context(key, tool_name=tool_name, args=args, payload=payload)
         return
@@ -74,6 +80,28 @@ def remember_thread_context(
         "end_date": str(payload.get("end_date") or args.get("end_date") or ""),
         "today": str(args.get("today") or ""),
         "period_days": args.get("period_days"),
+        "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+
+def _remember_monthly_test_context(
+    key: str,
+    *,
+    tool_name: str,
+    args: dict[str, Any],
+    payload: dict[str, Any],
+) -> None:
+    event_query = str(args.get("event_query") or "").strip()
+    if not event_query:
+        return
+    test = payload.get("test") if isinstance(payload.get("test"), dict) else {}
+    _CONTEXTS[key] = {
+        "kind": "monthly_test",
+        "tool": tool_name,
+        "event_query": event_query,
+        "test_id": test.get("id"),
+        "test_month": str(test.get("test_month") or args.get("test_month") or ""),
         "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
         "updated_at": datetime.now(timezone.utc),
     }
