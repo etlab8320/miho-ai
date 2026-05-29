@@ -29,6 +29,9 @@ _TOOL_LOCAL_MEDIA_SAFE_PARTS = (
     "/.miho/discord_exports/",
 )
 _MEDIA_CACHE_DIR = get_miho_dir("cache/media", "media_cache") / "gateway_promoted"
+_RAW_MEDIA_TOOL_NAMES = {"tts", "text_to_speech", "text_to_speech_tool"}
+_MEDIA_TAG_KEYS = {"media_tag"}
+_MEDIA_PATH_KEYS = {"image_path", "file_path", "audio_path", "video_path", "document_path", "path"}
 
 
 def append_missing_generated_media_directives(
@@ -73,13 +76,20 @@ def _collect_missing_media_directives(
         if not content:
             continue
 
-        for media_path in _media_paths_from_tool_content(content):
-            if media_path and media_path not in history_media_paths:
-                directives.append(f"MEDIA:{media_path}")
-        for media_path in _local_media_paths_from_tool_content(content):
-            if media_path and media_path not in history_media_paths:
-                directives.append(f"MEDIA:{media_path}")
-        if "[[audio_as_voice]]" in content:
+        structured_directives = _structured_media_directives_from_tool_content(content)
+        directives.extend(
+            directive
+            for directive in structured_directives
+            if not _directive_matches_history(directive, history_media_paths)
+        )
+        if _should_scan_raw_tool_media(msg):
+            for media_path in _media_paths_from_tool_content(content):
+                if media_path and media_path not in history_media_paths:
+                    directives.append(f"MEDIA:{media_path}")
+            for media_path in _local_media_paths_from_tool_content(content):
+                if media_path and media_path not in history_media_paths:
+                    directives.append(f"MEDIA:{media_path}")
+        if "[[audio_as_voice]]" in content and (structured_directives or _should_scan_raw_tool_media(msg)):
             has_voice_directive = True
 
         if _is_image_generate_result(msg, content):
@@ -107,6 +117,58 @@ def _current_turn_messages(messages: Iterable[dict[str, Any]]) -> list[dict[str,
 
 def _strip_dangling_attachment_label(text: str) -> str:
     return re.sub(r"(?:\n\s*)+(?:첨부|이미지)\s*:\s*$", "", text).rstrip()
+
+
+def _structured_media_directives_from_tool_content(content: str) -> list[str]:
+    payload = _json_payload(content)
+    if not isinstance(payload, dict):
+        return []
+    directives: list[str] = []
+    for key in _MEDIA_TAG_KEYS:
+        value = payload.get(key)
+        if isinstance(value, str):
+            directives.extend(_media_tag_directives(value))
+    for key in _MEDIA_PATH_KEYS:
+        value = payload.get(key)
+        if isinstance(value, str):
+            directive = _safe_local_path_directive(value)
+            if directive:
+                directives.append(directive)
+    return directives
+
+
+def _json_payload(content: str) -> Any:
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return None
+
+
+def _media_tag_directives(value: str) -> list[str]:
+    directives: list[str] = []
+    if "[[audio_as_voice]]" in value:
+        directives.append("[[audio_as_voice]]")
+    for media_path in _media_paths_from_tool_content(value):
+        directives.append(f"MEDIA:{media_path}")
+    return directives
+
+
+def _safe_local_path_directive(value: str) -> str:
+    path = _clean_path(value)
+    if not _is_safe_generated_media_path(path):
+        return ""
+    delivery_path = _delivery_path_for_generated_media(path)
+    return f"MEDIA:{delivery_path}" if delivery_path else ""
+
+
+def _should_scan_raw_tool_media(msg: dict[str, Any]) -> bool:
+    return str(msg.get("tool_name") or msg.get("name") or "").strip() in _RAW_MEDIA_TOOL_NAMES
+
+
+def _directive_matches_history(directive: str, history_media_paths: set[str]) -> bool:
+    if not directive.startswith("MEDIA:"):
+        return False
+    return directive.removeprefix("MEDIA:") in history_media_paths
 
 
 def _media_paths_from_tool_content(content: str) -> list[str]:

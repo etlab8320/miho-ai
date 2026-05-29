@@ -93,8 +93,14 @@ def test_only_promotes_current_turn_tool_media(tmp_path, monkeypatch):
     old_image.write_bytes(b"old")
     current_image.write_bytes(b"current")
     monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", miho_home / "cache" / "media" / "gateway_promoted")
-    old_result = json.dumps({"ok": True, "message": f"예전 이미지\nMEDIA:{old_image}"}, ensure_ascii=False)
-    current_result = json.dumps({"ok": True, "message": f"현재 이미지\nMEDIA:{current_image}"}, ensure_ascii=False)
+    old_result = json.dumps(
+        {"ok": True, "message": f"예전 이미지\nMEDIA:{old_image}", "media_tag": f"MEDIA:{old_image}"},
+        ensure_ascii=False,
+    )
+    current_result = json.dumps(
+        {"ok": True, "message": f"현재 이미지\nMEDIA:{current_image}", "media_tag": f"MEDIA:{current_image}"},
+        ensure_ascii=False,
+    )
 
     response = append_missing_generated_media_directives(
         "상담 후보 5명 만들었어.",
@@ -145,6 +151,47 @@ def test_removes_dangling_attachment_label_when_appending_media():
 
     assert "첨부:" not in response
     assert response.endswith("MEDIA:/tmp/consultation-candidates.png")
+
+
+def test_ignores_media_paths_inside_current_turn_read_file_output(tmp_path, monkeypatch):
+    miho_home = tmp_path / ".miho"
+    old_image = miho_home / "cache" / "media" / "academy_attendance_days" / "old.png"
+    old_image.parent.mkdir(parents=True)
+    old_image.write_bytes(b"old")
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", miho_home / "cache" / "media" / "gateway_promoted")
+    tool_output = json.dumps(
+        {
+            "content": f"과거 답변: MEDIA:{old_image}\n또 다른 경로 {old_image}",
+            "total_lines": 1,
+        },
+        ensure_ascii=False,
+    )
+
+    response = append_missing_generated_media_directives(
+        "남학생 평균 267.8cm, 여학생 평균 216.3cm",
+        [_user_message("남여 제멀 평균 기록 부탁해"), _tool_message(tool_output, "read_file")],
+    )
+
+    assert response == "남학생 평균 267.8cm, 여학생 평균 216.3cm"
+
+
+def test_ignores_media_paths_inside_current_turn_execute_code_output(tmp_path, monkeypatch):
+    miho_home = tmp_path / ".miho"
+    old_image = miho_home / "cache" / "media" / "gateway_promoted" / "old.png"
+    old_image.parent.mkdir(parents=True)
+    old_image.write_bytes(b"old")
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", miho_home / "cache" / "media" / "gateway_promoted")
+    tool_output = json.dumps(
+        {"status": "success", "output": f"debug output includes {old_image}"},
+        ensure_ascii=False,
+    )
+
+    response = append_missing_generated_media_directives(
+        "평균 계산 완료",
+        [_user_message("평균 기록 부탁해"), _tool_message(tool_output, "execute_code")],
+    )
+
+    assert response == "평균 계산 완료"
 
 
 def test_ignores_bare_local_paths_outside_generated_media_roots(tmp_path):
