@@ -21,7 +21,7 @@ def capture_html_to_png(html_path: Path, image_path: Path, *, width: int = 1200,
             "학생카드 이미지를 만들 브라우저를 찾지 못했어. Chrome 또는 Edge 설치가 필요해."
         )
     image_path.parent.mkdir(parents=True, exist_ok=True)
-    if _should_use_home_staging(html_path, image_path):
+    if _should_use_home_staging(browser, html_path, image_path):
         staged_result = _capture_through_home_staging(
             browser, html_path, image_path, width=width, height=height
         )
@@ -90,8 +90,13 @@ def _run_capture(
         raise StudentCardCaptureError("학생카드 이미지 캡처가 시간 안에 끝나지 않았어.") from exc
 
 
-def _should_use_home_staging(html_path: Path, image_path: Path) -> bool:
-    return _path_has_hidden_part(html_path) or _path_has_hidden_part(image_path)
+def _should_use_home_staging(browser: str, html_path: Path, image_path: Path) -> bool:
+    return _browser_is_snap(browser) or _path_has_hidden_part(html_path) or _path_has_hidden_part(image_path)
+
+
+def _browser_is_snap(browser: str) -> bool:
+    resolved = Path(os.path.expanduser(browser))
+    return any(part == "snap" for part in resolved.parts)
 
 
 def _path_has_hidden_part(path: Path) -> bool:
