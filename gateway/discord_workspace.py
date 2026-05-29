@@ -27,7 +27,11 @@ from gateway.discord_workspace_paths import (
 )
 from gateway.discord_workspace_prompt import build_workspace_prompt
 from gateway.discord_user_profile import build_discord_user_profile_context
-from gateway.discord_workspace_vectors import index_rag_record, retrieve_rag_context
+from gateway.discord_workspace_vectors import (
+    embed_query,
+    index_rag_record,
+    retrieve_rag_context,
+)
 from gateway.config import load_gateway_config
 from gateway.owner_profile_context import build_relevant_owner_profile_context
 from gateway.slash_access import policy_for_source
@@ -265,12 +269,17 @@ def _retrieve_workspace_context(
     text: str,
     message_id: str,
 ) -> list[dict[str, Any]]:
+    thread_id = str(getattr(source, "thread_id", "") or "")
+    # Embed the query once and reuse it for both the thread and parent-channel
+    # lookups — same text, same input_type, so this halves the embedding
+    # round-trips on thread messages without changing results.
+    query_embedding = embed_query(text) if str(text or "").strip() else None
     retrieved = retrieve_rag_context(
         workspace.rag_dir,
         text,
         exclude_message_id=message_id or None,
+        query_embedding=query_embedding,
     )
-    thread_id = str(getattr(source, "thread_id", "") or "")
     if not workspace.thread_dir or not thread_id:
         return retrieved
     parent_retrieved = retrieve_rag_context(
@@ -279,6 +288,7 @@ def _retrieve_workspace_context(
         limit=3,
         exclude_message_id=message_id or None,
         allowed_thread_ids={thread_id},
+        query_embedding=query_embedding,
     )
     return _merge_retrieved(retrieved, parent_retrieved)
 

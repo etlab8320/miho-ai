@@ -396,6 +396,13 @@ def index_rag_record(rag_dir: Path, record: dict[str, Any]) -> dict[str, Any]:
     return metadata
 
 
+def embed_query(query: str) -> tuple[list[float], str]:
+    """Embed a query once so callers can reuse it across multiple rag_dirs
+    (e.g. a thread + its parent channel) instead of paying the embedding
+    round-trip twice for the same text."""
+    return embed_text(str(query or "").strip(), input_type="query")
+
+
 def retrieve_rag_context(
     rag_dir: Path,
     query: str,
@@ -403,13 +410,21 @@ def retrieve_rag_context(
     limit: int = 5,
     exclude_message_id: str | None = None,
     allowed_thread_ids: set[str] | None = None,
+    query_embedding: tuple[list[float], str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Return top hybrid vector/keyword matches for a query."""
+    """Return top hybrid vector/keyword matches for a query.
+
+    query_embedding lets a caller pass a precomputed (vector, method) pair to
+    avoid re-embedding the same query for a second rag_dir.
+    """
     query = str(query or "").strip()
     vector_path = rag_dir / "vectors.jsonl"
     if not query or not vector_path.exists():
         return []
-    query_vector, query_method = embed_text(query, input_type="query")
+    if query_embedding is not None:
+        query_vector, query_method = query_embedding
+    else:
+        query_vector, query_method = embed_text(query, input_type="query")
     query_is_hash = query_method == _HASH_METHOD
     if query_is_hash and str(rag_dir) not in _warned_hash_dirs:
         _warned_hash_dirs.add(str(rag_dir))
