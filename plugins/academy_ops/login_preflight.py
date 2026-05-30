@@ -101,7 +101,9 @@ def _semantic_login(text: str) -> str | None:
     key = text or ""
     if _last_login["hit"] and _last_login["text"] == key:
         return _last_login["label"]
-    label = semantic_intents.classify(key, LOGIN_INTENT_GROUP, LOGIN_INTENTS)
+    label = semantic_intents.classify(
+        key, LOGIN_INTENT_GROUP, LOGIN_INTENTS, negative_label="none", min_margin=0.04
+    )
     _last_login["text"] = key
     _last_login["label"] = label
     _last_login["hit"] = True

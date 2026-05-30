@@ -57,7 +57,9 @@ def _semantic_output(text: str) -> str | None:
     key = text or ""
     if _last_output["hit"] and _last_output["text"] == key:
         return _last_output["label"]
-    label = semantic_intents.classify(key, OUTPUT_INTENT_GROUP, OUTPUT_INTENTS)
+    label = semantic_intents.classify(
+        key, OUTPUT_INTENT_GROUP, OUTPUT_INTENTS, negative_label="none", min_margin=0.04
+    )
     _last_output["text"] = key
     _last_output["label"] = label
     _last_output["hit"] = True

@@ -92,18 +92,30 @@ def classify(
     intents: dict[str, tuple[str, ...]],
     *,
     threshold: float | None = None,
+    negative_label: str | None = None,
+    min_margin: float = 0.0,
 ) -> str | None:
     """Return the best-matching intent label, or ``None`` to abstain.
 
     Abstains (returns ``None``, caller should use keyword fallback) when:
       * semantic routing is disabled,
       * the embedding provider is the non-semantic local-hash fallback,
-      * the top similarity is below the confidence threshold (ambiguous).
+      * the top similarity is below the confidence threshold (ambiguous),
+      * a positive label wins but is not confidently above the negative anchor
+        (see ``negative_label`` / ``min_margin``).
 
     When a real embedding provider is available and the match is confident, the
     best label is returned — including a designated negative label (e.g.
     ``"none"``) so callers can treat a confident "not this intent" as a decision
     rather than falling back to keywords.
+
+    ``negative_label`` + ``min_margin`` guard against embedding models that
+    compress cosine similarity into a narrow band (notably the on-device
+    fastembed e5 model, where every Korean sentence lands at 0.80-0.94, making
+    the absolute ``threshold`` useless). When set, a positive label is only
+    accepted if it beats the negative anchor by at least ``min_margin``;
+    otherwise we abstain. Defaults (``min_margin=0.0``) keep the prior behaviour
+    exactly, so callers that don't opt in are unaffected.
     """
     if not semantic_routing_enabled():
         return None
@@ -121,12 +133,22 @@ def classify(
         return None
     best_label: str | None = None
     best_score = -1.0
+    negative_score = -1.0
     for label, anchor_vector in anchors:
         score = _cosine(query_vector, anchor_vector)
+        if label == negative_label and score > negative_score:
+            negative_score = score
         if score > best_score:
             best_score = score
             best_label = label
     if best_score < (threshold if threshold is not None else _threshold()):
+        return None
+    if (
+        negative_label is not None
+        and min_margin > 0.0
+        and best_label != negative_label
+        and best_score - negative_score < min_margin
+    ):
         return None
     return best_label
 

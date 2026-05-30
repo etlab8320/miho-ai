@@ -87,6 +87,45 @@ def test_classify_abstains_when_disabled(monkeypatch):
     assert semantic_intents.classify("alpha query", "grp", _INTENTS) is None
 
 
+# --- negative-margin gate (e5 cosine-compression guard) ------------------------
+
+# e5 packs every Korean sentence into 0.80-0.94, so a positive label can "win"
+# while sitting almost on top of the negative anchor. These anchors reproduce
+# that: "narrow" beats none by ~0.013 (a false positive), "clear" by ~0.10.
+_MARGIN_VECS = {
+    "m_alpha": [1.0, 0.0],
+    "m_noise": [0.9, 0.436],  # |·|≈1, ~0.9 cosine to m_alpha (anchors sit close)
+    "m_narrow_query": [1.0, 0.2],  # alpha≈0.981, none≈0.968 → margin ~0.013
+    "m_clear_query": [1.0, 0.0],  # alpha=1.0, none=0.9 → margin ~0.10
+}
+_MARGIN_INTENTS = {"a": ("m_alpha",), "none": ("m_noise",)}
+
+
+def _margin_embed(text, input_type):
+    return _unit(_MARGIN_VECS.get(text, [0.0, 1.0])), "voyage-test"
+
+
+def test_classify_margin_abstains_when_close_to_negative(monkeypatch):
+    monkeypatch.setattr(semantic_intents, "_embed", _margin_embed)
+    # Positive wins but barely beats the negative anchor → abstain (False positive).
+    assert semantic_intents.classify(
+        "m_narrow_query", "mgrp", _MARGIN_INTENTS, negative_label="none", min_margin=0.04
+    ) is None
+
+
+def test_classify_margin_accepts_clear_winner(monkeypatch):
+    monkeypatch.setattr(semantic_intents, "_embed", _margin_embed)
+    assert semantic_intents.classify(
+        "m_clear_query", "mgrp", _MARGIN_INTENTS, negative_label="none", min_margin=0.04
+    ) == "a"
+
+
+def test_classify_margin_default_off_preserves_behaviour(monkeypatch):
+    monkeypatch.setattr(semantic_intents, "_embed", _margin_embed)
+    # No opt-in (min_margin=0) → gate inactive, prior best-label behaviour intact.
+    assert semantic_intents.classify("m_narrow_query", "mgrp", _MARGIN_INTENTS) == "a"
+
+
 # --- login_preflight mapping ---------------------------------------------------
 
 
