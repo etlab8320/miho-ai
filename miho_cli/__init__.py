@@ -5,7 +5,16 @@ from __future__ import annotations
 import os
 import sys
 
-__version__ = "1.0.1"
+# Single source of truth = pyproject [project].version (read via package
+# metadata). Avoids the drift where pyproject was bumped but this string wasn't,
+# so `miho --version` lied. Falls back to a literal only if metadata is missing
+# (e.g. running from a bare source tree with no install).
+try:
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("miho-agent")
+except Exception:  # pragma: no cover - source-tree fallback
+    __version__ = "1.0.2"
 __release_date__ = "2026.5.30"
 
 
