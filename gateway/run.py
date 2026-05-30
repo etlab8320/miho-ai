@@ -4362,9 +4362,39 @@ class GatewayRunner:
         # turn so the agent kicks off the new chat.
         asyncio.create_task(self._handoff_watcher())
 
+        # Start background codex router warm-up — keeps the academy intent
+        # router's codex connection hot so it doesn't pay a cold-start (~12s on
+        # Windows) that times out and misroutes. No-op when academy isn't
+        # loaded; harmless on fast envs (Linux ~3.4s) which just pay a tiny ping.
+        asyncio.create_task(self._academy_router_warmup_watcher())
+
         logger.info("Press Ctrl+C to stop")
         
         return True
+
+    async def _academy_router_warmup_watcher(self, interval: int = 180) -> None:
+        """Keep the codex router connection warm so the academy intent router
+        avoids a cold-start (~12s on Windows) that times out and misroutes.
+
+        No-op when the academy plugin / warm-up helper isn't available, and
+        every warm-up error is swallowed — this watcher must never affect the
+        gateway or real requests. Fast environments (Linux ~3.4s) don't need it
+        and simply pay a negligible periodic ping.
+        """
+        try:
+            from plugins.academy_ops.warmup import warm_router_connection
+        except Exception:
+            return  # academy plugin not loaded — nothing to warm
+        await asyncio.sleep(15)  # let startup finish before the first ping
+        while self._running:
+            try:
+                await warm_router_connection()
+            except Exception:
+                pass
+            for _ in range(interval):
+                if not self._running:
+                    return
+                await asyncio.sleep(1)
 
     async def _handoff_watcher(self, interval: float = 2.0) -> None:
         """Background task that processes pending CLI→gateway session handoffs.

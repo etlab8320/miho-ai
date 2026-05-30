@@ -25,11 +25,15 @@ COMMENTARY_FALLBACK_TIMEOUT_SECONDS = 8
 COMMENTARY_TIMEOUT_MESSAGE = "미호 코멘트: 코멘트 생성이 지연돼서 이번에는 운동계획 목록만 먼저 보냈어."
 COMMENTARY_ERROR_MESSAGE = "미호 코멘트: 코멘트 생성 쪽이 잠깐 막혀서 이번에는 운동계획 목록만 먼저 보냈어."
 ROUTER_MODEL = router_model()
-# The codex auxiliary stream routinely needs >5s, so a 5s cap made the router
-# (intent shortcut) fail almost every call. 8s lets it succeed when it can; if
-# it still times out, resolve_and_execute now falls back to the body agent
-# instead of failing the question.
-ROUTER_MODEL_TIMEOUT_SECONDS = 8
+# The codex auxiliary stream needs >5s, and a *cold* connection can take ~12s
+# (measured on Windows; Linux cold-starts ~3.4s, well under the cap). An 8s cap
+# timed out on every cold call -> the router fell back to the body agent, which
+# then misrouted ("체크" -> attendance, etc.). 15s covers cold-start latency;
+# fast envs return the moment the model responds, so the higher cap costs them
+# nothing. The periodic warm-up (see warmup.py) keeps the codex connection hot
+# so most calls finish in ~1.6s. If it still times out, resolve_and_execute
+# falls back to the body agent instead of failing the question.
+ROUTER_MODEL_TIMEOUT_SECONDS = 15
 ROUTER_FALLBACK_MODELS = router_fallback_models()
 ROUTER_EXTRA_BODY: dict[str, Any] = {}
 
