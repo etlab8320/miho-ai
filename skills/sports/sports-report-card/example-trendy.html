@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="ko"><head><meta charset="UTF-8"><style>
-  :root{--hanwha:#ff5a00;--deep:#e64500;--ink:#16140f;--muted:#8c8475;--cream:#fff8f2;
-    --card:#fff;--line:#f0e7dd;--ssg:#c8102e;--gold:#e0972b;--win:#0f9d76;}
+  :root{--hanwha:#ff5a00;--deep:#e64500;--ink:#15171c;--muted:#7d8694;--base:#eef1f5;
+    --card:#fff;--line:#e7eaf0;--ssg:#c8102e;--gold:#e0972b;--win:#0f9d76;}
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:"Pretendard","Apple SD Gothic Neo",sans-serif;background:#e7e3de;-webkit-font-smoothing:antialiased;}
-  .page{width:1080px;height:1527px;margin:0 auto;background:var(--cream);display:flex;flex-direction:column;padding:40px 48px 34px;}
+  body{font-family:"Pretendard","Apple SD Gothic Neo",sans-serif;background:#dfe3e9;-webkit-font-smoothing:antialiased;}
+  .page{width:1080px;height:1527px;margin:0 auto;background:var(--base);display:flex;flex-direction:column;padding:40px 46px 32px;}
   .hd{display:flex;justify-content:space-between;align-items:center;}
   .hd .lg{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px;color:var(--ink);}
   .hd .lg b{background:var(--ink);color:#fff;padding:5px 12px;border-radius:7px;font-size:16px;}
@@ -12,63 +12,65 @@
   .ttl{margin-top:16px;display:flex;justify-content:space-between;align-items:flex-end;gap:24px;}
   .ttl .htxt{font-size:50px;font-weight:900;letter-spacing:-.035em;line-height:1.05;color:var(--ink);}
   .ttl .htxt em{color:var(--hanwha);font-style:normal;}
-  .fin{flex-shrink:0;background:var(--card);border-radius:18px;padding:14px 22px;box-shadow:0 14px 30px -16px rgba(255,90,0,.4);text-align:center;}
-  .fin .lab{font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.1em;}
-  .fin .sc{display:flex;align-items:center;gap:12px;margin-top:4px;}
-  .fin .sc .t{font-size:15px;font-weight:800;color:var(--ink);}
-  .fin .sc .n{font-size:46px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;}
-  .fin .sc .w{color:var(--hanwha);}.fin .sc .l{color:#cdc4b8;}
+  .fin{flex-shrink:0;background:var(--card);border-radius:18px;padding:14px 22px;box-shadow:0 14px 30px -16px rgba(21,23,28,.25);}
+  .fin .lab{font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.1em;text-align:center;}
+  .fin .sc{display:flex;align-items:center;gap:14px;margin-top:6px;}
+  .fin .col{text-align:center;}
+  .fin .col .t{font-size:13px;font-weight:800;color:var(--muted);}
+  .fin .col .n{font-size:46px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;}
+  .fin .col.w .t{color:var(--hanwha);}.fin .col.w .n{color:var(--hanwha);}
+  .fin .col.l .n{color:#c4ccd6;}
   .read{margin-top:18px;background:linear-gradient(135deg,var(--hanwha),var(--deep));color:#fff;border-radius:16px;padding:18px 22px;}
   .read .k{font-size:13px;font-weight:800;opacity:.9;letter-spacing:.04em;}
-  .read .v{font-size:18.5px;font-weight:600;line-height:1.5;margin-top:5px;letter-spacing:-.01em;}
+  .read .v{font-size:18px;font-weight:600;line-height:1.5;margin-top:5px;letter-spacing:-.01em;}
   .read .v b{font-weight:800;}
-  .sec{margin-top:18px;}
-  .sec h3{font-size:16px;font-weight:900;color:var(--ink);display:flex;align-items:center;gap:8px;margin-bottom:10px;letter-spacing:-.01em;}
+  .sec{margin-top:17px;}
+  .sec h3{font-size:16px;font-weight:900;color:var(--ink);display:flex;align-items:center;gap:8px;margin-bottom:10px;}
   .sec h3::before{content:"";width:6px;height:19px;background:var(--hanwha);border-radius:3px;}
-  /* flow */
   .flow{display:flex;gap:9px;}
   .fcell{flex:1;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;}
   .fcell .i{font-size:13px;font-weight:800;color:var(--hanwha);}
-  .fcell .d{font-size:14px;font-weight:600;color:var(--ink);margin-top:3px;line-height:1.35;}
+  .fcell .d{font-size:13.5px;font-weight:600;color:var(--ink);margin-top:3px;line-height:1.35;}
   .fcell .s{font-size:18px;font-weight:900;color:var(--ink);margin-top:6px;font-variant-numeric:tabular-nums;}
-  /* players */
+  /* players — photo on top (original, no overlay), text below on white */
   .pls{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:11px;}
-  .p{border-radius:15px;overflow:hidden;position:relative;color:#fff;min-height:188px;display:flex;flex-direction:column;justify-content:flex-end;padding:15px 14px;}
-  .p.o{background:linear-gradient(160deg,#ff8c42,#ff5a00 60%,#c83b00);}
-  .p .num{position:absolute;top:-12px;right:2px;font-size:118px;font-weight:900;color:rgba(255,255,255,.15);line-height:1;}
-  .p .tag{font-size:11px;font-weight:800;background:rgba(255,255,255,.25);padding:3px 9px;border-radius:999px;align-self:flex-start;letter-spacing:.03em;}
-  .p .nm{font-size:25px;font-weight:900;margin-top:8px;letter-spacing:-.02em;}
-  .p .role{font-size:12.5px;font-weight:700;opacity:.95;margin-top:2px;}
-  .p .st{font-size:12px;font-weight:600;opacity:.95;margin-top:7px;line-height:1.45;border-top:1px solid rgba(255,255,255,.25);padding-top:7px;}
-  .p .st b{font-weight:800;}
-  /* keymoments + mound two-col */
+  .p{background:var(--card);border:1px solid var(--line);border-radius:15px;overflow:hidden;display:flex;flex-direction:column;}
+  .p .ph{height:138px;background-size:cover;background-position:center 18%;background-repeat:no-repeat;}
+  .p.mk .ph{background:linear-gradient(160deg,#ff8c42,#ff5a00 60%,#c83b00);display:flex;align-items:center;justify-content:center;}
+  .p.mk .ph span{font-size:52px;font-weight:900;color:rgba(255,255,255,.92);letter-spacing:-.03em;}
+  .p .bd{padding:11px 13px 13px;}
+  .p .tag{font-size:10.5px;font-weight:800;color:#fff;background:var(--hanwha);padding:3px 9px;border-radius:999px;display:inline-block;}
+  .p .nm{font-size:23px;font-weight:900;color:var(--ink);margin-top:7px;letter-spacing:-.02em;}
+  .p .role{font-size:12px;font-weight:700;color:var(--muted);margin-top:1px;}
+  .p .st{font-size:12px;font-weight:600;color:var(--ink);margin-top:8px;line-height:1.45;border-top:1px solid var(--line);padding-top:7px;}
+  .p .st b{font-weight:800;color:var(--hanwha);}
   .two{display:grid;grid-template-columns:1.15fr 1fr;gap:14px;}
-  .km{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;}
+  .km{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 16px;}
   .km .row{display:flex;gap:11px;align-items:flex-start;padding:7px 0;}
   .km .row+.row{border-top:1px solid var(--line);}
   .km .no{width:21px;height:21px;border-radius:6px;background:var(--hanwha);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
-  .km .tx{font-size:14px;font-weight:600;color:var(--ink);line-height:1.4;}
+  .km .tx{font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.4;}
   .km .tx b{font-weight:800;}
-  .mound{background:linear-gradient(135deg,var(--ink),#2c2a24);color:#fff;border-radius:14px;padding:15px 17px;}
+  .mound{background:linear-gradient(135deg,var(--ink),#2c303a);color:#fff;border-radius:14px;padding:15px 17px;}
   .mound .t{font-size:12px;font-weight:800;color:var(--gold);letter-spacing:.05em;}
   .mound .nm{font-size:21px;font-weight:900;margin-top:5px;}
-  .mound .line{font-size:14px;font-weight:600;color:#d8d3c8;margin-top:8px;line-height:1.6;}
+  .mound .line{font-size:13.5px;font-weight:600;color:#cfd4dd;margin-top:8px;line-height:1.6;}
   .mound .line b{color:#fff;font-weight:800;}
-  /* harvest */
   .hv{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-  .hv .c{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px 15px;}
+  .hv .c{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 15px;}
   .hv .c .h{font-size:13px;font-weight:800;margin-bottom:5px;}
   .hv .c.good .h{color:var(--win);}.hv .c.todo .h{color:var(--ssg);}
-  .hv .c .li{font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.5;}
-  /* foot */
-  .ft{margin-top:auto;padding-top:16px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-end;}
-  .ft .stand{display:flex;gap:18px;}
-  .ft .b{text-align:center;}
-  .ft .b .n{font-size:23px;font-weight:900;color:var(--ink);}
-  .ft .b .l{font-size:12px;font-weight:700;color:var(--muted);margin-top:2px;}
-  .ft .b.ssg .n{color:var(--ssg);}
-  .ft .src{text-align:right;font-size:12px;color:var(--muted);font-weight:600;line-height:1.5;}
-  .ft .src b{color:var(--ink);}
+  .hv .c .li{font-size:13px;font-weight:600;color:var(--ink);line-height:1.5;}
+  /* footer — Hanwha-centric, no team confusion */
+  .ft{margin-top:auto;padding-top:15px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
+  .ft .home{display:flex;align-items:center;gap:14px;}
+  .ft .home .badge{width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,var(--hanwha),var(--deep));color:#fff;font-size:16px;font-weight:900;display:flex;align-items:center;justify-content:center;}
+  .ft .home .info .n{font-size:18px;font-weight:900;color:var(--ink);}
+  .ft .home .info .s{font-size:13px;font-weight:700;color:var(--muted);margin-top:1px;}
+  .ft .opp{font-size:13px;font-weight:700;color:var(--muted);text-align:right;}
+  .ft .opp b{color:var(--ssg);font-weight:800;}
+  .ft .opp .src{font-size:11.5px;color:#aab2bd;font-weight:600;margin-top:4px;}
+  .ft .opp .src b{color:var(--ink);}
 </style></head><body>
 <div class="page">
   <div class="hd">
@@ -80,13 +82,16 @@
     <div class="htxt"><em>한화</em>, 투런포 두 방으로<br>SSG를 가라앉혔다</div>
     <div class="fin">
       <div class="lab">FINAL</div>
-      <div class="sc"><span class="t">SSG</span><span class="n l">3</span><span class="t">한화</span><span class="n w">4</span></div>
+      <div class="sc">
+        <div class="col l"><div class="t">SSG</div><div class="n">3</div></div>
+        <div class="col w"><div class="t">한화</div><div class="n">4</div></div>
+      </div>
     </div>
   </div>
 
   <div class="read">
     <div class="k">⚾ COLD READ</div>
-    <div class="v"><b>허인서·강백호의 연속 투런포</b>가 승부를 갈랐다. 선발 <b>오웬 화이트가 7이닝을 6탈삼진 3실점</b>으로 버텼고, 7회 오태곤의 추격 투런포 뒤엔 <b>9회 심우준의 결정적 수비</b>가 4-3 리드를 지켰다. 한화는 5할 승률에 복귀, SSG는 창단(신세계 인수) 후 최다 <b>10연패</b>.</div>
+    <div class="v"><b>허인서·강백호의 연속 투런포</b>가 승부를 갈랐다. 선발 <b>오웬 화이트가 7이닝 6탈삼진 3실점</b>으로 버텼고, 7회 오태곤의 추격 투런포 뒤엔 <b>9회 심우준의 결정적 수비</b>가 4-3 리드를 지켰다. 한화는 5할 승률에 복귀했다.</div>
   </div>
 
   <div class="sec">
@@ -102,10 +107,10 @@
   <div class="sec">
     <h3>오늘의 주역</h3>
     <div class="pls">
-      <div class="p o"><div class="num">10</div><div class="tag">WIN · 선제포</div><div class="nm">허인서</div><div class="role">포수 · 5회 투런</div><div class="st"><b>시즌 10호 HR</b> (데뷔 첫 두 자릿수)<br>시즌 타율 .316 · 신인왕 후보</div></div>
-      <div class="p o"><div class="num">12</div><div class="tag">POWER · 쐐기포</div><div class="nm">강백호</div><div class="role">타자 · 6회 투런</div><div class="st"><b>시즌 12호 HR</b> · <b>타점 1위</b><br>시즌 타율 .329 · 핫핑크 해결사</div></div>
-      <div class="p o"><div class="num">W</div><div class="tag">선발 · 승리투수</div><div class="nm">오웬 화이트</div><div class="role">선발투수</div><div class="st"><b>7이닝 6K 3실점</b><br>4피안타 1피홈런 2볼넷</div></div>
-      <div class="p o"><div class="num">D</div><div class="tag">CLUTCH · 수비</div><div class="nm">심우준</div><div class="role">유격수 · 9회</div><div class="st"><b>9회 2사 후 결정적 호수비</b><br>50억 FA, 리드를 끝까지 지켰다</div></div>
+      <div class="p" id="p-heo"><div class="ph"></div><div class="bd"><span class="tag">WIN · 선제포</span><div class="nm">허인서</div><div class="role">포수 · 5회 투런</div><div class="st"><b>시즌 10호 HR</b> (데뷔 첫 두 자릿수)<br>타율 .293 · OPS .942</div></div></div>
+      <div class="p" id="p-kang"><div class="ph"></div><div class="bd"><span class="tag">POWER · 쐐기포</span><div class="nm">강백호</div><div class="role">타자 · 6회 투런</div><div class="st"><b>시즌 12호 HR · 타점 1위</b><br>타율 .329</div></div></div>
+      <div class="p mk"><div class="ph"><span>W</span></div><div class="bd"><span class="tag">선발 · 승리투수</span><div class="nm">오웬 화이트</div><div class="role">선발투수</div><div class="st"><b>7이닝 6K 3실점</b><br>4피안타 1피홈런 2볼넷</div></div></div>
+      <div class="p mk"><div class="ph"><span>D</span></div><div class="bd"><span class="tag">CLUTCH · 수비</span><div class="nm">심우준</div><div class="role">유격수 · 9회</div><div class="st"><b>9회 2사 후 결정적 호수비</b><br>50억 FA, 리드 사수</div></div></div>
     </div>
   </div>
 
@@ -114,9 +119,9 @@
       <div>
         <h3>승부가 갈린 장면</h3>
         <div class="km">
-          <div class="row"><span class="no">1</span><span class="tx"><b>5회말 허인서 투런포</b> — 0-0 균형을 깬 선제 한 방. 데뷔 첫 10호 홈런으로 분위기를 가져왔다.</span></div>
-          <div class="row"><span class="no">2</span><span class="tx"><b>6회말 강백호 투런포</b> — 2-1 살얼음을 4-1로 벌린 쐐기. 타점 1위다운 한 방.</span></div>
-          <div class="row"><span class="no">3</span><span class="tx"><b>9회 심우준 호수비</b> — 4-3 추격 속 2사 후 결정적 유격수 플레이로 경기를 닫았다.</span></div>
+          <div class="row"><span class="no">1</span><span class="tx"><b>5회말 허인서 투런포</b> — 0-0 균형을 깬 선제 한 방. 데뷔 첫 10호 홈런.</span></div>
+          <div class="row"><span class="no">2</span><span class="tx"><b>6회말 강백호 투런포</b> — 2-1 살얼음을 4-1로 벌린 쐐기.</span></div>
+          <div class="row"><span class="no">3</span><span class="tx"><b>9회 심우준 호수비</b> — 4-3 추격 속 2사 후 결정적 플레이로 마무리.</span></div>
         </div>
       </div>
       <div>
@@ -124,7 +129,7 @@
         <div class="mound">
           <div class="t">승리투수 · 선발</div>
           <div class="nm">오웬 화이트</div>
-          <div class="line"><b>7.0이닝</b> · 4피안타 · <b>6K</b><br>1피홈런 · 2볼넷 · <b>3자책</b><br>긴 이닝을 책임진 외국인 에이스</div>
+          <div class="line"><b>7.0이닝</b> · 4피안타 · <b>6K</b><br>1피홈런 · 2볼넷 · <b>3자책</b><br>긴 이닝으로 불펜 부담을 덜었다</div>
         </div>
       </div>
     </div>
@@ -134,17 +139,19 @@
     <h3>수확과 숙제</h3>
     <div class="hv">
       <div class="c good"><div class="h">✓ 수확</div><div class="li">FA 투자(허인서·강백호)가 그대로 결실. 화이트의 7이닝 호투로 불펜 부담도 줄였다.</div></div>
-      <div class="c todo"><div class="h">! 숙제</div><div class="li">7회 오태곤에게 내준 추격 투런포처럼, 중반 이후 실점 관리가 다음 과제. 살얼음 리드를 더 벌릴 타선 집중력도.</div></div>
+      <div class="c todo"><div class="h">! 숙제</div><div class="li">7회 추격 투런포처럼 중반 이후 실점 관리, 그리고 살얼음 리드를 더 벌릴 타선 집중력.</div></div>
     </div>
   </div>
 
   <div class="ft">
-    <div class="stand">
-      <div class="b"><div class="n">5위</div><div class="l">한화 순위</div></div>
-      <div class="b"><div class="n">25-25</div><div class="l">시즌 전적 · 2연승</div></div>
-      <div class="b ssg"><div class="n">10연패</div><div class="l">SSG · 인수 후 최다</div></div>
+    <div class="home">
+      <div class="badge">한화</div>
+      <div class="info"><div class="n">한화 이글스 · 리그 5위</div><div class="s">시즌 25승 25패 · 2연승, 5할 복귀</div></div>
     </div>
-    <div class="src"><b>Miho AI</b> · KBO Postgame Review<br>출처 스타뉴스·뉴스1·네이트 · 2026.05.29</div>
+    <div class="opp">
+      오늘 상대 SSG는 <b>10연패</b> (신세계 인수 후 최다)
+      <div class="src"><b>Miho AI</b> · 출처 스타뉴스·뉴스1·네이트 · 2026.05.29</div>
+    </div>
   </div>
 </div>
 </body></html>
