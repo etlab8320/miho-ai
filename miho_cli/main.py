@@ -8967,6 +8967,19 @@ def _cmd_update_impl(args, gateway_mode: bool):
             _install_python_dependencies_with_optional_fallback(
                 [uv_bin, "pip"], env=uv_env, group=install_group
             )
+            # Belt-and-suspenders: force an editable install of the package
+            # itself even if an optional extra in .[all] failed above. On
+            # uv-made venvs (no pip), a broken extra could leave the OLD
+            # version installed, so `git pull` succeeded but `miho --version`
+            # and the gateway kept running stale code (Windows update bug,
+            # 2026-05-30). --no-deps keeps this fast/idempotent when the
+            # extras step already succeeded.
+            subprocess.run(
+                [uv_bin, "pip", "install", "-e", ".", "--no-deps"],
+                cwd=PROJECT_ROOT,
+                env=uv_env,
+                check=False,
+            )
         else:
             # Use sys.executable to explicitly call the venv's pip module,
             # avoiding PEP 668 'externally-managed-environment' errors on Debian/Ubuntu.
