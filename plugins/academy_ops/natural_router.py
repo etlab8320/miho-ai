@@ -228,7 +228,13 @@ async def resolve_and_execute_academy_request(
             attempts=resolver_attempts,
         )
     except TimeoutError:
-        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, TIMEOUT_RESPONSE, "resolver_timeout")
+        # The intent-classifier (resolver LLM) was slow — that is NOT an academy
+        # server failure, so don't reply "서버가 불안정해". The router is only a
+        # fast shortcut; when it's unavailable, fall back to the proper path —
+        # hand off to the body agent (Nous "the agent decides"), which has the
+        # academy tools and recent thread history and can resolve it itself.
+        logger.info("academy request resolver timed out -> ALLOW (body agent handles)")
+        return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="resolver_timeout")
     except Exception as exc:
         logger.info("academy request resolver failed: %s", exc)
         return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="resolver_error")

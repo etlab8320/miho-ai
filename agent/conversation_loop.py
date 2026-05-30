@@ -494,9 +494,8 @@ def run_conversation(
                 f"{agent.context_compressor.context_length:,}",
             )
             agent._emit_status(
-                f"📦 Preflight compression: ~{_preflight_tokens:,} tokens "
-                f">= {agent.context_compressor.threshold_tokens:,} threshold. "
-                "This may take a moment."
+                "💬 대화가 길어져서 지금까지 내용을 정리하고 있어요. "
+                "원활한 진행을 위한 거니 잠깐만 기다려줘!"
             )
             # May need multiple passes for very large sessions with small
             # context windows (each pass summarises the middle N turns).

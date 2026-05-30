@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Any
 
 from .context import capture_gateway_context
@@ -20,9 +21,10 @@ def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, str]:
     return {"action": "allow"}
 
 
-async def _youtube_pre_gateway_dispatch(event: Any = None, **_: Any) -> dict[str, str]:
+async def _youtube_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dict[str, str]:
     capture_gateway_context(event)
-    decision = youtube_preflight_decision(str(getattr(event, "text", "") or ""))
+    text = str(getattr(event, "text", "") or "")
+    decision = youtube_preflight_decision(text)
     if decision is None:
         return {"action": "allow"}
     try:
@@ -36,7 +38,27 @@ async def _youtube_pre_gateway_dispatch(event: Any = None, **_: Any) -> dict[str
         logger.warning("YouTube pre-gateway analysis failed: %s", exc)
         return {"action": "respond", "text": "유튜브 분석 중 문제가 생겼어. 잠시 후 다시 시도해줘."}
 
-    return {"action": "respond", "text": _response_text(raw_result)}
+    response = _response_text(raw_result)
+    # Record this HANDLED turn so the body agent sees it next turn — without it,
+    # a follow-up ("그 영상에서 아까 그 부분") loses the analysis context, same
+    # bug we fixed in academy_ops. Best-effort; never break the reply.
+    _persist_handled_turn(kwargs.get("session_store"), event, text, response)
+    return {"action": "respond", "text": response}
+
+
+def _persist_handled_turn(session_store: Any, event: Any, question: str, answer: str) -> None:
+    if session_store is None or not str(answer or "").strip():
+        return
+    source = getattr(event, "source", None)
+    if source is None:
+        return
+    try:
+        session_id = session_store.get_or_create_session(source).session_id
+        ts = datetime.now().isoformat()
+        session_store.append_to_transcript(session_id, {"role": "user", "content": question, "timestamp": ts})
+        session_store.append_to_transcript(session_id, {"role": "assistant", "content": answer, "timestamp": ts})
+    except Exception as exc:  # noqa: BLE001 - a transcript write must never break the reply
+        logger.debug("youtube HANDLED transcript persist failed: %s", exc)
 
 
 def _response_text(raw_result: str) -> str:

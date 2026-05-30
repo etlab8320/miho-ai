@@ -192,8 +192,11 @@ def test_plugin_registers_command_and_tool():
     register(ctx)
 
     assert "academy" in manager._plugin_commands
-    assert "academy_operations_catalog" in manager._plugin_tool_names
-    assert "academy_capability_status" in manager._plugin_tool_names
+    # meta tools removed (0 model invocations in logs) — they only listed/checked
+    # capabilities, which the model does by trying the real tools. Kept off the
+    # model-facing tool list to reduce selection noise.
+    assert "academy_operations_catalog" not in manager._plugin_tool_names
+    assert "academy_capability_status" not in manager._plugin_tool_names
     assert "academy_student_summary" in manager._plugin_tool_names
     assert "academy_student_context" in manager._plugin_tool_names
     assert "academy_staff_attendance_day" in manager._plugin_tool_names

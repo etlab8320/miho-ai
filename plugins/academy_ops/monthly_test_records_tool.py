@@ -53,6 +53,12 @@ def _monthly_test_records_tool_handler(args: dict[str, Any] | None = None, **kwa
                 "message": f"{_test_title(data)} 종목별 기록 표야. {media}",
                 "media_tag": media,
                 "image_path": str(image_path),
+                # Hand the body agent the raw roster so a follow-up like
+                # "그 학생만" / "특정 학생 기록만" can be answered by filtering
+                # this data directly — no per-case tool/param needed.
+                "test": data.get("test"),
+                "record_types": data.get("record_types"),
+                "participants": data.get("participants"),
                 "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
             }
         )
@@ -191,12 +197,14 @@ def register_monthly_test_records_tool(ctx: Any) -> None:
         },
         handler=_monthly_test_records_tool_handler,
         description=(
-            "Read-only Peak monthly assessment (월말테스트) participant records. "
+            "Read-only Peak 월말테스트 records — the WHOLE cohort of participants in ONE monthly test "
+            "(not a single student's history; for that use academy_student_record_lookup). "
             "Give event_query for a SINGLE event's gender-split average. "
             "LEAVE event_query EMPTY for a FULL all-events student table — when the user says "
-            "'전체 종목/전부/다 / 참여학생 전부 / 표로 이미지로', this returns a rendered image (학생×종목 표 + 남녀 평균, trendy light design). "
-            "Never ask which event when the user wants all events. Use school_query to limit to one school. "
-            "Do not use the ordinary latest student-records endpoint for these participant-scoped questions."
+            "'전체 종목/전부/다 / 참여학생 전부 / 표로 이미지로', this returns a rendered image (학생×종목 표 + 남녀 평균, trendy light design) AND the raw participant roster. "
+            "For a follow-up like '그 학생만 / 특정 학생만' right after a 월말테스트, filter THAT returned roster — "
+            "do not switch to academy_student_record_lookup (a different per-student endpoint). "
+            "Never ask which event when the user wants all events. Use school_query to limit to one school."
         ),
     )
 

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from datetime import datetime
 from typing import Any
 
 from .auth_flow import (
@@ -26,7 +28,7 @@ from .formatting import format_binding_status, format_catalog, format_login_link
 from .fast_model_routing import route_bound_academy_session_to_fast_model
 from . import login_preflight
 from .natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
-from .thread_context import academy_context_key
+from .thread_context import academy_context_key, format_context_note, get_thread_context
 from .academy_query_tools import (
     _attendance_day_tool_handler,
     _capability_status_tool_handler,
@@ -49,6 +51,10 @@ from .student_context_tool import _student_context_tool_handler
 from .monthly_test_records_tool import register_monthly_test_records_tool
 from .student_records_tool import register_student_records_tool
 from .report_render_tool import register_report_image_tool
+
+logger = logging.getLogger(__name__)
+
+
 def _catalog_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     """Return the academy operation catalog."""
     return json.dumps(operations_payload(), ensure_ascii=False)
@@ -140,13 +146,54 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
         return {"action": "allow"}
     if binding is None:
         return {"action": "allow"}
+    context_key = academy_context_key(event)
     route = await resolve_and_execute_academy_request(
         text,
-        context_key=academy_context_key(event),
+        context_key=context_key,
     )
     if route == AcademyNaturalRoute.HANDLED:
+        _persist_handled_turn(kwargs.get("session_store"), event, text, route.response_text)
         return {"action": "respond", "text": route.response_text}
+    _inject_prior_context(event, context_key)
     return {"action": "allow"}
+
+
+def _persist_handled_turn(session_store: Any, event: Any, question: str, answer: str) -> None:
+    """Record a HANDLED academy turn (question + answer) in the session transcript.
+
+    HANDLED replies are sent via the dispatch shortcut and never run the body
+    agent, so they were invisible to it next turn — the body started blank and
+    re-asked or picked the wrong tool. Nous design is "the conversation is the
+    memory"; persisting the turn lets the body see it as recent history, so a
+    follow-up ("그 학생만") naturally continues from it. Best-effort: a logging
+    write must never break the user's reply.
+    """
+    if session_store is None or not str(answer or "").strip():
+        return
+    source = getattr(event, "source", None)
+    if source is None:
+        return
+    try:
+        session_id = session_store.get_or_create_session(source).session_id
+        ts = datetime.now().isoformat()
+        session_store.append_to_transcript(session_id, {"role": "user", "content": question, "timestamp": ts})
+        session_store.append_to_transcript(session_id, {"role": "assistant", "content": answer, "timestamp": ts})
+    except Exception as exc:  # noqa: BLE001 - never fail the reply over a transcript write
+        logger.debug("academy HANDLED transcript persist failed: %s", exc)
+
+
+def _inject_prior_context(event: Any, context_key: str) -> None:
+    """When an academy-bound question is handed to the body agent (ALLOW), give
+    the body the prior academy turn as ephemeral context. HANDLED academy replies
+    are never written to the transcript, so without this the body agent has zero
+    knowledge of what was just discussed and re-asks or picks the wrong tool.
+    Uses event.channel_prompt — the per-message, never-persisted injection channel.
+    """
+    note = format_context_note(get_thread_context(context_key))
+    if not note:
+        return
+    existing = str(getattr(event, "channel_prompt", "") or "").strip()
+    event.channel_prompt = (existing + "\n\n" + note).strip() if existing else note
 
 
 def register(ctx: Any) -> None:
@@ -163,36 +210,11 @@ def register(ctx: Any) -> None:
         description="Short Korean commentary for Peak workout-plan facts",
         defaults=plan_commentary_aux_defaults(),
     )
-    ctx.register_tool(
-        name="academy_operations_catalog",
-        toolset="academy_ops",
-        schema={
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        },
-        handler=_catalog_tool_handler,
-        description="Return the PACA/Peak Discord operation catalog and safety policy.",
-    )
-    ctx.register_tool(
-        name="academy_capability_status",
-        toolset="academy_ops",
-        schema={
-            "type": "object",
-            "properties": {
-                "operation_key": {
-                    "type": "string",
-                    "description": "LLM이 선택한 catalog operation key.",
-                },
-            },
-            "required": ["operation_key"],
-            "additionalProperties": False,
-        },
-        handler=_capability_status_tool_handler,
-        description=(
-            "Return implementation status for a PACA/Peak catalog operation key selected by the LLM."
-        ),
-    )
+    # academy_operations_catalog / academy_capability_status: meta tools the body
+    # never called (0 invocations in logs) — they only listed/checked capabilities,
+    # which the agent does by just trying the real tools. Removed to cut tool-list
+    # noise (better tool-selection accuracy). The /academy command still shows the
+    # catalog via format_catalog(); these were redundant as model-facing tools.
     ctx.register_tool(
         name="academy_student_card_image",
         toolset="academy_ops",
@@ -369,8 +391,9 @@ def register(ctx: Any) -> None:
         },
         handler=_staff_schedule_day_tool_handler,
         description=(
-            "Return Peak instructor schedule for one day from live assignment records. "
-            "Use for future, scheduled, should-work, assignment, or staff schedule questions. "
+            "Return one day's Peak work schedule for INSTRUCTORS (who is scheduled to work). "
+            "Use for future/scheduled/should-work or staff-schedule questions about instructors. "
+            "For which students are assigned to which class, use academy_assignment_by_date instead. "
             "Do not call with empty arguments; resolve natural-language dates to YYYY-MM-DD first."
         ),
     )

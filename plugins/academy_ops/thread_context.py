@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -147,16 +148,25 @@ def _remember_monthly_test_context(
     payload: dict[str, Any],
 ) -> None:
     event_query = str(args.get("event_query") or "").strip()
-    if not event_query:
-        return
     test = payload.get("test") if isinstance(payload.get("test"), dict) else {}
+    test_id = test.get("id")
+    test_month = str(test.get("test_month") or args.get("test_month") or "").strip()
+    # event_query 없이 전체 종목을 본 경우(전체종목 표)에도, 어떤 월말 테스트였는지
+    # 식별자가 있으면 맥락을 남긴다 → 후속 "특정 학생만/특정 종목만"이 그 테스트로 이어짐.
+    if not event_query and test_id is None and not test_month:
+        return
     _CONTEXTS[key] = {
         "kind": "monthly_test",
         "tool": tool_name,
         "event_query": event_query,
-        "test_id": test.get("id"),
-        "test_month": str(test.get("test_month") or args.get("test_month") or ""),
+        "test_id": test_id,
+        "test_month": test_month,
         "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
+        # Keep the actual roster the tool just fetched so a follow-up
+        # ("그 학생만") can be answered from this remembered data — the body
+        # agent never saw the HANDLED payload, so we hand it back next turn.
+        "record_types": payload.get("record_types") if isinstance(payload.get("record_types"), list) else None,
+        "participants": payload.get("participants") if isinstance(payload.get("participants"), list) else None,
         "updated_at": datetime.now(timezone.utc),
     }
 
@@ -211,6 +221,95 @@ def pop_pending_request(key: str | None) -> dict[str, Any]:
         return {}
     _CONTEXTS.pop(str(key), None)
     return context
+
+
+def format_context_note(ctx: dict[str, Any]) -> str:
+    """Render the prior academy turn as a one-line ephemeral note for the body
+    agent. Pure function over ctx fields only — no school/student/event names
+    are baked in (this ships as a product to many academies). Returns '' when
+    there is no inheritable prior context to hand off.
+    """
+    kind = ctx.get("kind")
+    if not kind or kind == "pending_request":
+        return ""
+    tool = str(ctx.get("tool") or "").strip()
+    parts: list[str] = []
+    has_inline_data = False
+    if kind == "monthly_test":
+        month = str(ctx.get("test_month") or "").strip()
+        subject = f"{month} 월말 테스트" if month else "직전 월말 테스트"
+        parts.append(f"방금 사용자는 '{subject}'의 기록 데이터를 받았어.")
+        data_block = _monthly_test_data_block(ctx)
+        if data_block:
+            parts.append(data_block)
+            has_inline_data = True
+    elif kind == "student":
+        name = str(ctx.get("student_query") or "").strip()
+        parts.append(f"방금 대화의 주제는 학생 '{name}'이었어." if name else "방금 대화는 특정 학생에 대한 거였어.")
+    elif kind == "staff":
+        name = str(ctx.get("staff_query") or "").strip()
+        parts.append(f"방금 대화의 주제는 강사/직원 '{name}'이었어." if name else "방금 대화는 특정 강사/직원에 대한 거였어.")
+    else:  # generic — carry whatever inheritable entity was in play
+        entity = next(
+            (str(ctx.get(name)).strip() for name in INHERITABLE_ENTITY_ARGS if not _is_blank(ctx.get(name))),
+            "",
+        )
+        if not entity:
+            return ""
+        parts.append(f"방금 대화의 주제는 '{entity}'이었어.")
+    if tool:
+        parts.append(f"(직전에 사용한 학원 도구: {tool})")
+    if has_inline_data:
+        parts.append(
+            "이번 질문이 위 데이터에 이어지는 후속이면(특정 학생만·특정 종목만·평균·비교 등), "
+            "위 데이터에서 바로 골라내서 답해 — 같은 걸 다시 조회하지 말고 정확하고 빠르게."
+        )
+    else:
+        parts.append(
+            "사용자의 이번 질문이 그 직전 내용에 이어지는 후속이면, 새 주제로 넘기지 말고 그 직전 데이터를 기준으로 해석해. "
+            "예를 들어 '그 사람만'·'그것만 빼줘'·'특정 항목만'은 직전 데이터에서 골라내라는 뜻이지 전혀 다른 조회가 아니야. "
+            "필요하면 직전과 같은 학원 도구/데이터를 다시 불러서 거기서 처리해."
+        )
+    parts.append(
+        "답을 내기 전에 스스로 한 번 검수해: 이 답이 사용자가 방금 한 질문에 실제로 맞는 답인가? "
+        "결과가 비었거나 '못 찾았다' 류로 끝나면, 추측해서 넘기지 말고 직전 맥락을 활용해 다른 도구/접근으로 다시 시도해. "
+        "그래도 안 되면 틀린 답을 내지 말고 무엇이 왜 막혔는지 솔직히 말해."
+    )
+    return " ".join(parts)
+
+
+_MAX_INLINE_PARTICIPANTS = 80
+
+
+def _monthly_test_data_block(ctx: dict[str, Any]) -> str:
+    """Render the remembered roster compactly so the body agent can filter it
+    directly next turn — no re-fetch, so accuracy AND speed. Capped so the
+    ephemeral note never blows up the prompt for an unusually large test."""
+    participants = ctx.get("participants")
+    if not isinstance(participants, list) or not participants:
+        return ""
+    record_types = ctx.get("record_types") if isinstance(ctx.get("record_types"), list) else []
+    rt_brief = [
+        {"id": str(r.get("record_type_id") or r.get("id") or ""), "name": r.get("name"), "unit": r.get("unit")}
+        for r in record_types
+        if isinstance(r, dict)
+    ]
+    rows = [p for p in participants if isinstance(p, dict)]
+    p_brief = [
+        {"name": p.get("name"), "gender": p.get("gender"), "school": p.get("school"), "records": p.get("records")}
+        for p in rows[:_MAX_INLINE_PARTICIPANTS]
+    ]
+    note = (
+        "아래는 그때 받아온 전체 참가자 원본 데이터야:\n"
+        f"종목정의={json.dumps(rt_brief, ensure_ascii=False)}\n"
+        f"참가자={json.dumps(p_brief, ensure_ascii=False)}"
+    )
+    if len(rows) > _MAX_INLINE_PARTICIPANTS:
+        note += (
+            f"\n(참가자가 많아 처음 {_MAX_INLINE_PARTICIPANTS}명만 실었어. "
+            "이 안에 못 찾으면 academy_monthly_test_records로 다시 조회해.)"
+        )
+    return note
 
 
 def clear_thread_contexts() -> None:

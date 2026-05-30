@@ -31,8 +31,10 @@ def register_student_records_tool(ctx: Any) -> None:
         },
         handler=_student_record_lookup_tool_handler,
         description=(
-            "Return read-only Peak performance records for one student. "
-            "Use for student measurement, practical-test, event, or performance-record requests. "
+            "Return read-only Peak practical-test records for ONE student over time (개인 학생의 실기 기록). "
+            "Use for a single student's measurement / practical-test / event / performance history. "
+            "For a whole 월말테스트 cohort (all participants, 남녀 평균, rankings, school filters), "
+            "use academy_monthly_test_records instead — NOT this tool. "
             "Do not use attendance, staff attendance, or workout-plan tools for student performance records."
         ),
     )
@@ -76,7 +78,9 @@ def _student_record_lookup_tool_handler(args: dict[str, Any] | None = None, **kw
             "date": target_day.isoformat() if target_day else "",
             "period_days": period_days if target_day is None else 1,
             "records": records,
-            "message": _message(student_name, records, event_query=event_query, target_day=target_day),
+            "message": _message(
+                student_name, records, event_query=event_query, target_day=target_day, period_days=period_days
+            ),
             "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
         }
     )
@@ -149,11 +153,20 @@ def _message(
     *,
     event_query: str,
     target_day: date | None,
+    period_days: int,
 ) -> str:
     label = event_query or "실기"
     when = target_day.isoformat() if target_day else "최근"
     if not records:
-        return f"{student_name} {when} {label} 기록은 찾지 못했어."
+        # State the window explicitly so the user knows it's "not in the last
+        # N days" — not "never". (Records like 윗몸일으키기 are measured rarely,
+        # so an empty 30-day window is normal, not a failure.)
+        if target_day:
+            return f"{student_name} {target_day.isoformat()} {label} 기록은 없어."
+        return (
+            f"{student_name} 최근 {period_days}일간 {label} 기록은 없어 — 이 기간에 측정된 게 없어. "
+            f"더 예전 기록까지 보려면 기간을 늘려서(예: 최근 1년) 다시 물어봐줘."
+        )
     lines = [f"{student_name} {when} {label} 기록"]
     for row in records[:8]:
         value = f"{row['value']:g}{row['unit']}"

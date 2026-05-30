@@ -489,7 +489,7 @@ class TestPreflightCompression:
         assert result["completed"] is True
         assert result["final_response"] == "After preflight"
         assert any(
-            ev == "lifecycle" and "Preflight compression" in msg
+            ev == "lifecycle" and "정리하고 있어요" in msg
             for ev, msg in status_messages
         )
 

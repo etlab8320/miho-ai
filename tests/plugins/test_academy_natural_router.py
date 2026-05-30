@@ -95,8 +95,10 @@ async def test_natural_router_timeout_returns_short_response() -> None:
         resolver_timeout=0.01,
     )
 
-    assert route == AcademyNaturalRoute.HANDLED
-    assert "학원 서버 응답이 불안정" in route.response_text
+    # Resolver (intent shortcut) timing out is NOT an academy-server failure:
+    # fall back to the body agent instead of failing the question.
+    assert route == AcademyNaturalRoute.ALLOW
+    assert route.reason == "resolver_timeout"
     assert calls == 1
 
 
