@@ -27,6 +27,11 @@ _TOOL_LOCAL_MEDIA_RE = re.compile(
 _TOOL_LOCAL_MEDIA_SAFE_PARTS = (
     "/.miho/cache/media/",
     "/.miho/discord_exports/",
+    # Skills that render their own PNG (e.g. the health report card via a
+    # headless-Chrome screenshot) save under media_cache/. The model is told to
+    # attach it with a MEDIA: line, but when it forgets, this lets the safety net
+    # promote a structured path the skill exposed so the image still ships turn 1.
+    "/.miho/media_cache/",
 )
 _MEDIA_CACHE_DIR = get_miho_dir("cache/media", "media_cache") / "gateway_promoted"
 _RAW_MEDIA_TOOL_NAMES = {"tts", "text_to_speech", "text_to_speech_tool"}

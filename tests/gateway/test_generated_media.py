@@ -204,3 +204,47 @@ def test_ignores_bare_local_paths_outside_generated_media_roots(tmp_path):
     )
 
     assert response == "완료"
+
+
+def test_appends_health_card_png_from_media_cache_when_final_text_omits_it(tmp_path, monkeypatch):
+    # The health-report skill renders its PNG under media_cache/ and tells the
+    # model to attach it with a MEDIA: line. When the model forgets, a structured
+    # path the skill exposed must still be promoted so the image ships turn 1.
+    miho_home = tmp_path / ".miho"
+    image = miho_home / "media_cache" / "health-nightly" / "2026-05-31-health-card.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+    promoted_dir = miho_home / "cache" / "media" / "gateway_promoted"
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", promoted_dir)
+    tool_output = json.dumps({"path": str(image), "status": "created"}, ensure_ascii=False)
+
+    response = append_missing_generated_media_directives(
+        "주간 건강 리포트야.",
+        [_tool_message(tool_output, "terminal")],
+    )
+
+    promoted = promoted_dir / image.name
+    assert response.endswith(f"MEDIA:{promoted}")
+    assert promoted.read_bytes() == b"\x89PNG\r\n\x1a\n"
+
+
+def test_ignores_media_cache_path_in_stdout_text_not_structured(tmp_path, monkeypatch):
+    # A media_cache path appearing only in stdout text (not a structured path
+    # key) is still ignored — same policy as read_file/execute_code, so the new
+    # safe-root does not start scraping debug output for paths.
+    miho_home = tmp_path / ".miho"
+    image = miho_home / "media_cache" / "health-nightly" / "old.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"old")
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", miho_home / "cache" / "media" / "gateway_promoted")
+    tool_output = json.dumps(
+        {"status": "success", "output": f"saved chart to {image}"},
+        ensure_ascii=False,
+    )
+
+    response = append_missing_generated_media_directives(
+        "완료",
+        [_user_message("리포트 줘"), _tool_message(tool_output, "execute_code")],
+    )
+
+    assert response == "완료"
