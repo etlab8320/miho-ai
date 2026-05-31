@@ -154,7 +154,12 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
     if route == AcademyNaturalRoute.HANDLED:
         _persist_handled_turn(kwargs.get("session_store"), event, text, route.response_text)
         return {"action": "respond", "text": route.response_text}
-    _inject_prior_context(event, context_key)
+    if _inject_prior_context(event, context_key):
+        # State-based signal (no keywords): this ALLOW turn is an academy
+        # follow-up with prior context, so the gateway runs the self-check
+        # guard on the body's final answer. Plain (non-academy) turns never
+        # set this and skip the guard entirely, preserving their speed.
+        event.academy_self_check = True
     return {"action": "allow"}
 
 
@@ -182,18 +187,23 @@ def _persist_handled_turn(session_store: Any, event: Any, question: str, answer:
         logger.debug("academy HANDLED transcript persist failed: %s", exc)
 
 
-def _inject_prior_context(event: Any, context_key: str) -> None:
+def _inject_prior_context(event: Any, context_key: str) -> bool:
     """When an academy-bound question is handed to the body agent (ALLOW), give
     the body the prior academy turn as ephemeral context. HANDLED academy replies
     are never written to the transcript, so without this the body agent has zero
     knowledge of what was just discussed and re-asks or picks the wrong tool.
     Uses event.channel_prompt — the per-message, never-persisted injection channel.
+
+    Returns True when a prior-context note was injected (used as the state-based
+    signal that this turn is an academy follow-up the gateway should self-check),
+    False when there was nothing to hand off.
     """
     note = format_context_note(get_thread_context(context_key))
     if not note:
-        return
+        return False
     existing = str(getattr(event, "channel_prompt", "") or "").strip()
     event.channel_prompt = (existing + "\n\n" + note).strip() if existing else note
+    return True
 
 
 def register(ctx: Any) -> None:

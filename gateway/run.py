@@ -8846,6 +8846,33 @@ class GatewayRunner:
                 agent_result, response, history_len=len(history),
             )
             response = _sanitize_gateway_final_response(source.platform, response)
+
+            # Self-check guard — academy follow-up turns only.
+            # The academy hook sets event.academy_self_check on an ALLOW turn that
+            # carries prior academy context (state-based, no keywords). For those
+            # turns an LLM judges whether the body's answer actually fits the
+            # question; if not, we re-run the body ONCE with a strengthened
+            # context prompt. Plain turns never enter here (speed preserved), and
+            # any self-check failure keeps the original answer (safety first).
+            if getattr(event, "academy_self_check", False) and response:
+                try:
+                    retried = await self._academy_self_check_retry(
+                        question=message_text,
+                        answer=response,
+                        context_prompt=context_prompt,
+                        history=history,
+                        source=source,
+                        session_entry=session_entry,
+                        session_key=session_key,
+                        run_generation=run_generation,
+                        event=event,
+                    )
+                except Exception as _sc_err:
+                    logger.debug("academy self-check retry skipped: %s", _sc_err)
+                    retried = None
+                if retried is not None:
+                    agent_result, response = retried
+
             if source.platform == Platform.DISCORD and response:
                 try:
                     from gateway.discord_workspace import record_assistant_turn
@@ -15798,6 +15825,68 @@ class GatewayRunner:
             "session_id": session_id,
             "response_previewed": _stream_consumer is not None and bool(full_response),
         }
+
+    # ------------------------------------------------------------------
+
+    async def _academy_self_check_retry(
+        self,
+        *,
+        question: str,
+        answer: str,
+        context_prompt: str,
+        history: List[Dict[str, Any]],
+        source: SessionSource,
+        session_entry: Any,
+        session_key: Optional[str],
+        run_generation: Optional[int],
+        event: Any,
+    ) -> Optional[tuple]:
+        """One-shot self-check for an academy follow-up answer.
+
+        An LLM judges whether ``answer`` actually fits ``question``. If it
+        returns "retry", the body agent is re-run ONCE with a strengthened
+        channel_prompt (the conversation loop can't be re-entered, so a fresh
+        ``_run_agent`` call is used). Returns ``(agent_result, response)`` from
+        the retry, or ``None`` to keep the original answer — verdict=ok, retry
+        produced nothing better, or any self-check failure (safety first).
+        """
+        from plugins.academy_ops.self_check import RETRY_VERDICT, verdict_or_ok
+
+        verdict = await verdict_or_ok(question, answer)
+        if verdict != RETRY_VERDICT:
+            return None
+
+        prior = str(getattr(event, "channel_prompt", "") or "").strip()
+        retry_note = (
+            "직전에 낸 답이 사용자의 질문에 맞지 않았어. 같은 실수를 반복하지 말고, "
+            "직전 대화 맥락을 다시 정확히 파악해서 질문에 진짜로 맞는 도구를 골라 답해. "
+            "특히 질문의 시제(예정/계획 vs 과거 기록)를 구분해서 알맞은 도구를 써."
+        )
+        retry_prompt = (prior + "\n\n" + retry_note).strip() if prior else retry_note
+
+        retry_result = await self._run_agent(
+            message=question,
+            context_prompt=context_prompt,
+            history=history,
+            source=source,
+            session_id=session_entry.session_id,
+            session_key=session_key,
+            run_generation=run_generation,
+            event_message_id=self._reply_anchor_for_event(event),
+            channel_prompt=retry_prompt,
+        )
+
+        retry_response = retry_result.get("final_response") or ""
+        if retry_response == "(empty)":
+            return None
+        retry_response = _normalize_empty_agent_response(
+            retry_result, retry_response, history_len=len(history),
+        )
+        retry_response = _sanitize_gateway_final_response(source.platform, retry_response)
+        if not retry_response.strip():
+            return None
+        logger.info("academy self-check: retried answer after verdict=retry")
+        return retry_result, retry_response
 
     # ------------------------------------------------------------------
 
