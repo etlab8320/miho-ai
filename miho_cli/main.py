@@ -8639,6 +8639,132 @@ def _run_pre_update_backup(args) -> None:
     print()
 
 
+def _running_as_miho_exe_shim() -> bool:
+    """Return ``True`` when the current process IS one of the venv .exe shims.
+
+    On Windows ``miho`` / ``miho-gateway`` are setuptools/uv console-script
+    ``.exe`` launchers. When the user runs ``miho update`` the launcher is the
+    live process and holds an open handle on ``miho.exe`` — which is exactly
+    the file uv must overwrite when it re-creates the entry point during
+    ``pip install -e .``. Windows blocks REPLACE on a running image, so the
+    install fails with ``os error 32``.
+
+    Detection signal is the launcher path, not ``sys.executable``: for a
+    console-script ``.exe`` shim ``sys.executable`` already points at the real
+    ``python.exe``, but ``sys.argv[0]`` is the ``.exe`` shim that is holding the
+    lock. We check both to be safe.
+
+    Always ``False`` off-Windows — running images are replaceable on POSIX, so
+    there is no self-replacement hazard and no re-exec.
+    """
+    if not _is_windows():
+        return False
+
+    candidates = []
+    argv0 = sys.argv[0] if sys.argv else ""
+    if argv0:
+        candidates.append(argv0)
+    if sys.executable:
+        candidates.append(sys.executable)
+
+    for cand in candidates:
+        name = Path(cand).name.lower()
+        if name in {"miho.exe", "miho-gateway.exe"}:
+            return True
+    return False
+
+
+def _maybe_reexec_update_off_exe_shim(args) -> None:
+    """Re-exec ``miho update`` through the venv ``python.exe`` on Windows.
+
+    Root cause (#26670 follow-up): ``miho update`` invoked via ``miho.exe``
+    cannot succeed because uv re-creates the ``miho.exe`` entry-point shim
+    during the editable reinstall, and Windows refuses to overwrite a running
+    executable (``os error 32``). Quarantine-by-rename also fails when the
+    running image's handle is held without ``FILE_SHARE_DELETE``.
+
+    The reliable fix is to hand the update off to a process that does NOT hold
+    the ``miho.exe`` handle: spawn the venv's real ``python.exe`` running
+    ``python -m miho_cli.main update <original args> --reexec-guard``. The
+    original ``miho.exe`` process waits on the child for live output, then
+    exits with the child's code — releasing the lock so uv can replace the
+    shim from inside the python-hosted run, where quarantine works normally.
+
+    No-ops (returns without spawning) when any of these hold:
+      * not running through a ``miho.exe`` / ``miho-gateway.exe`` shim
+        (covers all of POSIX and direct ``python -m`` invocations);
+      * already re-exec'd — ``--reexec-guard`` flag or
+        ``MIHO_UPDATE_REEXECED=1`` env — preventing an infinite loop;
+      * we cannot resolve a real ``python.exe`` to hand off to.
+
+    On a successful hand-off this calls ``sys.exit`` with the child's return
+    code and never returns to the caller.
+    """
+    if getattr(args, "reexec_guard", False):
+        return
+    if os.environ.get("MIHO_UPDATE_REEXECED") == "1":
+        return
+    if not _running_as_miho_exe_shim():
+        return
+
+    # Resolve a real python interpreter that does NOT hold the miho.exe handle.
+    scripts_dir = _venv_scripts_dir()
+    py = scripts_dir / "python.exe" if scripts_dir else None
+    if not (py and py.exists()):
+        # sys.executable is the venv python for console-script shims; fall back
+        # to it as long as it isn't itself one of the .exe shims.
+        if sys.executable and Path(sys.executable).name.lower() not in {
+            "miho.exe",
+            "miho-gateway.exe",
+        }:
+            py = Path(sys.executable)
+        else:
+            print(
+                "  ⚠ Could not locate the venv python.exe to hand off the "
+                "update; continuing in-process (miho.exe replacement may fail)."
+            )
+            return
+
+    child_argv = [str(py), "-m", "miho_cli.main", "update"]
+    child_argv.extend(_reexec_update_arg_tokens(args))
+    child_argv.append("--reexec-guard")
+
+    env = os.environ.copy()
+    env["MIHO_UPDATE_REEXECED"] = "1"
+
+    print(
+        "→ Handing the update off to python.exe so miho.exe can be replaced "
+        "(Windows file-lock workaround)..."
+    )
+    try:
+        result = subprocess.run(child_argv, cwd=PROJECT_ROOT, env=env)
+    except OSError as exc:
+        print(f"  ⚠ Re-exec hand-off failed to start ({exc}); "
+              "continuing in-process.")
+        return
+    sys.exit(result.returncode)
+
+
+def _reexec_update_arg_tokens(args) -> list[str]:
+    """Reconstruct the user-facing ``miho update`` flags for the re-exec child.
+
+    Only the flags that change update behaviour are forwarded. ``--reexec-guard``
+    is appended by the caller; ``--check`` never reaches here (handled in
+    ``cmd_update`` before the impl). ``--gateway`` is intentionally NOT
+    forwarded: gateway-mode IPC belongs to the original process.
+    """
+    tokens: list[str] = []
+    if getattr(args, "yes", False):
+        tokens.append("--yes")
+    if getattr(args, "force", False):
+        tokens.append("--force")
+    if getattr(args, "backup", False):
+        tokens.append("--backup")
+    if getattr(args, "no_backup", False):
+        tokens.append("--no-backup")
+    return tokens
+
+
 def cmd_update(args):
     """Update Miho Agent to the latest version.
 
@@ -8703,6 +8829,16 @@ def _cmd_update_impl(args, gateway_mode: bool):
 
     print("⚕ Updating Miho Agent...")
     print()
+
+    # On Windows, if `miho update` was launched through the miho.exe shim, the
+    # running launcher holds an open handle on the very file uv must overwrite
+    # when it re-creates the entry point — Windows then blocks the replace with
+    # `os error 32`, and quarantine-by-rename can't budge the locked image
+    # either. Hand the update off to the venv's python.exe (which has no handle
+    # on miho.exe) before touching the working tree, so BOTH the git and ZIP
+    # paths run from a process that can replace the shim. No-op off-Windows,
+    # when already re-exec'd, or when not running via the .exe shim.
+    _maybe_reexec_update_off_exe_shim(args)
 
     # On Windows, abort early if another miho.exe is holding the venv shim
     # open. Continuing would result in a string of WinError 32 warnings and
@@ -13394,6 +13530,12 @@ Examples:
         action="store_true",
         default=False,
         help="Windows: proceed with the update even when another miho.exe is detected. The concurrent process will likely cause WinError 32 warnings and may leave a reboot-deferred .exe replacement.",
+    )
+    update_parser.add_argument(
+        "--reexec-guard",
+        action="store_true",
+        default=False,
+        help=argparse.SUPPRESS,
     )
     update_parser.set_defaults(func=cmd_update)
 
