@@ -6,6 +6,7 @@ opt-in live test (MIHO_LIFE_RECORD_LIVE_TEST=1) exercises the real model.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 from miho_cli.plugins import PluginContext, PluginManager, PluginManifest
+from plugins.life_record.context import capture_gateway_context
 
 
 # ----------------------------------------------------------------- fixtures/helpers
@@ -65,7 +67,7 @@ def _ingest(monkeypatch, tmp_path, thread_id, payload, pdf_name="source.pdf"):
     _patch_vision(monkeypatch, payload)
     pdf_path = tmp_path / pdf_name
     pdf_path.write_bytes(b"%PDF-1.4 fake")
-    _capture_gateway_context(_event(thread_id))
+    capture_gateway_context(_event(thread_id))
     return json.loads(_ingest_pdf_tool_handler({"pdf_path": str(pdf_path)}))
 
 
@@ -194,7 +196,7 @@ def test_confirm_promotes_needs_review_rows(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(vision_module, "default_codex_resolver", _vary)
     pdf = tmp_path / "v.pdf"
     pdf.write_bytes(b"%PDF-1.4")
-    _capture_gateway_context(_event("thread-a"))
+    capture_gateway_context(_event("thread-a"))
     ingest = json.loads(_ingest_pdf_tool_handler({"pdf_path": str(pdf)}))
     # disagreement on raw_score -> not fully confirmed
     assert ingest["counts"]["needs_review_rows"] >= 1
@@ -217,7 +219,7 @@ def test_search_is_thread_scoped(monkeypatch, tmp_path) -> None:
     from plugins.life_record import _capture_gateway_context
     from plugins.life_record.tools import _search_tool_handler
     _ingest(monkeypatch, tmp_path, "thread-a", SAMPLE_1)
-    _capture_gateway_context(_event("thread-b"))
+    capture_gateway_context(_event("thread-b"))
     other = json.loads(_search_tool_handler({"query": "국어"}))
     assert other["count"] == 0  # thread-b has no data
 
@@ -231,6 +233,62 @@ def test_delete_requires_confirmation(monkeypatch, tmp_path) -> None:
     assert deleted["ok"] is True
 
 
+# ----------------------------------------------------------------- T-13/T-14 PDF auto-route
+
+def test_attached_pdf_auto_routes_to_ingest_without_tool_name(monkeypatch, tmp_path) -> None:
+    # User attaches a 생기부 PDF with no tool name — gateway must auto-ingest.
+    from plugins.life_record import _capture_gateway_context
+    import plugins.life_record.service as service_module
+    import plugins.life_record.vision_extractor as vision_module
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    pdf = tmp_path / "attached.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"])
+    monkeypatch.setattr(service_module, "_safe_photo", lambda _p: None)
+
+    async def _smart(images, prompt):
+        # the 1-page gate asks a yes/no question; extraction asks for JSON
+        if "한 단어" in prompt:
+            return "yes"
+        return json.dumps(SAMPLE_1, ensure_ascii=False)
+
+    monkeypatch.setattr(vision_module, "default_codex_resolver", _smart)
+    event = _event("thread-a")
+    event.media_urls = [str(pdf)]
+    result = asyncio.run(_capture_gateway_context(event))
+    assert result["action"] == "respond"
+    assert "생기부" in result["text"]
+    assert "홍길동" in result["text"]
+
+
+def test_non_life_record_pdf_passes_through(monkeypatch, tmp_path) -> None:
+    # A PDF the gate says 'no' to must NOT be ingested — pass to body agent.
+    from plugins.life_record import _capture_gateway_context
+    import plugins.life_record.service as service_module
+    import plugins.life_record.vision_extractor as vision_module
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    pdf = tmp_path / "invoice.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"])
+
+    async def _no(images, prompt):
+        return "no"
+
+    monkeypatch.setattr(vision_module, "default_codex_resolver", _no)
+    event = _event("thread-a")
+    event.media_urls = [str(pdf)]
+    result = asyncio.run(_capture_gateway_context(event))
+    assert result["action"] == "allow"
+
+
+def test_no_attachment_passes_through(monkeypatch, tmp_path) -> None:
+    from plugins.life_record import _capture_gateway_context
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    event = _event("thread-a")
+    result = asyncio.run(_capture_gateway_context(event))
+    assert result["action"] == "allow"
+
+
 # ----------------------------------------------------------------- T-12 live (opt-in)
 
 @pytest.mark.skipif(os.environ.get("MIHO_LIFE_RECORD_LIVE_TEST") != "1", reason="opt-in live vision test")
@@ -242,7 +300,7 @@ def test_live_vision_extraction_on_real_samples(tmp_path, monkeypatch) -> None:
     for i, pdf in enumerate(samples):
         if not pdf.exists():
             pytest.skip(f"sample missing: {pdf}")
-        _capture_gateway_context(_event(f"live-{i}"))
+        capture_gateway_context(_event(f"live-{i}"))
         result = json.loads(_ingest_pdf_tool_handler({"pdf_path": str(pdf)}))
         assert result["ok"] is True
         assert result["student"]["name"]  # vision read a name

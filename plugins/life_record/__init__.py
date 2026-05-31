@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from typing import Any
 
-from .context import capture_gateway_context
+from .context import THREAD_ID, capture_gateway_context, current_life_record_dir
 from .tools import (
     _confirm_tool_handler,
     _delete_tool_handler,
@@ -14,6 +16,8 @@ from .tools import (
     _summary_tool_handler,
     _verify_tool_handler,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _life_record_command(raw_args: str = "") -> str:
@@ -29,9 +33,33 @@ def _life_record_command(raw_args: str = "") -> str:
     )
 
 
-def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, str]:
+def _pdf_attachment(event: Any) -> Path | None:
+    """Return the first attached PDF's local path, if any."""
+    for url in getattr(event, "media_urls", None) or []:
+        text = str(url)
+        if text.lower().endswith(".pdf") and Path(text).exists():
+            return Path(text)
+    return None
+
+
+async def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, Any]:
+    """Capture thread context, and auto-route an attached 생기부 PDF straight into
+    life_record_ingest_pdf — no tool name or command needed. A PDF that isn't a
+    생기부 returns 'no' from the vision gate and passes through untouched."""
     capture_gateway_context(event)
-    return {"action": "allow"}
+    try:
+        pdf = _pdf_attachment(event)
+        if pdf is None:
+            return {"action": "allow"}
+        from .service import format_ingest_summary, ingest_life_record, looks_like_life_record
+
+        if not await looks_like_life_record(pdf):
+            return {"action": "allow"}
+        result = await ingest_life_record(pdf, current_life_record_dir(), source_thread=THREAD_ID.get())
+        return {"action": "respond", "text": format_ingest_summary(result)}
+    except Exception as exc:  # never block other plugins on a routing failure
+        logger.info("life_record auto-route skipped: %s", exc)
+        return {"action": "allow"}
 
 
 def register(ctx: Any) -> None:

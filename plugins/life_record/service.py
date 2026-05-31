@@ -21,7 +21,7 @@ from .repository import (
 )
 from .review import write_review_html
 from .verifier import run_verification
-from .vision_extractor import VisionResolver, extract_life_record, to_data_url
+from .vision_extractor import VisionResolver, default_codex_resolver, extract_life_record, to_data_url
 
 DEFAULT_RUNS = 2
 MAX_RUNS = 3
@@ -139,6 +139,43 @@ def summarize_life_record(bundle_dir: Path) -> dict[str, Any]:
 def delete_life_record_bundle(bundle_dir: Path) -> dict[str, Any]:
     removed = delete_bundle(bundle_dir)
     return {"ok": True, "operation": "life_record.delete", "removed": removed}
+
+
+async def looks_like_life_record(pdf_path: Path, *, resolver: VisionResolver | None = None) -> bool:
+    """Cheap gate: render only the first page and ask the model if it's a 생기부.
+    Lets the gateway auto-route any attached PDF without the user naming a tool —
+    and without misrouting non-생기부 PDFs (they return no)."""
+    images = [to_data_url(png) for png in render_page_images(pdf_path, zoom=2.0, pages=[0])]
+    if not images:
+        return False
+    from . import vision_extractor as _vx
+
+    resolve = resolver or _vx.default_codex_resolver
+    answer = await resolve(
+        images,
+        "이 문서 이미지가 한국 고등학교 '학교생활기록부(생기부/학생부)'인가? 'yes' 또는 'no' 한 단어로만 답해.",
+    )
+    return "yes" in (answer or "").strip().lower()[:15]
+
+
+def format_ingest_summary(result: dict[str, Any]) -> str:
+    ident = result.get("identity") or {}
+    counts = result.get("counts") or {}
+    name = ident.get("name") or "학생"
+    lines = [f"📄 {name} 생기부를 정리해서 DB에 저장했어."]
+    lines.append(
+        f"- 성적 {counts.get('subject_grade_rows', 0)} · 세특 {counts.get('special_note_rows', 0)} · "
+        f"출결 {counts.get('attendance_rows', 0)} · 수상 {counts.get('award_rows', 0)}"
+    )
+    pending = counts.get("needs_review_rows", 0)
+    if pending:
+        lines.append(f"- 합의가 안 된 {pending}건은 검수 필요(needs_review) — 확인 후 life_record_confirm으로 확정")
+    promoted = result.get("promoted")
+    if result.get("consensus_complete") and promoted and promoted.get("ok"):
+        lines.append("- 전 항목 합의 완료 → 중앙 학생DB에 저장됨 (이후 life_record_lookup으로 조회 가능)")
+    if result.get("review_path"):
+        lines.append(f"- 검수표: {result['review_path']}")
+    return "\n".join(lines)
 
 
 def _safe_photo(pdf_path: Path) -> Any:
