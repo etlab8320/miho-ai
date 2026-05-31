@@ -75,6 +75,10 @@ class AcademyApiClient:
         schedules = payload.get("schedules") if isinstance(payload, dict) else None
         return [item for item in schedules or [] if isinstance(item, dict)]
 
+    def get_paca_schedule_attendance(self, schedule_id: int) -> dict[str, Any]:
+        payload = self._get(f"/paca/schedules/{schedule_id}/attendance")
+        return payload if isinstance(payload, dict) else {}
+
     def get_paca_student_attendance(self, paca_student_id: int, *, year_month: str) -> dict[str, Any]:
         payload = self._get(f"/paca/students/{paca_student_id}/attendance", params={"year_month": year_month})
         return payload if isinstance(payload, dict) else {}

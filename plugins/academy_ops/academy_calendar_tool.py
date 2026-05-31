@@ -9,6 +9,7 @@ from typing import Any
 from .academy_api import AcademyApiError
 from .academy_calendar import academy_schedules_for_range, consultation_schedules_for_range
 from .academy_query_tools import _resolve_client
+from .class_roster import class_roster_for_range
 from .response_guidance import academy_response_guidance
 
 _MESSAGE_LIMIT = 24
@@ -61,6 +62,35 @@ def _consultation_schedule_range_tool_handler(args: dict[str, Any] | None = None
             "operation": "consultation.schedule_range",
             **consultations,
             "message": _consultation_schedule_message(consultations),
+            "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
+        }
+    )
+
+
+def _class_roster_range_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    payload = args or {}
+    date_range = _date_range(payload)
+    if isinstance(date_range, str):
+        return _json_error(date_range)
+    with_roster = _with_roster(payload.get("with_roster"))
+    client_or_error = _resolve_client(kwargs.get("client"))
+    if isinstance(client_or_error, str):
+        return _json_error(client_or_error)
+    try:
+        roster = class_roster_for_range(
+            client_or_error,
+            date_range[0],
+            date_range[1],
+            with_roster=with_roster,
+        )
+    except AcademyApiError as exc:
+        return _json_error(str(exc))
+    return _json_ok(
+        {
+            "operation": "class.roster_range",
+            "with_roster": with_roster,
+            **roster,
+            "message": _class_roster_message(roster, with_roster=with_roster),
             "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
         }
     )
@@ -122,6 +152,56 @@ def _consultation_schedule_message(payload: dict[str, Any]) -> str:
     if len(rows) > _MESSAGE_LIMIT:
         lines.append(f"외 {len(rows) - _MESSAGE_LIMIT}건")
     return "\n".join(lines)
+
+
+def _class_roster_message(payload: dict[str, Any], *, with_roster: bool) -> str:
+    schedules = [row for row in payload.get("schedules", []) if isinstance(row, dict)]
+    label = _range_label(payload)
+    if not schedules:
+        return f"{label} 수업 일정은 없어."
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    lines = [
+        f"{label} 수업 {summary.get('classes', len(schedules))}건, "
+        f"수업학생 {summary.get('students', 0)}명 (체험 {summary.get('trial', 0)}명)"
+    ]
+    for schedule in schedules[:_MESSAGE_LIMIT]:
+        slot = _slot_label(str(schedule.get("time_slot") or ""))
+        instructor = schedule.get("instructor_name") or ""
+        header = f"- {_short_date(schedule['date'])} {slot}"
+        if instructor:
+            header += f" ({instructor})"
+        if with_roster:
+            students = schedule.get("students") if isinstance(schedule.get("students"), list) else []
+            header += f": 학생 {len(students)}명"
+            lines.append(header)
+            for student in students:
+                profile = " ".join(
+                    item for item in [student.get("name"), student.get("grade"), student.get("school")] if item
+                )
+                trial = " (체험)" if student.get("is_trial") else ""
+                makeup = " (보충)" if student.get("is_makeup") else ""
+                status = student.get("attendance_status") or ""
+                status_text = f" / {_status_label(status)}" if status else ""
+                lines.append(f"  · {profile}{trial}{makeup}{status_text}")
+        else:
+            header += f": 학생 {_to_int(schedule.get('student_count'))}명"
+            lines.append(header)
+    if len(schedules) > _MESSAGE_LIMIT:
+        lines.append(f"외 {len(schedules) - _MESSAGE_LIMIT}건")
+    return "\n".join(lines)
+
+
+def _with_roster(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return True
+
+
+def _to_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _new_registration_only(value: Any) -> bool:

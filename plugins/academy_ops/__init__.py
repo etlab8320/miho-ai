@@ -40,6 +40,7 @@ from .academy_query_tools import (
 )
 from .academy_calendar_tool import (
     _academy_schedule_range_tool_handler,
+    _class_roster_range_tool_handler,
     _consultation_schedule_range_tool_handler,
 )
 from .assignment_tool import _assignment_by_date_tool_handler
@@ -500,9 +501,40 @@ def register(ctx: Any) -> None:
         },
         handler=_academy_schedule_range_tool_handler,
         description=(
-            "Return safe PACA business/academy calendar events for an explicit date range. "
+            "Return PACA academy EVENTS/계획 (학원 행사·이벤트, academy_events table) for an explicit date range — "
+            "things like 맥스컵, 월말 테스트, holidays, 업무일정. "
+            "This is NOT about which students attend class. "
+            "For who attends/등원할/출석할 학생 or class rosters, use academy_class_roster_range instead. "
             "The assistant must resolve natural-language periods such as this week, next week, "
             "or a month into start_date/end_date before calling this tool. "
+            "Do not call with empty arguments."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_class_roster_range",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "start_date": {"type": "string", "description": "조회 시작일. YYYY-MM-DD 형식."},
+                "end_date": {"type": "string", "description": "조회 종료일. YYYY-MM-DD 형식."},
+                "with_roster": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "각 수업의 배정 학생 명단까지 펼칠지 여부. False면 수업별 인원수만.",
+                },
+            },
+            "required": ["start_date", "end_date"],
+            "additionalProperties": False,
+        },
+        handler=_class_roster_range_tool_handler,
+        description=(
+            "오늘 출석할/등원할 학생, 수업 일정별 학생 명단 — class_schedules 기반. "
+            "Return PACA class schedules (수업 일정) for a date range and, for each class, the assigned student "
+            "roster (이름/학교/학년/출결상태) from live PACA data. "
+            "Use for questions like '오늘 출석할 학생', '오늘 등원할 학생', '오늘 수업', '이번주 수업별 학생 명단'. "
+            "학원 행사/이벤트(academy_events)는 academy_schedule_range로 따로 조회. "
+            "The assistant must resolve natural-language periods into start_date/end_date first. "
             "Do not call with empty arguments."
         ),
     )

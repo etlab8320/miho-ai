@@ -14,6 +14,7 @@ from agent.temporal_semantics import build_temporal_reference, format_temporal_c
 from .assignment_tool import _assignment_by_date_tool_handler
 from .academy_calendar_tool import (
     _academy_schedule_range_tool_handler,
+    _class_roster_range_tool_handler,
     _consultation_schedule_range_tool_handler,
 )
 from .academy_query_tools import (
@@ -73,6 +74,7 @@ TIMEOUT_RESPONSE = "지금 학원 서버 응답이 불안정해서 요청을 처
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_schedule_range": _academy_schedule_range_tool_handler,
+    "academy_class_roster_range": _class_roster_range_tool_handler,
     "academy_consultation_schedule_range": _consultation_schedule_range_tool_handler,
     "academy_student_attendance_range": _student_attendance_range_tool_handler,
     "academy_student_attendance_calendar_image": _student_attendance_calendar_image_tool_handler,
@@ -93,8 +95,13 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
 
 TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
     "academy_schedule_range": {
-        "purpose": "학원 캘린더 일정, 업무일정, 학원일정, 휴일 조회",
+        "purpose": "학원 행사/이벤트(academy_events) 조회 — 맥스컵, 월말 테스트, 휴일, 업무일정. 학생 출석/등원과는 무관",
         "args": ["start_date", "end_date"],
+    },
+    "academy_class_roster_range": {
+        "purpose": "오늘 출석할/등원할 학생, 수업 일정별 배정 학생 명단(이름/학교/학년/출결상태) 조회. class_schedules 기반",
+        "args": ["start_date", "end_date", "with_roster"],
+        "aliases": ["오늘 출석할 학생", "오늘 등원할 학생", "오늘 수업", "수업 명단", "수업별 학생"],
     },
     "academy_consultation_schedule_range": {
         "purpose": "신규 상담, 상담 일정, 체험수업, 무료체험, trial lesson 일정 조회",
