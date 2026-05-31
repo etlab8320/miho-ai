@@ -108,13 +108,31 @@ def _get_scope_lock_path(scope: str, identity: str) -> Path:
     return _get_lock_dir() / f"{scope}-{_scope_hash(identity)}.lock"
 
 
-def _get_process_start_time(pid: int) -> Optional[int]:
-    """Return the kernel start time for a process when available."""
+def _get_process_start_time(pid: int):
+    """Return a stable per-process start-time fingerprint when available.
+
+    On Linux, reads field 22 of ``/proc/<pid>/stat`` (start time in clock
+    ticks, an int).  On macOS / Windows there is no ``/proc``, so falls back
+    to :func:`psutil.Process.create_time` (epoch seconds, a float).  Either
+    value uniquely fingerprints a *process instance*: when a PID is reused by
+    a new process, the start time differs, so a recorded-vs-current mismatch
+    proves PID reuse.  The recorded value is round-tripped through JSON, so
+    comparisons stay exact for the same process.
+    """
     stat_path = Path(f"/proc/{pid}/stat")
     try:
         # Field 22 in /proc/<pid>/stat is process start time (clock ticks).
         return int(stat_path.read_text(encoding="utf-8").split()[21])
     except (FileNotFoundError, IndexError, PermissionError, ValueError, OSError):
+        pass
+
+    # macOS / Windows: /proc is unavailable. psutil's create_time() is the
+    # canonical cross-platform start-time fingerprint and the only reliable
+    # PID-reuse discriminator on these platforms.
+    try:
+        import psutil  # type: ignore
+        return psutil.Process(int(pid)).create_time()
+    except Exception:
         return None
 
 
@@ -950,12 +968,29 @@ def get_running_pid(
         if not _pid_exists(pid):
             continue
 
+        # start_time mismatch is a definitive PID-reuse signal: the recorded
+        # process exited and the OS handed its PID to an unrelated process
+        # with a different start time. Now that _get_process_start_time falls
+        # back to psutil.create_time(), this discriminates reuse on Windows /
+        # macOS too — the platforms where /proc is unavailable.
         recorded_start = record.get("start_time")
         current_start = _get_process_start_time(pid)
         if recorded_start is not None and current_start is not None and current_start != recorded_start:
             continue
 
-        if _looks_like_gateway_process(pid) or _record_looks_like_gateway(record):
+        # The live PID is alive. Verify it is actually a Miho gateway before
+        # trusting the (possibly stale) PID file.
+        if _looks_like_gateway_process(pid):
+            return pid
+
+        # The live cmdline did not match. Distinguish two cases:
+        #   * cmdline is readable but is NOT a gateway → PID was reused by an
+        #     unrelated process (the Windows pythonw / PID-reuse bug). Do NOT
+        #     trust the stale record's argv — fall through to stale cleanup.
+        #   * cmdline is unreadable (Windows without psutil/ps, permission) →
+        #     fall back to the record's own argv, which the gateway wrote at
+        #     startup, before declaring the PID stale.
+        if _read_process_cmdline(pid) is None and _record_looks_like_gateway(record):
             return pid
 
     _cleanup_invalid_pid_path(resolved_pid_path, cleanup_stale=cleanup_stale)

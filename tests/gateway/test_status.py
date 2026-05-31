@@ -174,6 +174,124 @@ class TestGatewayPidState:
         assert status.get_running_pid() is None
         assert not pid_path.exists()
 
+    def test_get_running_pid_rejects_pid_reused_by_unrelated_process(self, tmp_path, monkeypatch):
+        """Windows PID-reuse bug: stale PID file, live PID is an unrelated process.
+
+        The gateway crashed leaving a stale PID file; the OS reused the PID for
+        an unrelated program (e.g. pythonw.exe running something else). The live
+        cmdline is readable but is NOT a gateway, so the guard must treat the
+        record as stale rather than trusting the stale file's own argv.
+        """
+        monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+        pid_path = tmp_path / "gateway.pid"
+        pid_path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "kind": "miho-gateway",
+            "argv": ["python", "-m", "miho_cli.main", "gateway", "run"],
+            "start_time": None,
+        }))
+
+        monkeypatch.setattr(status, "_pid_exists", lambda pid: True)
+        monkeypatch.setattr(status, "_get_process_start_time", lambda pid: None)
+        monkeypatch.setattr(status, "_looks_like_gateway_process", lambda pid: False)
+        # Live cmdline IS readable (psutil on Windows reads pythonw cmdline) and
+        # belongs to an unrelated program → proves PID reuse.
+        monkeypatch.setattr(
+            status, "_read_process_cmdline",
+            lambda pid: "C:/Python/pythonw.exe C:/other/app.py",
+        )
+
+        assert status.acquire_gateway_runtime_lock() is True
+        try:
+            assert status.get_running_pid() is None
+        finally:
+            status.release_gateway_runtime_lock()
+        assert not pid_path.exists()
+
+    def test_get_running_pid_rejects_pid_reused_via_start_time_mismatch(self, tmp_path, monkeypatch):
+        """PID reuse caught by start_time mismatch (psutil create_time differs).
+
+        With psutil-backed start times, the recorded and live start times differ
+        when the PID was reused — a definitive reuse signal on every platform.
+        """
+        monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+        pid_path = tmp_path / "gateway.pid"
+        pid_path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "kind": "miho-gateway",
+            "argv": ["python", "-m", "miho_cli.main", "gateway", "run"],
+            "start_time": 1000.0,
+        }))
+
+        monkeypatch.setattr(status, "_pid_exists", lambda pid: True)
+        # Live process reports a different create_time → reused PID.
+        monkeypatch.setattr(status, "_get_process_start_time", lambda pid: 2000.0)
+
+        assert status.acquire_gateway_runtime_lock() is True
+        try:
+            assert status.get_running_pid() is None
+        finally:
+            status.release_gateway_runtime_lock()
+        assert not pid_path.exists()
+
+    def test_get_running_pid_detects_live_gateway_via_cmdline(self, tmp_path, monkeypatch):
+        """Regression guard: a genuine live gateway must be detected (dedup kept).
+
+        Windows pythonw case: executable is pythonw.exe but the *arguments*
+        contain miho_cli + gateway, so identity matches on args, not exe name.
+        """
+        monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+        pid_path = tmp_path / "gateway.pid"
+        pid_path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "kind": "miho-gateway",
+            "argv": ["pythonw.exe", "-m", "miho_cli.main", "gateway", "run"],
+            "start_time": 1000.0,
+        }))
+
+        monkeypatch.setattr(status, "_pid_exists", lambda pid: True)
+        monkeypatch.setattr(status, "_get_process_start_time", lambda pid: 1000.0)
+        monkeypatch.setattr(
+            status, "_read_process_cmdline",
+            lambda pid: "C:/Python/pythonw.exe -m miho_cli.main gateway run",
+        )
+
+        assert status.acquire_gateway_runtime_lock() is True
+        try:
+            assert status.get_running_pid() == os.getpid()
+        finally:
+            status.release_gateway_runtime_lock()
+        assert pid_path.exists()
+
+    def test_get_running_pid_rejects_dead_pid(self, tmp_path, monkeypatch):
+        """A PID file pointing at a dead process resolves to None and is cleaned."""
+        monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+        pid_path = tmp_path / "gateway.pid"
+        pid_path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "kind": "miho-gateway",
+            "argv": ["python", "-m", "miho_cli.main", "gateway", "run"],
+            "start_time": 1000.0,
+        }))
+
+        monkeypatch.setattr(status, "_pid_exists", lambda pid: False)
+
+        assert status.acquire_gateway_runtime_lock() is True
+        try:
+            assert status.get_running_pid() is None
+        finally:
+            status.release_gateway_runtime_lock()
+        assert not pid_path.exists()
+
+    def test_get_process_start_time_falls_back_to_psutil(self, tmp_path, monkeypatch):
+        """On platforms without /proc, start time comes from psutil.create_time()."""
+        import sys
+        fake_proc = SimpleNamespace(create_time=lambda: 4242.5)
+        fake_psutil = SimpleNamespace(Process=lambda pid: fake_proc)
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        # No /proc/<pid>/stat for this synthetic PID → psutil fallback wins.
+        assert status._get_process_start_time(2147480000) == 4242.5
+
     def test_get_running_pid_cleans_stale_metadata_from_dead_foreign_pid(self, tmp_path, monkeypatch):
         """Stale PID file from a *different* PID (crashed process) must still be cleaned.
 
