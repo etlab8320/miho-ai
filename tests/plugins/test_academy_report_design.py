@@ -34,6 +34,13 @@ def _no_logo(monkeypatch):
     monkeypatch.setattr(rd, "academy_brand_logo_src", lambda: None)
 
 
+def _body(html: str) -> str:
+    # Position assertions are about rendered table content, not the <style>
+    # block (whose CSS keywords like "overflow" contain "low"). Scope to body.
+    _, _, rest = html.partition("</style>")
+    return rest or html
+
+
 def _spec(rows, **kw):
     return ReportSpec(
         title="테스트 보고서",
@@ -45,7 +52,7 @@ def _spec(rows, **kw):
 
 def test_t1_values_follow_column_order():
     rows = [{"name": "가", "meta": "고3", "jump": 295, "run": 13.7, "back": 165}]
-    html = render_report_html(_spec(rows, highlight_best=False))
+    html = _body(render_report_html(_spec(rows, highlight_best=False)))
     # Each value appears in the same order as its column → header/value aligned.
     assert html.index("295") < html.index("13.7") < html.index("165")
 
@@ -96,7 +103,7 @@ def test_t4c_none_direction_highlights_nothing():
 
 def test_t5_rank_by_sorts_descending():
     rows = [{"name": "low", "jump": 100}, {"name": "high", "jump": 999}]
-    html = render_report_html(_spec(rows, rank_by="jump"))
+    html = _body(render_report_html(_spec(rows, rank_by="jump")))
     assert html.index("high") < html.index("low")
 
 

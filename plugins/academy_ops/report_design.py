@@ -15,55 +15,103 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .brand_assets import academy_brand_logo_src
+from .report_fonts import PRETENDARD_FAMILY, report_font_css
 
-# Design tokens (light, trendy). Mirrors the approved mockup.
-_CSS = """
-:root{
-  --bg:#f4f5f7;--card:#fff;--ink:#16181d;--muted:#6b7180;--line:#e9ebef;
-  --line-soft:#f1f2f5;--row-alt:#fafbfc;--male:#2f6df6;--female:#e8588f;
-  --best:#0f9d76;--avg-bg:#f5f6f8;
-}
-*{box-sizing:border-box;margin:0;padding:0;}
-html,body{background:var(--bg);}
-body{font-family:"Pretendard","Apple SD Gothic Neo","Helvetica Neue",-apple-system,sans-serif;
-  color:var(--ink);-webkit-font-smoothing:antialiased;padding:48px;}
-.sheet{width:1180px;margin:0 auto;background:var(--card);border-radius:22px;padding:44px 46px 34px;
-  box-shadow:0 1px 2px rgba(20,24,29,.04),0 20px 50px -24px rgba(20,24,29,.18);}
-.top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:26px;}
-.title{font-size:30px;font-weight:800;letter-spacing:-.02em;}
-.subtitle{margin-top:8px;font-size:14.5px;color:var(--muted);font-weight:500;}
-.brandtag{display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
-.brandtag .stamp{height:56px;width:auto;opacity:.95;}
-.brandtag .txt{text-align:right;font-size:12px;color:#aab0bd;font-weight:600;line-height:1.5;}
-.brandtag .txt b{color:var(--ink);font-weight:800;display:block;font-size:14px;}
-.seclabel{display:flex;align-items:center;gap:9px;margin:24px 0 10px;font-size:15px;font-weight:800;}
-.seclabel .tag{font-size:11.5px;font-weight:700;color:#fff;padding:3px 9px;border-radius:7px;background:var(--muted);}
-.seclabel.male .tag{background:var(--male);}
-.seclabel.female .tag{background:var(--female);}
-.seclabel .n{color:var(--muted);font-weight:600;font-size:13px;}
-table{width:100%;border-collapse:collapse;table-layout:fixed;}
-/* header(th) and value(td) share the SAME center alignment + fixed colgroup
-   width, so header and number line up on the column centre. */
-th,td{padding:13px 16px;font-size:14.5px;font-variant-numeric:tabular-nums;text-align:center;}
-thead th{font-size:12.5px;font-weight:700;color:var(--muted);
-  border-bottom:1.5px solid var(--line);padding-bottom:11px;white-space:nowrap;}
-thead th .unit{display:block;font-size:10.5px;color:#aab0bd;font-weight:600;margin-top:2px;}
-th.name,td.name{text-align:left;}
-td.name{font-weight:700;}
-th.meta,td.meta{text-align:left;color:var(--muted);font-size:13px;font-weight:500;}
-tbody td{border-bottom:1px solid var(--line-soft);}
-tbody tr:nth-child(even) td{background:var(--row-alt);}
-td .best{color:var(--best);font-weight:800;}
-td .none{color:#c4c9d2;}
-.rank{display:inline-flex;width:22px;height:22px;border-radius:7px;background:#f0f1f4;
-  color:var(--muted);font-size:12px;font-weight:700;align-items:center;justify-content:center;}
-tr.avg td{background:var(--avg-bg);border-bottom:none;font-weight:800;}
-tr.avg.male td.name{color:var(--male);}
-tr.avg.female td.name{color:var(--female);}
-.foot{display:flex;justify-content:space-between;align-items:center;margin-top:24px;
-  padding-top:15px;border-top:1px solid var(--line);}
-.foot .note{font-size:12.5px;color:var(--muted);font-weight:500;}
-.foot .src{font-size:12px;color:#b4bac5;font-weight:600;}
+# Korean-first font stack. The bundled Pretendard webfont (embedded as base64
+# @font-face by report_font_css) is the primary face so the report renders in a
+# clean Korean typeface offline; the remaining names are robust system fallbacks.
+_FONT_STACK = (
+    f"'{PRETENDARD_FAMILY}','Goyang','GoyangDeogyang','Pretendard',"
+    "'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif"
+)
+
+# Design tokens (light, clean — KBO/health-report card feel).
+_CSS = f"""
+:root{{
+  --bg:#eef0f4;--card:#ffffff;--ink:#16181d;--ink-soft:#3a4150;--muted:#717784;
+  --line:#e6e9ef;--line-soft:#f0f2f6;--row-alt:#f8fafc;
+  --male:#2f6df6;--male-soft:#eaf1ff;--female:#e8588f;--female-soft:#fdeef4;
+  --neutral:#5b6472;--neutral-soft:#eef0f4;
+  --best:#0a8f6a;--best-soft:#e4f6ef;--avg-bg:#f3f5f9;
+  --accent:#111827;
+}}
+*{{box-sizing:border-box;margin:0;padding:0;}}
+html,body{{background:var(--bg);}}
+body{{font-family:{_FONT_STACK};
+  color:var(--ink);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  padding:52px 48px;}}
+.sheet{{width:1180px;margin:0 auto;background:var(--card);border-radius:24px;
+  padding:0 0 30px;overflow:hidden;
+  box-shadow:0 1px 2px rgba(20,24,29,.05),0 28px 64px -28px rgba(20,24,29,.28);
+  border:1px solid #eceef3;}}
+/* ---- header band: title + brand, with a thin accent rule underneath ---- */
+.top{{display:flex;justify-content:space-between;align-items:flex-start;
+  padding:40px 46px 26px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#fbfcfe,#ffffff);}}
+.headline{{min-width:0;}}
+.title{{font-size:33px;font-weight:700;letter-spacing:-.025em;line-height:1.12;}}
+.title::after{{content:"";display:block;width:46px;height:4px;border-radius:999px;
+  background:var(--accent);margin-top:14px;}}
+.subtitle{{margin-top:14px;font-size:15px;color:var(--muted);font-weight:500;letter-spacing:-.01em;}}
+.brandtag{{display:flex;flex-direction:column;align-items:flex-end;gap:9px;flex:none;}}
+.brandtag .stamp{{height:52px;width:auto;opacity:.96;}}
+.brandtag .txt{{text-align:right;font-size:11.5px;color:#aab0bd;font-weight:600;line-height:1.5;}}
+.brandtag .txt b{{color:var(--ink);font-weight:700;display:block;font-size:14px;letter-spacing:-.01em;}}
+.body{{padding:8px 46px 0;}}
+/* ---- section label: a coloured pill anchor + group name + count ---- */
+.seclabel{{display:flex;align-items:center;gap:11px;margin:28px 0 13px;
+  font-size:17px;font-weight:700;letter-spacing:-.01em;}}
+.seclabel .tag{{display:inline-flex;align-items:center;justify-content:center;
+  min-width:30px;height:26px;padding:0 9px;border-radius:8px;
+  font-size:12.5px;font-weight:700;color:#fff;background:var(--neutral);
+  letter-spacing:.02em;}}
+.seclabel.male .tag{{background:var(--male);}}
+.seclabel.female .tag{{background:var(--female);}}
+.seclabel .n{{color:var(--muted);font-weight:600;font-size:13.5px;}}
+/* ---- table: header(th) and value(td) share center align + fixed colgroup
+   width so header and number always line up on the column centre. ---- */
+table{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+th,td{{padding:14px 16px;font-size:15px;font-variant-numeric:tabular-nums;text-align:center;}}
+thead th{{font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:.01em;
+  border-bottom:1.5px solid var(--line);padding:8px 16px 11px;white-space:nowrap;}}
+thead th .unit{{display:block;font-size:10.5px;color:#aab0bd;font-weight:600;margin-top:3px;}}
+th.no,td.no{{text-align:center;}}
+th.name,td.name{{text-align:left;}}
+td.name{{font-weight:700;color:var(--ink);letter-spacing:-.01em;}}
+th.meta,td.meta{{text-align:left;color:var(--muted);font-size:13.5px;font-weight:500;}}
+tbody td{{border-bottom:1px solid var(--line-soft);}}
+tbody tr:nth-child(even) td{{background:var(--row-alt);}}
+tbody tr:last-child td{{border-bottom:none;}}
+td .best{{display:inline-block;padding:3px 10px;border-radius:8px;
+  background:var(--best-soft);color:var(--best);font-weight:700;}}
+td .none{{color:#cfd4dd;}}
+.rank{{display:inline-flex;width:27px;height:27px;border-radius:9px;
+  background:var(--neutral-soft);color:var(--neutral);font-size:13px;font-weight:700;
+  align-items:center;justify-content:center;}}
+.seclabel.male ~ table .rank,.male-rank{{background:var(--male-soft);color:var(--male);}}
+tr.avg td{{background:var(--avg-bg);border-top:1.5px solid var(--line);
+  border-bottom:none;font-weight:700;}}
+tr.avg td.name{{color:var(--ink-soft);}}
+tr.avg.male td.name{{color:var(--male);}}
+tr.avg.female td.name{{color:var(--female);}}
+/* ---- roster (no data columns): name directory in a 2-up grid ---- */
+.roster{{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin:4px 0 6px;}}
+.roster .person{{display:flex;align-items:center;gap:14px;padding:13px 16px;
+  border:1px solid var(--line);border-radius:14px;background:#fcfdff;min-width:0;}}
+.roster .num{{display:inline-flex;flex:none;width:30px;height:30px;border-radius:9px;
+  background:var(--neutral-soft);color:var(--neutral);font-size:13.5px;font-weight:700;
+  align-items:center;justify-content:center;}}
+.roster.male .num{{background:var(--male-soft);color:var(--male);}}
+.roster.female .num{{background:var(--female-soft);color:var(--female);}}
+.roster .who{{min-width:0;}}
+.roster .pname{{font-size:16px;font-weight:700;color:var(--ink);letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
+.roster .pmeta{{margin-top:3px;font-size:13px;color:var(--muted);font-weight:500;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
+.foot{{display:flex;justify-content:space-between;align-items:center;
+  margin:26px 46px 0;padding-top:16px;border-top:1px solid var(--line);}}
+.foot .note{{font-size:13px;color:var(--muted);font-weight:500;}}
+.foot .src{{font-size:12px;color:#b4bac5;font-weight:600;letter-spacing:.01em;}}
 """
 
 
@@ -153,28 +201,50 @@ def _sorted_rows(group: GroupSpec, rank_by: str) -> list[dict[str, Any]]:
 
 
 def _colgroup(columns: list[ColumnSpec]) -> str:
-    cols = ['<col style="width:46px">', '<col style="width:96px">', '<col style="width:120px">']
+    cols = ['<col style="width:64px">', '<col style="width:104px">', '<col style="width:132px">']
     cols += ["<col>" for _ in columns]
     return "<colgroup>" + "".join(cols) + "</colgroup>"
 
 
 def _thead(columns: list[ColumnSpec]) -> str:
-    ths = ['<th class="meta">No</th>', '<th class="name">이름</th>', '<th class="meta">구분</th>']
+    ths = ['<th class="no">No</th>', '<th class="name">이름</th>', '<th class="meta">구분</th>']
     for col in columns:
         unit = f'<span class="unit">{html.escape(col.unit)}</span>' if col.unit else ""
         ths.append(f"<th>{html.escape(col.label)}{unit}</th>")
     return "<thead><tr>" + "".join(ths) + "</tr></thead>"
 
 
+def _rank_class(group: GroupSpec) -> str:
+    return " male-rank" if group.kind == "male" else ""
+
+
+def _render_roster(group: GroupSpec) -> str:
+    """No data columns: render the rows as a clean numbered name directory."""
+    kind = f" {html.escape(group.kind)}" if group.kind else ""
+    cards: list[str] = []
+    for idx, row in enumerate(group.rows, start=1):
+        name = html.escape(str(row.get("name") or ""))
+        meta = str(row.get("meta") or "")
+        meta_el = f'<div class="pmeta">{html.escape(meta)}</div>' if meta else ""
+        cards.append(
+            f'<div class="person"><span class="num">{idx}</span>'
+            f'<div class="who"><div class="pname">{name}</div>{meta_el}</div></div>'
+        )
+    return f'<div class="roster{kind}">' + "".join(cards) + "</div>"
+
+
 def _render_group(spec: ReportSpec, group: GroupSpec) -> str:
+    if not spec.columns:
+        return _render_roster(group)
+
     rows = _sorted_rows(group, spec.rank_by)
     best = _best_keys(rows, spec.columns) if spec.highlight_best else {}
+    rank_cls = _rank_class(group)
     body: list[str] = []
     for idx, row in enumerate(rows, start=1):
-        has_any = any(_as_number(row.get(c.key)) is not None for c in spec.columns)
-        rank = f'<span class="rank">{idx}</span>' if has_any else '<span class="rank">–</span>'
+        rank = f'<span class="rank{rank_cls}">{idx}</span>'
         cells = [
-            f'<td class="meta">{rank}</td>',
+            f'<td class="no">{rank}</td>',
             f'<td class="name">{html.escape(str(row.get("name") or ""))}</td>',
             f'<td class="meta">{html.escape(str(row.get("meta") or ""))}</td>',
         ]
@@ -208,15 +278,24 @@ def _render_group(spec: ReportSpec, group: GroupSpec) -> str:
     return table
 
 
-def _section_label(group: GroupSpec) -> str:
+def _section_label(spec: ReportSpec, group: GroupSpec) -> str:
     if not group.label:
         return ""
     kind = f" {html.escape(group.kind)}" if group.kind else ""
     tag = html.escape(group.kind[:1].upper()) if group.kind else "•"
-    n = sum(1 for r in group.rows if any(str(v).strip() for k, v in r.items() if k not in ("name", "meta")))
+    # With data columns, show how many of the listed people actually have records;
+    # for a plain roster (no columns) that distinction is meaningless, so omit it.
+    if spec.columns:
+        n = sum(
+            1 for r in group.rows
+            if any(_as_number(r.get(c.key)) is not None for c in spec.columns)
+        )
+        count = f'· {len(group.rows)}명 (기록 {n}명)'
+    else:
+        count = f'· {len(group.rows)}명'
     return (
         f'<div class="seclabel{kind}"><span class="tag">{tag or "•"}</span>'
-        f'{html.escape(group.label)} <span class="n">· {len(group.rows)}명 (기록 {n}명)</span></div>'
+        f'{html.escape(group.label)} <span class="n">{count}</span></div>'
     )
 
 
@@ -233,7 +312,7 @@ def render_report_html(spec: ReportSpec) -> str:
     multi = len(spec.groups) > 1
     for group in spec.groups:
         if multi or group.label:
-            sections.append(_section_label(group))
+            sections.append(_section_label(spec, group))
         sections.append(_render_group(spec, group))
 
     note = f'<div class="note">{html.escape(spec.note)}</div>' if spec.note else "<div class='note'></div>"
@@ -242,9 +321,9 @@ def render_report_html(spec: ReportSpec) -> str:
     subtitle = f'<div class="subtitle">{html.escape(spec.subtitle)}</div>' if spec.subtitle else ""
     return (
         "<!DOCTYPE html><html lang='ko'><head><meta charset='UTF-8'>"
-        f"<style>{_CSS}</style></head><body><div class='sheet'>"
-        f"<div class='top'><div><div class='title'>{html.escape(spec.title)}</div>{subtitle}</div>{brand}</div>"
-        + "".join(sections)
+        f"<style>{report_font_css()}{_CSS}</style></head><body><div class='sheet'>"
+        f"<div class='top'><div class='headline'><div class='title'>{html.escape(spec.title)}</div>{subtitle}</div>{brand}</div>"
+        f"<div class='body'>" + "".join(sections) + "</div>"
         + foot
         + "</div></body></html>"
     )

@@ -25,12 +25,12 @@ def _json_error(message: str) -> str:
 
 def _estimate_height(groups: list[GroupSpec]) -> int:
     """Window height so Chromium's fixed-size screenshot doesn't clip rows."""
-    height = 320  # body/sheet padding + title + subtitle + footer
+    height = 360  # header band + title + subtitle + footer
     for group in groups:
-        height += 50   # section label
-        height += 60   # table head
-        height += (len(group.rows) + (1 if group.avg_label else 0)) * 53
-    return max(720, height + 80)
+        height += 54   # section label
+        height += 64   # table head
+        height += (len(group.rows) + (1 if group.avg_label else 0)) * 56
+    return max(820, height + 90)
 
 
 def _report_image_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:

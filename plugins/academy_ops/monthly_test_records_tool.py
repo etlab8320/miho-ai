@@ -166,7 +166,7 @@ def _all_events_table_image(
     html_path.write_text(html, encoding="utf-8")
     rows_total = sum(len(g.rows) + 1 for g in groups) + len(groups)
     try:
-        capture_html_to_png(html_path, image_path, width=1240, height=max(820, 360 + rows_total * 52))
+        capture_html_to_png(html_path, image_path, width=1240, height=max(820, 430 + rows_total * 62))
     except StudentCardCaptureError:
         return None
     return str(image_path)
