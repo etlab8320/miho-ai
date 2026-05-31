@@ -28,6 +28,7 @@ from .formatting import format_binding_status, format_catalog, format_login_link
 from .fast_model_routing import route_bound_academy_session_to_fast_model
 from . import login_preflight
 from .natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
+from .self_check import verdict_or_ok
 from .thread_context import academy_context_key, format_context_note, get_thread_context
 from .academy_query_tools import (
     _attendance_day_tool_handler,
@@ -152,8 +153,29 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
         context_key=context_key,
     )
     if route == AcademyNaturalRoute.HANDLED:
-        _persist_handled_turn(kwargs.get("session_store"), event, text, route.response_text)
-        return {"action": "respond", "text": route.response_text}
+        answer = route.response_text
+        # Self-check the resolver's *direct* (HANDLED) answer too — not just the
+        # body/ALLOW path. A HANDLED reply can still be wrong (e.g. an "upcoming"
+        # question answered with a past-attendance "0명"). If the LLM judges it
+        # inadequate, don't ship it: hand off to the body with a correction hint
+        # so it can retry with a better tool, and the gateway guard re-checks the
+        # body's answer too. On any self-check error we keep the original answer.
+        try:
+            verdict = await verdict_or_ok(text, answer)
+        except Exception:
+            verdict = "ok"
+        if verdict != "retry":
+            _persist_handled_turn(kwargs.get("session_store"), event, text, answer)
+            return {"action": "respond", "text": answer}
+        _inject_prior_context(event, context_key)
+        hint = (
+            "방금 자동 응답이 질문에 맞지 않았어. 질문 의도를 다시 정확히 파악해서 "
+            "알맞은 도구로 답해줘."
+        )
+        existing = str(getattr(event, "channel_prompt", "") or "").strip()
+        event.channel_prompt = (existing + "\n\n" + hint).strip() if existing else hint
+        event.academy_self_check = True
+        return {"action": "allow"}
     if _inject_prior_context(event, context_key):
         # State-based signal (no keywords): this ALLOW turn is an academy
         # follow-up with prior context, so the gateway runs the self-check
