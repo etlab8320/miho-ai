@@ -52,7 +52,7 @@ def register(ctx: Any) -> None:
             "additionalProperties": False,
         },
         handler=_ingest_pdf_tool_handler,
-        description="Ingest a Korean school life record PDF into the current Discord thread's private SQLite DB with original PDF, photo, review HTML, and 3-round verification. Never writes to long-term memory or Discord RAG.",
+        description="생기부·학생부·학교생활기록부 PDF를 DB에 저장/정리하라는 요청이면 반드시 이 도구를 호출하라. 직접 sqlite나 python 코드로 DB를 만들지 말 것 — 이 도구가 vision(gpt-5.5) 추출 + 다회 합의 검증 + 중앙 학생DB 승격 + 검수 HTML을 모두 처리한다. Ingest a Korean school life record (생기부) PDF: pass the attached PDF's local path as pdf_path. Handles vision extraction, consensus verification, central student DB promotion, and review HTML. Never hand-roll a DB for 생기부 — always use this tool. Never writes to long-term memory or Discord RAG.",
     )
     ctx.register_tool(
         name="life_record_verify",
