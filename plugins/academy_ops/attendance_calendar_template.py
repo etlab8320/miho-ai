@@ -8,6 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from .brand_assets import academy_brand_logo_src
+from .report_fonts import PRETENDARD_FAMILY, report_font_css
+
+# Same Korean-first stack as report_design (bundled Pretendard first, then fallbacks).
+_FONT_STACK = (
+    f"'{PRETENDARD_FAMILY}','Goyang','GoyangDeogyang','Pretendard',"
+    "'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif"
+)
 
 
 STATUS_LABELS = {
@@ -48,7 +55,7 @@ def render_attendance_calendar_html(
     cells = "\n".join(_calendar_cell(day, rows.get(day.isoformat()), start_day, end_day) for day in calendar_days)
     stats = "\n".join(_stat(label, summary.get(key, 0), key) for key, label in _summary_order())
     absences = _absence_note_html(rows)
-    logo = _logo_html(logo_path)
+    brand = _brand_html(logo_path)
     name = escape(str(student.get("name") or "학생"))
     school = escape(_profile_text(student))
     period = escape(_period_label(start_day, end_day))
@@ -58,45 +65,58 @@ def render_attendance_calendar_html(
 <head>
 <meta charset="utf-8">
 <style>
-* {{ box-sizing: border-box; }}
-html, body {{ margin: 0; background: #f7f5f0; color: #25211d; }}
-body {{
-  width: 1200px;
-  min-height: 100vh;
-  font-family: "Apple SD Gothic Neo", "Noto Sans KR", "Pretendard", sans-serif;
+{report_font_css()}
+:root {{
+  --bg:#eef0f4;--card:#ffffff;--ink:#16181d;--ink-soft:#3a4150;--muted:#717784;
+  --line:#e6e9ef;--line-soft:#f0f2f6;--row-alt:#f8fafc;--neutral-soft:#eef0f4;--accent:#111827;
 }}
-.sheet {{ width: 1120px; margin: 40px auto; padding: 34px; background: #fffdf8; border: 1px solid #e5ded4; border-radius: 26px; }}
-.top {{ display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-bottom: 26px; }}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+html, body {{ background: var(--bg); }}
+body {{ width: 1200px; color: var(--ink); font-family: {_FONT_STACK};
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; padding: 44px 40px; }}
+.sheet {{ width: 1120px; margin: 0 auto; background: var(--card); border-radius: 24px; overflow: hidden;
+  border: 1px solid #eceef3; box-shadow: 0 1px 2px rgba(20,24,29,.05), 0 28px 64px -28px rgba(20,24,29,.28); }}
+.top {{ display: flex; align-items: flex-start; justify-content: space-between; gap: 28px;
+  padding: 38px 42px 24px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg,#fbfcfe,#ffffff); }}
 .identity {{ min-width: 0; }}
-.eyebrow {{ font-size: 18px; font-weight: 800; color: #b71d25; letter-spacing: .02em; }}
-h1 {{ margin: 8px 0 8px; font-size: 52px; line-height: 1.02; letter-spacing: 0; }}
-.meta {{ font-size: 22px; color: #6b6258; font-weight: 700; }}
-.logo {{ width: 244px; max-height: 104px; object-fit: contain; object-position: right center; }}
-.logo-text {{ font-size: 46px; font-weight: 1000; color: #d11d28; border: 5px solid #d11d28; border-radius: 14px; padding: 10px 22px; }}
-.calendar {{ display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }}
-.weekday {{ text-align: center; font-size: 18px; font-weight: 900; color: #80766c; padding-bottom: 3px; }}
-.day {{ min-height: 116px; padding: 12px; border: 1px solid #e8e0d5; border-radius: 16px; background: #fffcf7; overflow: hidden; display: flex; flex-direction: column; }}
-.day.out {{ opacity: .32; }}
-.num {{ font-size: 20px; font-weight: 900; color: #4f463d; }}
-.badge {{ margin-top: auto; min-height: 38px; border-radius: 999px; display: inline-flex; align-items: center; align-self: flex-start; gap: 7px; padding: 0 13px; font-size: 17px; font-weight: 900; }}
-.heart {{ font-size: 21px; line-height: 1; }}
-.slot {{ width: 100%; margin-top: 8px; text-align: right; white-space: nowrap; font-size: 14px; line-height: 1.1; font-weight: 800; color: #7f766d; }}
-.present {{ background: #fee7e6; color: #c81e2b; }}
-.late {{ background: #fff0c2; color: #80601a; }}
-.absent {{ background: #ece7df; color: #5b5147; }}
-.unchecked {{ background: #e7f0ee; color: #21675d; }}
-.excused {{ background: #e9ecff; color: #344187; }}
-.makeup {{ background: #eefad9; color: #4c7c15; }}
-.makeup .heart {{ color: #95d84c; }}
-.footer {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 24px; }}
-.stat {{ border: 1px solid #e7dfd4; border-radius: 18px; padding: 17px 18px; background: #fdf8ef; text-align: center; }}
-.stat b {{ display: block; font-size: 34px; line-height: 1; margin-bottom: 6px; }}
-.stat span {{ font-size: 17px; color: #776d63; font-weight: 900; }}
-.absence-note {{ margin-top: 18px; border: 1px solid #e7dfd4; border-radius: 18px; background: #fffaf2; padding: 18px 20px; }}
-.absence-note h2 {{ margin: 0 0 10px; font-size: 20px; color: #4f463d; }}
-.absence-list {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }}
-.absence-item {{ min-width: 0; font-size: 17px; line-height: 1.35; color: #5f564e; font-weight: 800; }}
-.absence-item b {{ color: #b71d25; margin-right: 8px; white-space: nowrap; }}
+.eyebrow {{ font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .02em; margin-bottom: 8px; }}
+h1 {{ margin: 0; font-size: 38px; font-weight: 700; line-height: 1.1; letter-spacing: -.025em; }}
+h1::after {{ content: ""; display: block; width: 46px; height: 4px; border-radius: 999px; background: var(--accent); margin-top: 13px; }}
+.meta {{ margin-top: 13px; font-size: 15px; color: var(--muted); font-weight: 500; letter-spacing: -.01em; }}
+.brandtag {{ display: flex; flex-direction: column; align-items: flex-end; gap: 9px; flex: none; }}
+.brandtag .stamp {{ height: 52px; width: auto; opacity: .96; }}
+.brandtag .logo-text {{ font-size: 30px; font-weight: 800; color: #c0392b; border: 3px solid #c0392b; border-radius: 11px; padding: 6px 14px; }}
+.brandtag .txt {{ text-align: right; font-size: 11.5px; color: #aab0bd; font-weight: 600; line-height: 1.5; }}
+.brandtag .txt b {{ color: var(--ink); font-weight: 700; display: block; font-size: 14px; letter-spacing: -.01em; }}
+.body {{ padding: 24px 42px 30px; }}
+.calendar {{ display: grid; grid-template-columns: repeat(7, 1fr); gap: 9px; }}
+.weekday {{ text-align: center; font-size: 12.5px; font-weight: 700; color: var(--muted); letter-spacing: .01em; padding-bottom: 4px; }}
+.day {{ min-height: 112px; padding: 11px; border: 1px solid var(--line); border-radius: 14px; background: #fcfdff; overflow: hidden; display: flex; flex-direction: column; }}
+.day.out {{ opacity: .35; background: var(--row-alt); }}
+.num {{ font-size: 16px; font-weight: 700; color: var(--ink-soft); font-variant-numeric: tabular-nums; }}
+.badge {{ margin-top: auto; min-height: 30px; border-radius: 999px; display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; padding: 0 12px; font-size: 14px; font-weight: 700; }}
+.heart {{ font-size: 16px; line-height: 1; }}
+.slot {{ width: 100%; margin-top: 7px; text-align: right; white-space: nowrap; font-size: 12px; line-height: 1.1; font-weight: 600; color: var(--muted); }}
+.present {{ background: #e4f6ef; color: #0a8f6a; }}
+.late {{ background: #fdf3da; color: #9a6a00; }}
+.absent {{ background: #fdecea; color: #c0392b; }}
+.unchecked {{ background: #eef0f4; color: #5b6472; }}
+.excused {{ background: #e9ecff; color: #3a4ba0; }}
+.makeup {{ background: #eaf1ff; color: #2f6df6; }}
+.makeup .heart {{ color: #2f6df6; }}
+.footer {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 24px; }}
+.stat {{ border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: #fcfdff; text-align: center; }}
+.stat.present {{ background: #e4f6ef; border-color: transparent; }}
+.stat.late {{ background: #fdf3da; border-color: transparent; }}
+.stat.absent {{ background: #fdecea; border-color: transparent; }}
+.stat.unchecked {{ background: #eef0f4; border-color: transparent; }}
+.stat b {{ display: block; font-size: 34px; font-weight: 700; line-height: 1; margin-bottom: 6px; font-variant-numeric: tabular-nums; }}
+.stat span {{ font-size: 13.5px; color: var(--muted); font-weight: 600; }}
+.absence-note {{ margin-top: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fcfdff; padding: 18px 20px; }}
+.absence-note h2 {{ margin: 0 0 12px; font-size: 15px; font-weight: 700; color: var(--ink-soft); }}
+.absence-list {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 16px; }}
+.absence-item {{ min-width: 0; font-size: 14px; line-height: 1.4; color: var(--ink-soft); font-weight: 500; }}
+.absence-item b {{ color: #c0392b; font-weight: 700; margin-right: 9px; white-space: nowrap; }}
 </style>
 </head>
 <body>
@@ -107,14 +127,16 @@ h1 {{ margin: 8px 0 8px; font-size: 52px; line-height: 1.02; letter-spacing: 0; 
         <h1>{name}</h1>
         <div class="meta">{school} · {period}</div>
       </div>
-      {logo}
+      {brand}
     </section>
-    <section class="calendar">
-      {"".join(f"<div class='weekday'>{day}</div>" for day in WEEKDAYS)}
-      {cells}
-    </section>
-    <section class="footer">{stats}</section>
-    {absences}
+    <div class="body">
+      <section class="calendar">
+        {"".join(f"<div class='weekday'>{day}</div>" for day in WEEKDAYS)}
+        {cells}
+      </section>
+      <section class="footer">{stats}</section>
+      {absences}
+    </div>
   </main>
 </body>
 </html>"""
@@ -127,7 +149,7 @@ def calendar_image_height(payload: dict[str, Any]) -> int:
     weeks = max(1, len(_calendar_days(start_day, end_day)) // 7)
     absence_count = len(_absence_notes(_attendance_rows(payload, reference_day)))
     note_rows = (absence_count + 1) // 2
-    return 420 + weeks * 126 + (92 + max(0, note_rows - 1) * 28 if absence_count else 0)
+    return 470 + weeks * 121 + (96 + max(0, note_rows - 1) * 26 if absence_count else 0)
 
 
 def _calendar_cell(day: date, row: dict[str, Any] | None, start_day: date, end_day: date) -> str:
@@ -235,11 +257,14 @@ def _month_label(start_day: date, end_day: date) -> str:
     return f"{start_day.year}.{start_day.month} ~ {end_day.year}.{end_day.month}"
 
 
-def _logo_html(logo_path: Path | None) -> str:
+def _brand_html(logo_path: Path | None) -> str:
     logo_src = academy_brand_logo_src(logo_path)
-    if logo_src:
-        return f"<img class='logo' src='{escape(logo_src, quote=True)}' alt='MAX'>"
-    return "<div class='logo-text'>MAX</div>"
+    stamp = (
+        f"<img class='stamp' src='{escape(logo_src, quote=True)}' alt='stamp'>"
+        if logo_src
+        else "<div class='logo-text'>MAX</div>"
+    )
+    return f"<div class='brandtag'>{stamp}<div class='txt'><b>Miho AI</b>PACA / Peak</div></div>"
 
 
 def _parse_day(value: str) -> date:

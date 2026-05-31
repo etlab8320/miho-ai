@@ -22,6 +22,7 @@ from .context import (
     capture_gateway_context,
     set_gateway_context,
 )
+from .brand_logo_tool import register_brand_logo_tools
 from .commentary_config import plan_commentary_aux_defaults
 from .consultation_notes_tool import register_consultation_note_tool
 from .formatting import format_binding_status, format_catalog, format_login_link
@@ -339,6 +340,7 @@ def register(ctx: Any) -> None:
     register_monthly_test_records_tool(ctx)
     register_report_image_tool(ctx)
     register_consultation_note_tool(ctx)
+    register_brand_logo_tools(ctx)
     ctx.register_tool(
         name="academy_student_attendance_calendar_image",
         toolset="academy_ops",

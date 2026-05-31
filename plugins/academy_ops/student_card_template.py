@@ -7,6 +7,7 @@ from html import escape
 from pathlib import Path
 
 from .brand_assets import academy_brand_logo_src
+from .report_fonts import report_font_css
 from .student_card import RecordItem, StudentCard
 from .student_card_fonts import goyang_font_css
 from .student_card_styles import student_card_css
@@ -32,6 +33,7 @@ def render_student_card_html(card: StudentCard, *, logo_path: Path | None = None
 <head>
 <meta charset="utf-8">
 <style>
+{report_font_css()}
 {goyang_font_css()}
 {student_card_css()}
 </style>

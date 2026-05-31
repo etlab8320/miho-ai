@@ -12,22 +12,24 @@ html, body {
   margin: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 12% 8%, rgb(255 231 224 / .72), transparent 32%),
-    radial-gradient(circle at 92% 0%, rgb(204 232 255 / .82), transparent 30%),
-    linear-gradient(145deg, #f7f8f4, #e9eef3);
-  color: #111827;
-  font-family: "GoyangDeogyang", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    radial-gradient(circle at 12% 8%, rgb(234 241 255 / .7), transparent 34%),
+    radial-gradient(circle at 92% 0%, rgb(228 246 239 / .8), transparent 30%),
+    #eef0f4;
+  color: #16181d;
+  font-family: "PretendardLocal", "GoyangDeogyang", "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 .card {
   width: 1120px;
   height: 1260px;
   margin: 40px;
   padding: 34px;
-  border: 1px solid rgb(17 24 39 / .12);
+  border: 1px solid #eceef3;
   border-radius: 24px;
-  background: #fbfaf6;
-  box-shadow: 0 30px 90px rgb(17 24 39 / .18);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(20 24 29 / .05), 0 28px 64px -28px rgb(20 24 29 / .28);
   overflow: hidden;
 }
 .layout { height: 100%; display: grid; grid-template-rows: 250px 154px 282px minmax(0, 452px); gap: 18px; }
@@ -58,7 +60,7 @@ html, body {
 .hero > * { position: relative; z-index: 1; }
 .hero-copy { min-width: 0; }
 .eyebrow { margin-bottom: 16px; color: #ffcc66; font-size: 21px; }
-h1 { margin: 0 0 18px; font-size: 92px; line-height: .86; font-weight: 700; }
+h1 { margin: 0 0 18px; font-size: 92px; line-height: .86; font-weight: 700; letter-spacing: -.02em; }
 .meta { display: flex; flex-wrap: wrap; gap: 9px; max-width: 690px; }
 .chip {
   min-height: 34px;
@@ -124,10 +126,10 @@ h1 { margin: 0 0 18px; font-size: 92px; line-height: .86; font-weight: 700; }
 .lower-grid { display: grid; grid-template-columns: 1.12fr .88fr; gap: 18px; }
 .panel {
   min-width: 0;
-  border: 1px solid rgb(17 24 39 / .13);
+  border: 1px solid #e6e9ef;
   border-radius: 18px;
   padding: 22px 24px;
-  background: rgb(255 255 255 / .68);
+  background: #fcfdff;
   overflow: hidden;
 }
 .section-title { margin: 0 0 16px; font-size: 29px; line-height: 1; }
@@ -147,11 +149,11 @@ h1 { margin: 0 0 18px; font-size: 92px; line-height: .86; font-weight: 700; }
   align-content: center;
   gap: 8px;
   border-radius: 15px;
-  background: #e8f8f5;
+  background: #e4f6ef;
   text-align: center;
 }
-.metric b { display: block; font-size: 40px; line-height: .92; }
-.metric span { display: block; color: #475467; font-size: 17px; line-height: 1; }
+.metric b { display: block; font-size: 40px; line-height: .92; font-variant-numeric: tabular-nums; }
+.metric span { display: block; color: #717784; font-size: 17px; line-height: 1; }
 .today {
   margin-top: 14px;
   padding: 13px 15px;

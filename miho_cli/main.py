@@ -7085,6 +7085,12 @@ def _update_via_zip(args):
 
     print()
     print("✓ Update complete!")
+    # Prefetch the on-device embedding model (best-effort) so updated installs
+    # match fresh installs — see scripts/install.sh.
+    try:
+        _prefetch_local_embedding_model()
+    except Exception as e:
+        logger.debug("Embedding model prefetch failed: %s", e)
     try:
         _print_curator_first_run_notice()
     except Exception as e:
@@ -8322,6 +8328,55 @@ def _finalize_update_output(state):
             pass
 
 
+def _prefetch_local_embedding_model() -> None:
+    """Pre-download the on-device embedding model after an update.
+
+    Mirrors ``prefetch_embedding_model`` in ``scripts/install.sh`` so users
+    who *update* an existing install get the ~2GB e5 model cached the same way
+    fresh installs do — otherwise RAG / semantic routing silently falls back to
+    keyword matching until the model downloads on first use (observed on
+    Windows). Best-effort: honours ``MIHO_SKIP_MODEL_PREFETCH=1``, skips
+    cleanly when fastembed isn't installed (keyword fallback stays active), and
+    never fails the update.
+    """
+    if os.getenv("MIHO_SKIP_MODEL_PREFETCH") == "1":
+        logger.debug("Skipping embedding model prefetch (MIHO_SKIP_MODEL_PREFETCH=1)")
+        return
+
+    scripts_dir = _venv_scripts_dir()
+    py = scripts_dir / ("python.exe" if _is_windows() else "python") if scripts_dir else None
+    py_exe = str(py) if py and py.exists() else sys.executable
+
+    if (
+        subprocess.run(
+            [py_exe, "-c", "import fastembed"],
+            capture_output=True,
+        ).returncode
+        != 0
+    ):
+        logger.debug(
+            "fastembed not installed — embedding model prefetch skipped (keyword fallback active)"
+        )
+        return
+
+    print()
+    print(
+        "→ Preparing on-device embedding model (one-time ~2GB; enables keyless semantic routing)..."
+    )
+    snippet = (
+        "import os\n"
+        "from fastembed import TextEmbedding\n"
+        'name = os.getenv("MIHO_LOCAL_EMBEDDING_MODEL", "").strip() or "intfloat/multilingual-e5-large"\n'
+        "TextEmbedding(name)\n"
+        'print(f"  embedding model ready: {name}")\n'
+    )
+    result = subprocess.run([py_exe, "-c", snippet])
+    if result.returncode == 0:
+        print("  ✓ Embedding model ready")
+    else:
+        print("  ⚠ Embedding model prefetch failed — it will download on first use")
+
+
 def _cmd_update_check():
     """Implement ``miho update --check``: fetch and report without installing."""
     from miho_cli.config import detect_install_method
@@ -9177,6 +9232,14 @@ def _cmd_update_impl(args, gateway_mode: bool):
 
         print()
         print("✓ Update complete!")
+
+        # Prefetch the on-device embedding model (best-effort) so updated
+        # installs match fresh installs — see scripts/install.sh. Runs before
+        # the gateway restart below, which may terminate this process.
+        try:
+            _prefetch_local_embedding_model()
+        except Exception as e:
+            logger.debug("Embedding model prefetch failed: %s", e)
 
         # Curator first-run heads-up. Only prints when curator is enabled AND
         # has never run — i.e. the window where the ticker would otherwise

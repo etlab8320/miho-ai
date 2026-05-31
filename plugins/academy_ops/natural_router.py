@@ -12,6 +12,10 @@ from zoneinfo import ZoneInfo
 
 from agent.temporal_semantics import build_temporal_reference, format_temporal_context
 from .assignment_tool import _assignment_by_date_tool_handler
+from .brand_logo_tool import (
+    _academy_reset_brand_logo_tool_handler,
+    _academy_set_brand_logo_tool_handler,
+)
 from .academy_calendar_tool import (
     _academy_schedule_range_tool_handler,
     _class_roster_range_tool_handler,
@@ -91,6 +95,8 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_student_context": _student_context_tool_handler,
     "academy_student_record_lookup": _student_record_lookup_tool_handler,
     "academy_monthly_test_records": _monthly_test_records_tool_handler,
+    "academy_set_brand_logo": _academy_set_brand_logo_tool_handler,
+    "academy_reset_brand_logo": _academy_reset_brand_logo_tool_handler,
 }
 
 TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -156,6 +162,16 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "args": ["student_query", "event_query", "date", "today", "period_days"],
     },
     "academy_monthly_test_records": {"purpose": "월별 또는 정기 실기 평가 참가자 기준 종목 평균, 순위, 학교 제외 집계 조회. 일반 최신 학생 기록이 아니라 평가 참가자 집계를 원할 때 사용", "args": ["event_query", "test_id", "test_month", "exclude_schools", "today"]},
+    "academy_set_brand_logo": {
+        "purpose": "사용자가 이미지를 첨부하고 학원 로고를 그 이미지로 바꿔/교체/설정해달라고 할 때 사용. 첨부 이미지를 학원 로고로 저장해 리포트/카드 스탬프에 적용. 인자 없음",
+        "args": [],
+        "aliases": ["로고 바꿔", "로고 교체", "로고 이걸로", "로고 설정", "스탬프 바꿔"],
+    },
+    "academy_reset_brand_logo": {
+        "purpose": "학원 로고를 기본/원래대로 되돌리거나 삭제해달라고 할 때 사용. 저장된 학원 로고를 지워 기본 스탬프로 복원. 인자 없음",
+        "args": [],
+        "aliases": ["로고 기본", "로고 원래대로", "로고 삭제", "로고 초기화"],
+    },
 }
 
 
