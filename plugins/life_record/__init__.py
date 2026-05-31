@@ -6,8 +6,10 @@ from typing import Any
 
 from .context import capture_gateway_context
 from .tools import (
+    _confirm_tool_handler,
     _delete_tool_handler,
     _ingest_pdf_tool_handler,
+    _lookup_tool_handler,
     _search_tool_handler,
     _summary_tool_handler,
     _verify_tool_handler,
@@ -84,4 +86,28 @@ def register(ctx: Any) -> None:
         schema={"type": "object", "properties": {"confirm_delete": {"type": "boolean"}}, "required": ["confirm_delete"], "additionalProperties": False},
         handler=_delete_tool_handler,
         description="Delete the current thread's life record bundle: SQLite DB, source PDFs, photos, reviews, and exports. Requires explicit confirmation.",
+    )
+    ctx.register_tool(
+        name="life_record_lookup",
+        toolset="life_record",
+        schema={
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "학생 이름 또는 학교명"}, "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        handler=_lookup_tool_handler,
+        description="Look up a student in the central life-record DB (confirmed records accumulated across semesters: grades, attendance, awards). Use when asked about a student whose 생기부 was already ingested and confirmed.",
+    )
+    ctx.register_tool(
+        name="life_record_confirm",
+        toolset="life_record",
+        schema={
+            "type": "object",
+            "properties": {"confirm": {"type": "boolean"}, "document_id": {"type": "integer"}},
+            "required": ["confirm"],
+            "additionalProperties": False,
+        },
+        handler=_confirm_tool_handler,
+        description="Human-confirm the current thread document's remaining needs_review rows, then promote the confirmed life record into the central student DB. Requires confirm=true.",
     )

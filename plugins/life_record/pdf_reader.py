@@ -99,3 +99,29 @@ def _photo_score(page_index: int, width: int, height: int) -> int:
     if width * height > 30_000:
         score += 2
     return score
+
+
+def render_page_images(pdf_path: Path, *, zoom: float = 3.0, pages: list[int] | None = None) -> list[bytes]:
+    """Render PDF pages to PNG bytes for vision extraction.
+
+    zoom 3.0 ≈ 216 DPI — enough detail that the model reads small 주민번호/학교명
+    glyphs (PoC showed zoom 2.5 caused 1-char mis-reads). ``pages`` (0-based) limits
+    rendering to a subset when only specific pages are needed.
+    """
+    _ensure_pdf_deps()
+    try:
+        import fitz
+    except ImportError as exc:
+        raise RuntimeError("PyMuPDF(fitz)를 불러오지 못했어.") from exc
+    doc = fitz.open(str(pdf_path))
+    try:
+        matrix = fitz.Matrix(zoom, zoom)
+        want = set(pages) if pages is not None else None
+        out: list[bytes] = []
+        for index, page in enumerate(doc):
+            if want is not None and index not in want:
+                continue
+            out.append(page.get_pixmap(matrix=matrix).tobytes("png"))
+        return out
+    finally:
+        doc.close()

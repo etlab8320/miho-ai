@@ -1,4 +1,9 @@
-"""SQLite repository helpers for life record data."""
+"""SQLite repository for life record data — vision/consensus based.
+
+Thread bundle DB holds one document's extraction (with per-row review_status from
+consensus). Confirmed data is promoted into the central student DB, accumulated per
+student across semesters (1학년 → 2·3학년).
+"""
 
 from __future__ import annotations
 
@@ -8,12 +13,21 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from .schema import SCHEMA
+from miho_constants import get_miho_home
+
+from .consensus import CONFIRMED
+from .schema import CENTRAL_SCHEMA, SCHEMA
 from .utils import backup_database, now_iso, safe_name, sha256_file
 
 
 def db_path(bundle_dir: Path) -> Path:
     return bundle_dir / "life_records.sqlite3"
+
+
+def central_db_path() -> Path:
+    path = get_miho_home() / "life_records" / "central.sqlite3"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -24,44 +38,86 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def connect_central(path: Path | None = None) -> sqlite3.Connection:
+    path = path or central_db_path()
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.executescript(CENTRAL_SCHEMA)
+    return conn
+
+
+# ---------------------------------------------------------------- consensus helpers
+
+def identity_from_consensus(consensus: dict[str, Any]) -> dict[str, str]:
+    ident = consensus.get("identity") or {}
+
+    def value(field: str) -> str | None:
+        info = ident.get(field) or {}
+        return info.get("value")
+
+    birth6 = value("birth6")
+    return {
+        "name": value("name") or "미상",
+        "school_name": value("school_name") or "",
+        "class_no": value("class_no") or "",
+        "student_no": value("student_no") or "",
+        "birth_masked": f"{birth6}-*******" if birth6 else "",
+    }
+
+
+def _row_status(row: dict[str, Any]) -> str:
+    return CONFIRMED if row.get("_status") == CONFIRMED else "needs_review"
+
+
+def _row_conf(row: dict[str, Any]) -> float:
+    try:
+        return float(row.get("_confidence") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# ---------------------------------------------------------------- bundle import
+
 def save_import(
     *,
     bundle_dir: Path,
     pdf_path: Path,
-    extracted: Any,
-    identity: dict[str, str],
-    sections: list[dict[str, Any]],
-    attendance_rows: list[dict[str, Any]],
-    grade_rows: list[dict[str, Any]],
-    note_rows: list[dict[str, Any]],
+    page_count: int,
+    raw_text: str,
+    metadata: dict[str, Any],
+    consensus: dict[str, Any],
+    photo: Any = None,
+    extraction_method: str = "codex_vision_gpt5.5_v1",
+    source_thread: str = "",
 ) -> dict[str, Any]:
     path = db_path(bundle_dir)
     backup_path = backup_database(path, "before_import")
     pdf_hash = sha256_file(pdf_path)
     stored_pdf = _store_pdf(bundle_dir, pdf_path, pdf_hash)
+    identity = identity_from_consensus(consensus)
     now = now_iso()
     conn = connect(path)
     try:
         student_id = _upsert_student(conn, identity, now)
-        document_id = _upsert_document(conn, student_id, identity, extracted, pdf_path, stored_pdf, pdf_hash, now)
-        photo_paths = _replace_photo(conn, bundle_dir, student_id, document_id, identity, extracted.photo, now)
-        _replace_sections(conn, document_id, sections, now)
-        _replace_attendance(conn, document_id, attendance_rows, now)
-        _replace_grades(conn, document_id, grade_rows, now)
-        _replace_notes(conn, document_id, note_rows, now)
+        document_id = _upsert_document(conn, student_id, identity, page_count, raw_text, metadata, pdf_path, stored_pdf, pdf_hash, extraction_method, _doc_confidence(consensus), now)
+        photo_paths = _replace_photo(conn, bundle_dir, student_id, document_id, identity, photo, now)
+        _replace_grades(conn, document_id, consensus.get("grades") or [], now)
+        _replace_notes(conn, document_id, consensus.get("notes") or [], now)
+        _replace_attendance(conn, document_id, consensus.get("attendance") or [], now)
+        _replace_awards(conn, document_id, consensus.get("awards") or [], now)
         summary = {
             "student": identity["name"],
-            "pages": extracted.page_count,
-            "sections": len(sections),
-            "attendance_rows": len(attendance_rows),
-            "subject_grade_rows": len(grade_rows),
-            "special_note_rows": len(note_rows),
+            "pages": page_count,
+            "subject_grade_rows": len(consensus.get("grades") or []),
+            "special_note_rows": len(consensus.get("notes") or []),
+            "attendance_rows": len(consensus.get("attendance") or []),
+            "award_rows": len(consensus.get("awards") or []),
             "photos": len(photo_paths),
             "backup_path": backup_path,
         }
         conn.execute(
             "INSERT INTO extraction_audit_logs(document_id, method, version, result_summary, confidence_before, confidence_after, created_at) VALUES(?,?,?,?,?,?,?)",
-            (document_id, "miho_life_record_importer", "0.1.0", json.dumps(summary, ensure_ascii=False), None, _document_confidence(extracted), now),
+            (document_id, extraction_method, "1.0.0", json.dumps(summary, ensure_ascii=False), None, _doc_confidence(consensus), now),
         )
         conn.commit()
         return {
@@ -71,10 +127,118 @@ def save_import(
             "document_id": document_id,
             "stored_pdf_path": str(stored_pdf),
             "photo_paths": photo_paths,
+            "source_thread": source_thread,
         }
     finally:
         conn.close()
 
+
+def _doc_confidence(consensus: dict[str, Any]) -> float:
+    ident = consensus.get("identity") or {}
+    confs = [info.get("confidence", 0.0) for info in ident.values() if info.get("value")]
+    return round(sum(confs) / len(confs), 2) if confs else 0.5
+
+
+def _store_pdf(bundle_dir: Path, pdf_path: Path, pdf_hash: str) -> Path:
+    source_dir = bundle_dir / "sources"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    stored = source_dir / f"{pdf_hash[:16]}_original.pdf"
+    shutil.copy2(pdf_path, stored)
+    return stored
+
+
+def _upsert_student(conn: sqlite3.Connection, identity: dict[str, str], now: str) -> int:
+    conn.execute(
+        "INSERT OR IGNORE INTO students(name, school_name, class_no, student_no, birth_masked, profile_photo_path, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
+        (identity["name"], identity["school_name"], identity["class_no"], identity["student_no"], identity["birth_masked"], None, now, now),
+    )
+    conn.execute(
+        "UPDATE students SET class_no=?, student_no=?, updated_at=? WHERE name=? AND IFNULL(school_name,'')=IFNULL(?, '') AND IFNULL(birth_masked,'')=IFNULL(?, '')",
+        (identity["class_no"], identity["student_no"], now, identity["name"], identity["school_name"], identity["birth_masked"]),
+    )
+    row = conn.execute(
+        "SELECT id FROM students WHERE name=? AND IFNULL(school_name,'')=IFNULL(?, '') AND IFNULL(birth_masked,'')=IFNULL(?, '')",
+        (identity["name"], identity["school_name"], identity["birth_masked"]),
+    ).fetchone()
+    return int(row["id"])
+
+
+def _upsert_document(conn, student_id, identity, page_count, raw_text, metadata, pdf_path, stored_pdf, pdf_hash, method, confidence, now) -> int:
+    conn.execute(
+        "INSERT OR IGNORE INTO student_documents(student_id, document_type, source_pdf_path, stored_pdf_path, file_sha256, page_count, issued_at, issuer_school, document_number, verification_number, raw_text, metadata_json, extraction_method, extraction_confidence, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (student_id, "school_life_record", str(pdf_path), str(stored_pdf), pdf_hash, page_count, None, identity["school_name"], None, None, raw_text, json.dumps(metadata, ensure_ascii=False), method, confidence, now),
+    )
+    row = conn.execute("SELECT id FROM student_documents WHERE file_sha256=?", (pdf_hash,)).fetchone()
+    return int(row["id"])
+
+
+def _replace_photo(conn, bundle_dir, student_id, document_id, identity, photo, now) -> list[str]:
+    conn.execute("DELETE FROM student_photos WHERE document_id=?", (document_id,))
+    if not photo:
+        return []
+    photo_dir = bundle_dir / "photos"
+    photo_dir.mkdir(parents=True, exist_ok=True)
+    path = photo_dir / f"{safe_name(identity['name'])}_profile_p{photo.source_page}.{photo.ext}"
+    path.write_bytes(photo.image_bytes)
+    conn.execute(
+        "INSERT INTO student_photos(student_id, document_id, image_path, source_page, width, height, image_sha256, is_primary, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        (student_id, document_id, str(path), photo.source_page, photo.width, photo.height, photo.sha256, 1, now),
+    )
+    conn.execute("UPDATE students SET profile_photo_path=?, updated_at=? WHERE id=?", (str(path), now, student_id))
+    return [str(path)]
+
+
+def _replace_grades(conn, document_id, rows, now) -> None:
+    conn.execute("DELETE FROM subject_grades WHERE student_document_id=?", (document_id,))
+    for row in rows:
+        subject = str(row.get("subject") or "").strip()
+        if not subject:
+            continue
+        conn.execute(
+            "INSERT OR REPLACE INTO subject_grades(student_document_id, grade, semester, category, subject, credits, raw_score, achievement, students_count, rank_grade, raw_row, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (document_id, _int(row.get("grade")), _int(row.get("semester")), row.get("category"), subject, _float(row.get("credits")), row.get("raw_score"), row.get("achievement"), _int(row.get("students_count")), row.get("rank_grade"), json.dumps(row, ensure_ascii=False), _row_conf(row), _row_status(row), now),
+        )
+
+
+def _replace_notes(conn, document_id, rows, now) -> None:
+    conn.execute("DELETE FROM subject_special_notes WHERE student_document_id=?", (document_id,))
+    for row in rows:
+        subject = str(row.get("subject") or "").strip()
+        note = str(row.get("note_text") or "").strip()
+        if not subject or not note:
+            continue
+        conn.execute(
+            "INSERT OR REPLACE INTO subject_special_notes(student_document_id, grade, semester, subject, note_text, source_page_start, source_page_end, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (document_id, _int(row.get("grade")), _int(row.get("semester")), subject, note, None, None, _row_conf(row), _row_status(row), now),
+        )
+
+
+def _replace_attendance(conn, document_id, rows, now) -> None:
+    conn.execute("DELETE FROM attendance_records WHERE student_document_id=?", (document_id,))
+    for row in rows:
+        grade = _int(row.get("grade"))
+        if grade is None:
+            continue
+        note_parts = [p for p in [f"결석:{row.get('absence')}" if row.get("absence") else "", f"지각:{row.get('late')}" if row.get("late") else "", f"조퇴:{row.get('early_leave')}" if row.get("early_leave") else "", str(row.get("special_note") or "")] if p]
+        conn.execute(
+            "INSERT OR REPLACE INTO attendance_records(student_document_id, grade, school_days, special_note, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?)",
+            (document_id, grade, _int(row.get("school_days")), " ".join(note_parts), _row_conf(row), _row_status(row), now),
+        )
+
+
+def _replace_awards(conn, document_id, rows, now) -> None:
+    conn.execute("DELETE FROM awards WHERE student_document_id=?", (document_id,))
+    for row in rows:
+        title = str(row.get("title") or "").strip()
+        if not title:
+            continue
+        conn.execute(
+            "INSERT OR REPLACE INTO awards(student_document_id, grade, title, awarded_at, issuer, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?,?)",
+            (document_id, _int(row.get("grade")), title, row.get("awarded_at"), row.get("issuer"), _row_conf(row), _row_status(row), now),
+        )
+
+
+# ---------------------------------------------------------------- queries
 
 def latest_document(path: Path) -> dict[str, Any] | None:
     if not path.exists():
@@ -108,7 +272,6 @@ def search_records(path: Path, query: str, *, limit: int = 8) -> list[dict[str, 
     conn = connect(path)
     try:
         rows: list[dict[str, Any]] = []
-        rows.extend(_search_table(conn, "life_record_sections", "raw_text", terms, limit))
         rows.extend(_search_table(conn, "subject_special_notes", "note_text", terms, limit))
         rows.extend(_search_table(conn, "subject_grades", "raw_row", terms, limit))
         return rows[:limit]
@@ -120,11 +283,13 @@ def summary_counts(path: Path, document_id: int) -> dict[str, Any]:
     conn = connect(path)
     try:
         return {
-            "sections": _count(conn, "life_record_sections", document_id),
-            "attendance_rows": _count(conn, "attendance_records", document_id),
             "subject_grade_rows": _count(conn, "subject_grades", document_id),
             "special_note_rows": _count(conn, "subject_special_notes", document_id),
+            "attendance_rows": _count(conn, "attendance_records", document_id),
+            "award_rows": _count(conn, "awards", document_id),
             "photos": _photo_count(conn, document_id),
+            "confirmed_rows": _confirmed_count(conn, document_id),
+            "needs_review_rows": _pending_count(conn, document_id),
         }
     finally:
         conn.close()
@@ -149,89 +314,123 @@ def delete_bundle(bundle_dir: Path) -> bool:
     return True
 
 
-def _store_pdf(bundle_dir: Path, pdf_path: Path, pdf_hash: str) -> Path:
-    source_dir = bundle_dir / "sources"
-    source_dir.mkdir(parents=True, exist_ok=True)
-    stored = source_dir / f"{pdf_hash[:16]}_original.pdf"
-    shutil.copy2(pdf_path, stored)
-    return stored
+# ---------------------------------------------------------------- confirm + promote
+
+def confirm_rows(path: Path, document_id: int) -> int:
+    """Mark this document's remaining needs_review rows as confirmed (human ok)."""
+    conn = connect(path)
+    try:
+        changed = 0
+        for table in ("subject_grades", "subject_special_notes", "attendance_records", "awards"):
+            cur = conn.execute(f"UPDATE {table} SET review_status='confirmed' WHERE student_document_id=? AND review_status!='confirmed'", (document_id,))
+            changed += cur.rowcount
+        conn.commit()
+        return changed
+    finally:
+        conn.close()
 
 
-def _upsert_student(conn: sqlite3.Connection, identity: dict[str, str], now: str) -> int:
-    conn.execute(
-        "INSERT OR IGNORE INTO students(name, school_name, class_no, student_no, birth_masked, profile_photo_path, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
-        (identity["name"], identity["school_name"], identity["class_no"], identity["student_no"], identity["birth_masked"], None, now, now),
-    )
-    row = conn.execute(
-        "SELECT id FROM students WHERE name=? AND IFNULL(school_name,'')=IFNULL(?, '') AND IFNULL(birth_masked,'')=IFNULL(?, '')",
-        (identity["name"], identity["school_name"], identity["birth_masked"]),
-    ).fetchone()
-    return int(row["id"])
+def promote_to_central(bundle_path: Path, document_id: int, *, source_thread: str = "", central_path: Path | None = None) -> dict[str, Any]:
+    """Copy this document's *confirmed* rows into the central student DB, accumulating
+    per student across semesters. Returns counts promoted."""
+    bundle = connect(bundle_path)
+    try:
+        doc = bundle.execute(
+            "SELECT d.*, s.name, s.school_name, s.birth_masked, s.profile_photo_path FROM student_documents d JOIN students s ON s.id=d.student_id WHERE d.id=?",
+            (document_id,),
+        ).fetchone()
+        if not doc:
+            return {"ok": False, "reason": "document_not_found"}
+        grades = [dict(r) for r in bundle.execute("SELECT * FROM subject_grades WHERE student_document_id=? AND review_status='confirmed'", (document_id,)).fetchall()]
+        notes = [dict(r) for r in bundle.execute("SELECT * FROM subject_special_notes WHERE student_document_id=? AND review_status='confirmed'", (document_id,)).fetchall()]
+        attendance = [dict(r) for r in bundle.execute("SELECT * FROM attendance_records WHERE student_document_id=? AND review_status='confirmed'", (document_id,)).fetchall()]
+        awards = [dict(r) for r in bundle.execute("SELECT * FROM awards WHERE student_document_id=? AND review_status='confirmed'", (document_id,)).fetchall()]
+    finally:
+        bundle.close()
 
-
-def _upsert_document(conn: sqlite3.Connection, student_id: int, identity: dict[str, str], extracted: Any, pdf_path: Path, stored_pdf: Path, pdf_hash: str, now: str) -> int:
-    conn.execute(
-        "INSERT OR IGNORE INTO student_documents(student_id, document_type, source_pdf_path, stored_pdf_path, file_sha256, page_count, issued_at, issuer_school, document_number, verification_number, raw_text, metadata_json, extraction_method, extraction_confidence, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (student_id, "school_life_record", str(pdf_path), str(stored_pdf), pdf_hash, extracted.page_count, identity["issued_at_text"], identity["school_name"], identity["document_number"], identity["verification_number"], extracted.raw_text, json.dumps(extracted.metadata, ensure_ascii=False), "pymupdf_text_layer_v1", _document_confidence(extracted), now),
-    )
-    row = conn.execute("SELECT id FROM student_documents WHERE file_sha256=?", (pdf_hash,)).fetchone()
-    return int(row["id"])
-
-
-def _replace_photo(conn: sqlite3.Connection, bundle_dir: Path, student_id: int, document_id: int, identity: dict[str, str], photo: Any, now: str) -> list[str]:
-    conn.execute("DELETE FROM student_photos WHERE document_id=?", (document_id,))
-    if not photo:
-        return []
-    photo_dir = bundle_dir / "photos"
-    photo_dir.mkdir(parents=True, exist_ok=True)
-    path = photo_dir / f"{safe_name(identity['name'])}_profile_p{photo.source_page}.{photo.ext}"
-    path.write_bytes(photo.image_bytes)
-    conn.execute(
-        "INSERT INTO student_photos(student_id, document_id, image_path, source_page, width, height, image_sha256, is_primary, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-        (student_id, document_id, str(path), photo.source_page, photo.width, photo.height, photo.sha256, 1, now),
-    )
-    conn.execute("UPDATE students SET profile_photo_path=?, updated_at=? WHERE id=?", (str(path), now, student_id))
-    return [str(path)]
-
-
-def _replace_sections(conn: sqlite3.Connection, document_id: int, rows: list[dict[str, Any]], now: str) -> None:
-    conn.execute("DELETE FROM life_record_sections WHERE student_document_id=?", (document_id,))
-    for row in rows:
-        conn.execute(
-            "INSERT INTO life_record_sections(student_document_id, section_type, page_start, page_end, raw_text, parsed_json, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-            (document_id, row["section_type"], row["page_start"], row["page_end"], row["raw_text"], row["parsed_json"], row["confidence"], row["review_status"], now),
+    now = now_iso()
+    central = connect_central(central_path)
+    try:
+        central.execute(
+            "INSERT OR IGNORE INTO students(name, school_name, birth_masked, profile_photo_path, source_thread, created_at, updated_at) VALUES(?,?,?,?,?,?,?)",
+            (doc["name"], doc["school_name"], doc["birth_masked"], doc["profile_photo_path"], source_thread, now, now),
         )
-
-
-def _replace_attendance(conn: sqlite3.Connection, document_id: int, rows: list[dict[str, Any]], now: str) -> None:
-    conn.execute("DELETE FROM attendance_records WHERE student_document_id=?", (document_id,))
-    for row in rows:
-        conn.execute(
-            "INSERT OR REPLACE INTO attendance_records(student_document_id, grade, school_days, absent_disease, absent_unexcused, absent_other, late_disease, late_unexcused, late_other, early_leave_disease, early_leave_unexcused, early_leave_other, result_disease, result_unexcused, result_other, special_note, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (document_id, row["grade"], row["school_days"], row["absent_disease"], row["absent_unexcused"], row["absent_other"], row["late_disease"], row["late_unexcused"], row["late_other"], row["early_leave_disease"], row["early_leave_unexcused"], row["early_leave_other"], row["result_disease"], row["result_unexcused"], row["result_other"], row["special_note"], row["confidence"], "needs_review", now),
+        srow = central.execute(
+            "SELECT id FROM students WHERE name=? AND IFNULL(school_name,'')=IFNULL(?, '') AND IFNULL(birth_masked,'')=IFNULL(?, '')",
+            (doc["name"], doc["school_name"], doc["birth_masked"]),
+        ).fetchone()
+        student_id = int(srow["id"])
+        central.execute("UPDATE students SET updated_at=?, profile_photo_path=COALESCE(?, profile_photo_path) WHERE id=?", (now, doc["profile_photo_path"], student_id))
+        for g in grades:
+            central.execute(
+                "INSERT OR REPLACE INTO central_grades(student_id, grade, semester, category, subject, credits, raw_score, achievement, students_count, rank_grade, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (student_id, g["grade"], g["semester"], g["category"], g["subject"], g["credits"], g["raw_score"], g["achievement"], g["students_count"], g["rank_grade"], now),
+            )
+        for n in notes:
+            central.execute(
+                "INSERT OR REPLACE INTO central_notes(student_id, grade, semester, subject, note_text, updated_at) VALUES(?,?,?,?,?,?)",
+                (student_id, n["grade"], n["semester"], n["subject"], n["note_text"], now),
+            )
+        for a in attendance:
+            central.execute(
+                "INSERT OR REPLACE INTO central_attendance(student_id, grade, school_days, detail_json, special_note, updated_at) VALUES(?,?,?,?,?,?)",
+                (student_id, a["grade"], a["school_days"], None, a["special_note"], now),
+            )
+        for w in awards:
+            central.execute(
+                "INSERT OR REPLACE INTO central_awards(student_id, grade, title, awarded_at, issuer, updated_at) VALUES(?,?,?,?,?,?)",
+                (student_id, w["grade"], w["title"], w["awarded_at"], w["issuer"], now),
+            )
+        central.execute(
+            "INSERT INTO central_promotions(student_id, source_document_sha256, source_thread, promoted_at) VALUES(?,?,?,?)",
+            (student_id, doc["file_sha256"], source_thread, now),
         )
+        central.commit()
+        return {"ok": True, "central_student_id": student_id, "grades": len(grades), "notes": len(notes), "attendance": len(attendance), "awards": len(awards)}
+    finally:
+        central.close()
 
 
-def _replace_grades(conn: sqlite3.Connection, document_id: int, rows: list[dict[str, Any]], now: str) -> None:
-    conn.execute("DELETE FROM subject_grades WHERE student_document_id=?", (document_id,))
-    for row in rows:
-        conn.execute(
-            "INSERT INTO subject_grades(student_document_id, grade, semester, category, subject, credits, raw_score, achievement, students_count, rank_grade, raw_row, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (document_id, row["grade"], row["semester"], row["category"], row["subject"], row["credits"], row["raw_score"], row["achievement"], row["students_count"], row["rank_grade"], row["raw_row"], row["confidence"], "needs_review", now),
-        )
+def lookup_central(query: str, *, limit: int = 10, central_path: Path | None = None) -> dict[str, Any]:
+    path = central_path or central_db_path()
+    if not path.exists():
+        return {"students": [], "total": 0}
+    terms = [t for t in query.split() if t]
+    conn = connect_central(path)
+    try:
+        students = [dict(r) for r in conn.execute("SELECT * FROM students ORDER BY updated_at DESC LIMIT 200").fetchall()]
+        matched = []
+        for s in students:
+            hay = f"{s.get('name','')} {s.get('school_name','')}"
+            if terms and not all(t in hay for t in terms):
+                continue
+            sid = s["id"]
+            s["grades"] = [dict(r) for r in conn.execute("SELECT grade, semester, category, subject, raw_score, achievement, rank_grade FROM central_grades WHERE student_id=? ORDER BY grade, semester", (sid,)).fetchall()]
+            s["notes_count"] = int(conn.execute("SELECT COUNT(*) AS n FROM central_notes WHERE student_id=?", (sid,)).fetchone()["n"])
+            s["attendance"] = [dict(r) for r in conn.execute("SELECT grade, school_days, special_note FROM central_attendance WHERE student_id=? ORDER BY grade", (sid,)).fetchall()]
+            s["awards_count"] = int(conn.execute("SELECT COUNT(*) AS n FROM central_awards WHERE student_id=?", (sid,)).fetchone()["n"])
+            matched.append(s)
+            if len(matched) >= limit:
+                break
+        return {"students": matched, "total": len(matched)}
+    finally:
+        conn.close()
 
 
-def _replace_notes(conn: sqlite3.Connection, document_id: int, rows: list[dict[str, Any]], now: str) -> None:
-    conn.execute("DELETE FROM subject_special_notes WHERE student_document_id=?", (document_id,))
-    for row in rows:
-        conn.execute(
-            "INSERT INTO subject_special_notes(student_document_id, grade, semester, subject, note_text, source_page_start, source_page_end, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (document_id, row["grade"], row["semester"], row["subject"], row["note_text"], row["source_page_start"], row["source_page_end"], row["confidence"], "needs_review", now),
-        )
+# ---------------------------------------------------------------- small helpers
+
+def _int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
-def _document_confidence(extracted: Any) -> float:
-    return 0.94 if extracted.page_texts and min(len(text) for text in extracted.page_texts) > 50 else 0.82
+def _float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _count(conn: sqlite3.Connection, table: str, document_id: int) -> int:
@@ -242,6 +441,20 @@ def _photo_count(conn: sqlite3.Connection, document_id: int) -> int:
     return int(conn.execute("SELECT COUNT(*) AS n FROM student_photos WHERE document_id=?", (document_id,)).fetchone()["n"])
 
 
+def _confirmed_count(conn: sqlite3.Connection, document_id: int) -> int:
+    total = 0
+    for table in ("subject_grades", "subject_special_notes", "attendance_records", "awards"):
+        total += int(conn.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE student_document_id=? AND review_status='confirmed'", (document_id,)).fetchone()["n"])
+    return total
+
+
+def _pending_count(conn: sqlite3.Connection, document_id: int) -> int:
+    total = 0
+    for table in ("subject_grades", "subject_special_notes", "attendance_records", "awards"):
+        total += int(conn.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE student_document_id=? AND review_status!='confirmed'", (document_id,)).fetchone()["n"])
+    return total
+
+
 def _search_table(conn: sqlite3.Connection, table: str, field: str, terms: list[str], limit: int) -> list[dict[str, Any]]:
     rows = conn.execute(f"SELECT * FROM {table} ORDER BY id DESC LIMIT 200").fetchall()
     out: list[dict[str, Any]] = []
@@ -249,9 +462,7 @@ def _search_table(conn: sqlite3.Connection, table: str, field: str, terms: list[
         text = str(row[field] or "")
         if terms and not all(term in text for term in terms):
             continue
-        keys = set(row.keys())
-        source_page = row["source_page_start"] if "source_page_start" in keys else row["page_start"] if "page_start" in keys else None
-        out.append({"table": table, "row_id": row["id"], "snippet": text[:600], "source_page_start": source_page})
+        out.append({"table": table, "row_id": row["id"], "snippet": text[:600], "review_status": row["review_status"] if "review_status" in row.keys() else None})
         if len(out) >= limit:
             break
     return out
