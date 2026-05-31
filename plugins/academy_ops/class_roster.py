@@ -24,7 +24,13 @@ def class_roster_for_range(
     schedules = [
         _schedule_row(row)
         for row in client.list_paca_schedules(start_day, end_day)
+        # Drop empty slots: PACA auto-creates morning/afternoon/evening rows each
+        # day, so a slot with no real class still exists (student_count 0). The
+        # PACA attendance endpoint would then return the season's enrolled
+        # students for that empty slot, making a phantom roster. student_count is
+        # attendance-backed (0 for an unused slot), so it cleanly excludes them.
         if start_day.isoformat() <= _schedule_date(row) <= end_day.isoformat()
+        and _to_int(row.get("student_count")) > 0
     ]
     schedules.sort(key=lambda row: (row["date"], TIME_SLOT_ORDER.get(row["time_slot"], 99), row["id"]))
     if with_roster:

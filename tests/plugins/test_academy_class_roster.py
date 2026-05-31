@@ -137,3 +137,33 @@ def test_plugin_registers_class_roster_tool() -> None:
     register(ctx)
 
     assert "academy_class_roster_range" in manager._plugin_tool_names
+
+
+class _EmptySlotClient:
+    """PACA auto-creates a slot per time-of-day; an unused slot has
+    student_count 0 but its attendance endpoint still returns the season's
+    enrolled students (a phantom roster). The roster must drop such slots."""
+
+    def list_paca_schedules(self, start_day: date, end_day: date) -> list[dict]:
+        return [
+            {"id": 722, "class_date": "2026-05-31", "time_slot": "afternoon", "student_count": 10, "trial_count": 0},
+            {"id": 616, "class_date": "2026-05-31", "time_slot": "evening", "student_count": 0, "trial_count": 0},
+        ]
+
+    def get_paca_schedule_attendance(self, schedule_id: int) -> dict:
+        # Both slots would return the same season roster (the bug). The
+        # zero-count evening slot must be excluded before this is even reached.
+        return {"students": [{"student_id": 1, "student_name": "백지민", "is_trial": False}]}
+
+
+def test_class_roster_excludes_empty_auto_slots() -> None:
+    result = _payload(
+        _class_roster_range_tool_handler(
+            {"start_date": "2026-05-31", "end_date": "2026-05-31"},
+            client=_EmptySlotClient(),
+        )
+    )
+    assert result["ok"] is True
+    # evening (student_count 0, phantom season roster) dropped; only afternoon.
+    assert [row["id"] for row in result["schedules"]] == [722]
+    assert result["summary"]["classes"] == 1
