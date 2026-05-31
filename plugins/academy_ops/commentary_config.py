@@ -28,12 +28,15 @@ ROUTER_MODEL = router_model()
 # The codex auxiliary stream needs >5s, and a *cold* connection can take ~12s
 # (measured on Windows; Linux cold-starts ~3.4s, well under the cap). An 8s cap
 # timed out on every cold call -> the router fell back to the body agent, which
-# then misrouted ("체크" -> attendance, etc.). 15s covers cold-start latency;
+# then misrouted ("체크" -> attendance, etc.). A 15s cap still had zero headroom
+# against a 12-15s cold-start (a 15s cold call raced the cap and lost), so the
+# first cold request after boot / before a warm-up refresh would time out and
+# degrade to the body agent. 25s fully absorbs the cold-start with margin.
 # fast envs return the moment the model responds, so the higher cap costs them
 # nothing. The periodic warm-up (see warmup.py) keeps the codex connection hot
 # so most calls finish in ~1.6s. If it still times out, resolve_and_execute
 # falls back to the body agent instead of failing the question.
-ROUTER_MODEL_TIMEOUT_SECONDS = 15
+ROUTER_MODEL_TIMEOUT_SECONDS = 25
 ROUTER_FALLBACK_MODELS = router_fallback_models()
 ROUTER_EXTRA_BODY: dict[str, Any] = {}
 

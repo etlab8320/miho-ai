@@ -69,7 +69,10 @@ Resolver = Callable[[list[dict[str, str]]], Awaitable[Any]]
 ToolHandler = Callable[..., str]
 
 ROUTER_TASK = "academy_request_router"
-ROUTER_TIMEOUT_SECONDS = 18
+# Outer wait_for that wraps the whole resolver call. Must exceed the primary
+# model cap (ROUTER_MODEL_TIMEOUT_SECONDS = 25) so a cold-start primary call can
+# finish inside it, with a little room left for a fallback model attempt.
+ROUTER_TIMEOUT_SECONDS = 28
 ROUTER_MAX_ATTEMPTS = 1
 TOOL_TIMEOUT_SECONDS = 70
 MIN_CONFIDENCE = 0.55

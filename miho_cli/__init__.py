@@ -14,8 +14,8 @@ try:
 
     __version__ = _pkg_version("miho-agent")
 except Exception:  # pragma: no cover - source-tree fallback
-    __version__ = "1.0.10"
-__release_date__ = "2026.5.31"
+    __version__ = "1.0.11"
+__release_date__ = "2026.6.1"
 
 
 def _ensure_utf8() -> None:
