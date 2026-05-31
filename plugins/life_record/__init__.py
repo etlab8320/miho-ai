@@ -48,14 +48,21 @@ async def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, Any
     생기부 returns 'no' from the vision gate and passes through untouched."""
     capture_gateway_context(event)
     try:
+        urls = getattr(event, "media_urls", None) or []
         pdf = _pdf_attachment(event)
         if pdf is None:
+            if urls:
+                logger.info("life_record pre-dispatch: %d attachment(s), no usable PDF: %s", len(urls), urls[:3])
             return {"action": "allow"}
+        logger.info("life_record pre-dispatch: PDF detected (%s) — running 생기부 vision gate", pdf.name)
         from .service import format_ingest_summary, ingest_life_record, looks_like_life_record
 
-        if not await looks_like_life_record(pdf):
+        is_lr = await looks_like_life_record(pdf)
+        logger.info("life_record pre-dispatch: looks_like_life_record=%s", is_lr)
+        if not is_lr:
             return {"action": "allow"}
         result = await ingest_life_record(pdf, current_life_record_dir(), source_thread=THREAD_ID.get())
+        logger.info("life_record pre-dispatch: auto-ingested document_id=%s", result.get("document_id"))
         return {"action": "respond", "text": format_ingest_summary(result)}
     except Exception as exc:  # never block other plugins on a routing failure
         logger.info("life_record auto-route skipped: %s", exc)
