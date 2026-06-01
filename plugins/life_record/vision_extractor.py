@@ -11,6 +11,7 @@ the opt-in live test hits codex.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import re
@@ -44,16 +45,26 @@ async def default_codex_resolver(images: list[str], prompt: str) -> str:
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
     for url in images:
         content.append({"type": "image_url", "image_url": {"url": url}})
-    response = await async_call_llm(
-        task="life_record_vision",
-        provider=codex_provider(),
-        model=VISION_MODEL,
-        messages=[{"role": "user", "content": content}],
-        temperature=0,
-        max_tokens=4000,
-        timeout=180,
-    )
-    return _response_text(response)
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            response = await async_call_llm(
+                task="life_record_vision",
+                provider=codex_provider(),
+                model=VISION_MODEL,
+                messages=[{"role": "user", "content": content}],
+                temperature=0,
+                max_tokens=4000,
+                timeout=180,
+            )
+            return _response_text(response)
+        except Exception as exc:
+            # codex streaming can drop mid-response ("peer closed connection /
+            # incomplete chunked read") on a large multi-image request — retry.
+            last_exc = exc
+            if attempt < 2:
+                await asyncio.sleep(2)
+    raise last_exc or RuntimeError("vision resolver failed after retries")
 
 
 def _response_text(response: Any) -> str:
@@ -120,7 +131,7 @@ def _mask_birth(value: Any) -> str | None:
     return digits or None
 
 
-DEFAULT_BATCH = 8
+DEFAULT_BATCH = 5
 
 
 def _merge(base: dict[str, Any], part: dict[str, Any]) -> dict[str, Any]:
@@ -143,8 +154,11 @@ async def extract_life_record(
     resolve = resolver or default_codex_resolver
     if len(images) <= batch_size:
         return parse_extraction_json(await resolve(images, EXTRACTION_PROMPT))
+    # Smaller batches in parallel — each request stays light enough that the codex
+    # stream doesn't drop, and total wall-clock is one batch, not the sum.
+    chunks = [images[i : i + batch_size] for i in range(0, len(images), batch_size)]
+    raws = await asyncio.gather(*(resolve(chunk, EXTRACTION_PROMPT) for chunk in chunks))
     merged = _empty()
-    for start in range(0, len(images), batch_size):
-        chunk = images[start : start + batch_size]
-        merged = _merge(merged, parse_extraction_json(await resolve(chunk, EXTRACTION_PROMPT)))
+    for raw in raws:
+        merged = _merge(merged, parse_extraction_json(raw))
     return merged
