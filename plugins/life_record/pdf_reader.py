@@ -101,6 +101,31 @@ def _photo_score(page_index: int, width: int, height: int) -> int:
     return score
 
 
+def crop_id_photo(pdf_path: Path, bbox_ratio: dict[str, float], *, zoom: float = 3.0) -> ExtractedPhoto | None:
+    """Crop the first page to the given 0~1 bbox (from vision) — used to pull just
+    the ID photo out of a scanned PDF whose page is a single image."""
+    _ensure_pdf_deps()
+    try:
+        import fitz
+    except ImportError:
+        return None
+    doc = fitz.open(str(pdf_path))
+    try:
+        page = doc[0]
+        r = page.rect
+        clip = fitz.Rect(bbox_ratio["x0"] * r.width, bbox_ratio["y0"] * r.height, bbox_ratio["x1"] * r.width, bbox_ratio["y1"] * r.height)
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=clip)
+        png = pix.tobytes("png")
+        return ExtractedPhoto(
+            image_bytes=png, ext="png", source_page=1,
+            width=pix.width, height=pix.height, sha256=sha256_bytes(png),
+        )
+    except Exception:
+        return None
+    finally:
+        doc.close()
+
+
 def render_page_images(pdf_path: Path, *, zoom: float = 3.0, pages: list[int] | None = None) -> list[bytes]:
     """Render PDF pages to PNG bytes for vision extraction.
 

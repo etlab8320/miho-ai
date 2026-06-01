@@ -164,6 +164,39 @@ def _merge(base: dict[str, Any], part: dict[str, Any]) -> dict[str, Any]:
     return base
 
 
+PHOTO_BBOX_PROMPT = (
+    "이 생기부 첫 페이지에서 학생 증명사진(얼굴 사진) 영역의 위치만 0~1 비율로 알려줘. "
+    'JSON 한 줄로: {"x0":좌, "y0":상, "x1":우, "y1":하}. 증명사진이 없으면 {} 만 출력.'
+)
+
+
+async def locate_id_photo(image_data_url: str, *, resolver: "VisionResolver | None" = None) -> dict[str, float] | None:
+    """Ask vision for the ID-photo bbox (0~1 ratios) on the first page, so a scanned
+    PDF (whole page = one image) can be cropped down to just the photo."""
+    resolve = resolver or default_codex_resolver
+    raw = await resolve([image_data_url], PHOTO_BBOX_PROMPT)
+    text = (raw or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text).strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        payload = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    if not all(k in payload for k in ("x0", "y0", "x1", "y1")):
+        return None
+    try:
+        box = {k: float(payload[k]) for k in ("x0", "y0", "x1", "y1")}
+    except (TypeError, ValueError):
+        return None
+    # sanity: ordered, within [0,1], non-trivial area
+    if not (0 <= box["x0"] < box["x1"] <= 1 and 0 <= box["y0"] < box["y1"] <= 1):
+        return None
+    return box
+
+
 TextResolver = Callable[[str], Awaitable[str]]
 
 

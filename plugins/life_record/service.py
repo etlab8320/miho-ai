@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .consensus import all_confirmed, reconcile
-from .pdf_reader import extract_pdf, render_page_images
+from .pdf_reader import crop_id_photo, extract_pdf, render_page_images
 from .repository import (
     confirm_rows,
     db_path,
@@ -28,6 +28,7 @@ from .vision_extractor import (
     extract_from_text,
     extract_life_record,
     has_text_layer,
+    locate_id_photo,
     to_data_url,
 )
 
@@ -85,6 +86,20 @@ async def ingest_life_record(
                 consensus = reconcile(results)
 
     photo = extracted.photo
+    # Scanned PDF: the whole page is one image, so extract_pdf grabbed the full page
+    # as the "photo". Crop it down to just the ID photo via vision. Text-layer PDFs
+    # already embed a clean ID photo, so leave those.
+    if not has_text_layer(extracted.page_texts):
+        try:
+            first_page = render_page_images(pdf_path, zoom=2.0, pages=[0])
+            if first_page:
+                bbox = await locate_id_photo(to_data_url(first_page[0]), resolver=resolver)
+                if bbox:
+                    cropped = crop_id_photo(pdf_path, bbox)
+                    if cropped:
+                        photo = cropped
+        except Exception:
+            pass
     raw_text = json.dumps(consensus, ensure_ascii=False)
     result = save_import(
         bundle_dir=bundle_dir,
