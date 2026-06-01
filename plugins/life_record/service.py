@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .consensus import all_confirmed, reconcile
-from .pdf_reader import extract_markdown, extract_pdf, render_page_images
+from .pdf_reader import extract_pdf, render_page_images
 from .repository import (
     confirm_rows,
     db_path,
@@ -56,15 +56,13 @@ async def ingest_life_record(
 
     results: list[dict[str, Any]] = []
     if has_text_layer(extracted.page_texts):
-        # Text-layer PDF: numbers are exact digital text — no OCR drift. Prefer
-        # markdown (tables/structure preserved) so the LLM reconstructs less; fall
-        # back to plain page_texts when pymupdf4llm isn't installed.
+        # Text-layer PDF: numbers are exact digital text — no OCR drift. The
+        # TEXT_PROMPT tells the LLM to reconstruct the (line-break-mangled) text,
+        # which already hits 100% on real samples (기아림 57/57). (markdown via
+        # pymupdf4llm was dropped — it needs PyMuPDF 1.27 but miho ships 1.26.)
         page_count = len(extracted.page_texts)
         extraction_method = "codex_text_layer_v1"
-        markdown = extract_markdown(pdf_path)
-        text_source = [markdown] if markdown else extracted.page_texts
-        if markdown:
-            extraction_method = "codex_text_markdown_v1"
+        text_source = extracted.page_texts
         for _ in range(max(1, runs)):
             results.append(await extract_from_text(text_source, resolver=text_resolver))
         consensus = reconcile(results)
