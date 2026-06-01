@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any
 
 CONFIRMED = "confirmed"
@@ -25,11 +26,14 @@ ROW_KEYS = {
 
 
 def _norm_scalar(value: Any) -> str:
-    """Whitespace-insensitive, case-folded scalar key so trivial OCR formatting
-    differences ('83/75.0 (18.1)' vs '83/75.0(18.1)') don't block agreement."""
+    """Whitespace / width / case / Roman-numeral-insensitive scalar key so trivial
+    OCR formatting differences don't block agreement:
+    '83/75.0 (18.1)' vs '83/75.0(18.1)', and '물리학Ⅰ' vs '물리학 I'
+    (NFKC folds the Unicode Roman numeral Ⅰ→I, Ⅱ→II, and full-width→ASCII)."""
     if value is None:
         return ""
-    return re.sub(r"\s+", "", str(value)).lower()
+    normalized = unicodedata.normalize("NFKC", str(value))
+    return re.sub(r"\s+", "", normalized).lower()
 
 
 def _norm_obj(obj: Any) -> Any:

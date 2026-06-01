@@ -128,6 +128,17 @@ def test_consensus_disagreement_needs_review_no_infinite_loop() -> None:
     assert all_confirmed(r) is False
 
 
+def test_consensus_folds_roman_numeral_subject_variants() -> None:
+    # vision reads the same subject as '물리학Ⅰ' (Unicode Roman) and '물리학 I'
+    # (ASCII I + space) across runs — must fold to ONE confirmed row, not two.
+    from plugins.life_record.consensus import reconcile_rows, CONFIRMED
+    a = {"grades": [{"grade": 2, "semester": 1, "subject": "물리학Ⅰ", "raw_score": "79/70.8(18.3)"}]}
+    b = {"grades": [{"grade": 2, "semester": 1, "subject": "물리학 I", "raw_score": "79/70.8(18.3)"}]}
+    rows = reconcile_rows([a, b], "grades")
+    assert len(rows) == 1
+    assert rows[0]["_status"] == CONFIRMED
+
+
 # ----------------------------------------------------------------- T-06 identity / T-07 promote / ingest flow
 
 def test_ingest_creates_thread_db_and_confirms_on_consensus(monkeypatch, tmp_path) -> None:
