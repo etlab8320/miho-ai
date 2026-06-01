@@ -7083,6 +7083,7 @@ def _update_via_zip(args):
     except Exception:
         pass
 
+    _verify_update_applied()
     print()
     print("✓ Update complete!")
     # Prefetch the on-device embedding model (best-effort) so updated installs
@@ -8035,6 +8036,43 @@ def _install_python_dependencies_with_optional_fallback(
         print(
             f"  ⚠ Skipped optional extras that still failed: {', '.join(failed_extras)}"
         )
+        # A silently-skipped extra (e.g. 'discord' = the Discord adapter) makes an
+        # update look successful while the feature stays unavailable
+        # ("adapter unavailable: pip install 'miho-agent[discord]'"). Surface the
+        # exact recovery command so the user isn't left guessing.
+        print(
+            f"     → 복구하려면: pip install 'miho-agent[{failed_extras[0]}]'"
+            + (f"  (그 외: {', '.join(failed_extras[1:])})" if len(failed_extras) > 1 else "")
+        )
+
+
+def _verify_update_applied() -> None:
+    """After a reinstall, confirm the installed package metadata matches the source
+    on disk. If they differ, the reinstall didn't take — surface it loudly instead
+    of printing a misleading "Update complete". A running gateway holding file
+    locks is the usual cause on Windows."""
+    try:
+        import tomllib
+
+        with open(os.path.join(PROJECT_ROOT, "pyproject.toml"), "rb") as f:
+            expected = tomllib.load(f).get("project", {}).get("version")
+    except Exception:
+        return
+    if not expected:
+        return
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", "import importlib.metadata as m; print(m.version('miho-agent'))"],
+            cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=30,
+        )
+        installed = (proc.stdout or "").strip()
+    except Exception:
+        return
+    if installed and installed != expected:
+        print()
+        print(f"  ⚠ 설치된 버전({installed})이 코드 버전({expected})과 달라요 — 재설치가 완전히 반영되지 않았습니다.")
+        print("     미호(게이트웨이)가 실행 중이면 먼저 종료한 뒤 다시 `miho update`를 실행하세요.")
+        print("     (실행 중인 프로세스가 파일을 잠그면 재설치가 부분 실패하는 게 흔한 원인입니다.)")
 
 
 def _is_termux_env(env: dict[str, str] | None = None) -> bool:
@@ -9366,6 +9404,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         else:
             print("  ✓ Configuration is up to date")
 
+        _verify_update_applied()
         print()
         print("✓ Update complete!")
 
