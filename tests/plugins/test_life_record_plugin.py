@@ -191,6 +191,7 @@ def test_confirm_promotes_needs_review_rows(monkeypatch, tmp_path) -> None:
     from plugins.life_record.tools import _confirm_tool_handler
     # Two differing runs -> grades stay needs_review, not auto-promoted
     payload_b = dict(SAMPLE_1, grades=[dict(SAMPLE_1["grades"][0], raw_score="91/70(10)")])
+    payload_c = dict(SAMPLE_1, grades=[dict(SAMPLE_1["grades"][0], raw_score="92/70(10)")])
     import plugins.life_record.service as service_module
     import plugins.life_record.vision_extractor as vision_module
     from plugins.life_record import _capture_gateway_context
@@ -198,7 +199,8 @@ def test_confirm_promotes_needs_review_rows(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"])
     monkeypatch.setattr(service_module, "_safe_photo", lambda _p: None)
-    seq = [SAMPLE_1, payload_b, payload_b]
+    # 3 runs all differ on raw_score → no majority → stays needs_review
+    seq = [SAMPLE_1, payload_b, payload_c]
     calls = {"i": 0}
     async def _vary(images, prompt):
         payload = seq[min(calls["i"], len(seq) - 1)]

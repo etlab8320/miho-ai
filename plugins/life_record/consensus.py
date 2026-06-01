@@ -94,12 +94,18 @@ def reconcile_rows(results: list[dict[str, Any]], section: str) -> list[dict[str
             buckets.setdefault(row_key, []).append(row)
     out: list[dict[str, Any]] = []
     for rows in buckets.values():
-        seen = len(rows)
-        identical = len({_key(r) for r in rows}) == 1
-        agreed = seen >= _majority_threshold(n) and identical
-        merged = dict(rows[0])
+        # Majority vote on the full row value: the value the most runs agree on
+        # wins, confirmed when it clears the majority threshold. (Previously
+        # required *all* rows identical — too strict once a 3rd hi-res tie-break
+        # pass joins, where 2-of-3 agreement should confirm.)
+        value_counts: dict[str, int] = {}
+        for row in rows:
+            value_counts[_key(row)] = value_counts.get(_key(row), 0) + 1
+        best_value, best_count = max(value_counts.items(), key=lambda kv: kv[1])
+        agreed = best_count >= _majority_threshold(n)
+        merged = dict(next(row for row in rows if _key(row) == best_value))
         merged["_status"] = CONFIRMED if agreed else NEEDS_REVIEW
-        merged["_confidence"] = round(seen / max(1, n), 2)
+        merged["_confidence"] = round(best_count / max(1, n), 2)
         out.append(merged)
     return out
 

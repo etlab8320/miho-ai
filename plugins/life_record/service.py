@@ -26,6 +26,7 @@ from .vision_extractor import VisionResolver, default_codex_resolver, extract_li
 DEFAULT_RUNS = 2
 MAX_RUNS = 3
 RENDER_ZOOM = 3.0
+HIRES_ZOOM = 4.5  # re-render for the tie-break pass — crisper small digits (성적/주민번호)
 
 
 async def ingest_life_record(
@@ -47,10 +48,14 @@ async def ingest_life_record(
     for _ in range(max(1, runs)):
         results.append(await extract_life_record(images, resolver=resolver))
     consensus = reconcile(results)
-    # Unresolved disagreements → one more pass at a time, hard-capped at MAX_RUNS.
-    while not all_confirmed(consensus) and len(results) < MAX_RUNS:
-        results.append(await extract_life_record(images, resolver=resolver))
-        consensus = reconcile(results)
+    # Unresolved disagreements mean a small digit (성적/주민번호) was read two ways.
+    # Re-render the pages at higher zoom so the glyphs are crisper, then add passes
+    # for a majority vote — hard-capped at MAX_RUNS (no infinite loop).
+    if not all_confirmed(consensus) and len(results) < MAX_RUNS:
+        hi_images = [to_data_url(png) for png in render_page_images(pdf_path, zoom=HIRES_ZOOM)]
+        while not all_confirmed(consensus) and len(results) < MAX_RUNS:
+            results.append(await extract_life_record(hi_images, resolver=resolver))
+            consensus = reconcile(results)
 
     photo = _safe_photo(pdf_path)
     raw_text = json.dumps(consensus, ensure_ascii=False)
