@@ -7978,6 +7978,61 @@ def _refresh_active_lazy_features() -> None:
         print("  `miho update` once the upstream issue is resolved.")
 
 
+def _read_project_dependencies(group: str = "all") -> list[str]:
+    """Concrete runtime packages = [project.dependencies] + a resolved optional
+    group, with self-referential ``miho-agent[...]`` entries expanded to their
+    real packages. Used to install deps WITHOUT installing the project itself, so
+    no entry-point .exe shim is touched."""
+    import re
+
+    try:
+        import tomllib
+
+        with open(os.path.join(PROJECT_ROOT, "pyproject.toml"), "rb") as f:
+            proj = tomllib.load(f).get("project", {})
+    except Exception:
+        return []
+    extras = proj.get("optional-dependencies", {}) or {}
+
+    def _resolve(grp: str, seen: set[str]) -> list[str]:
+        if grp in seen:
+            return []
+        seen.add(grp)
+        out: list[str] = []
+        for item in extras.get(grp, []) or []:
+            m = re.match(r"miho-agent\[(.+)\]", str(item).replace(" ", ""))
+            if m:
+                for sub in m.group(1).split(","):
+                    out += _resolve(sub.strip(), seen)
+            else:
+                out.append(item)
+        return out
+
+    deps = list(proj.get("dependencies", []) or []) + _resolve(group, set())
+    seen_pkg: set[str] = set()
+    uniq: list[str] = []
+    for d in deps:
+        if d not in seen_pkg:
+            seen_pkg.add(d)
+            uniq.append(d)
+    return uniq
+
+
+def _install_runtime_deps_only(install_cmd_prefix: list[str], *, env: dict[str, str] | None = None, group: str = "all") -> bool:
+    """Install runtime dependencies WITHOUT installing the project itself, so no
+    entry-point .exe is rewritten. Lets aiohttp/discord survive a Windows
+    self-update where a locked miho.exe would otherwise make uv roll back the
+    whole editable install (taking Discord offline). Returns True if it ran ok."""
+    deps = _read_project_dependencies(group)
+    if not deps:
+        return False
+    try:
+        _run_install_with_heartbeat(install_cmd_prefix + ["install", *deps], env=env)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
 def _install_python_dependencies_with_optional_fallback(
     install_cmd_prefix: list[str],
     *,
@@ -8009,6 +8064,13 @@ def _install_python_dependencies_with_optional_fallback(
                 _restore_quarantined_exes(moved)
             raise
 
+    # B (Windows self-lock safety): install runtime deps FIRST, separately, so a
+    # locked miho.exe — which blocks the editable/exe step and makes uv roll back
+    # EVERYTHING — can't take aiohttp/discord offline. The project code is already
+    # current via git pull and the .exe is just a launcher, so deps are what
+    # actually matter for the gateway to run.
+    deps_ok = _install_runtime_deps_only(install_cmd_prefix, env=env, group=group)
+
     try:
         _install(["install", "-e", f".[{group}]"])
         return
@@ -8017,7 +8079,19 @@ def _install_python_dependencies_with_optional_fallback(
             "  ⚠ Optional extras failed, reinstalling base dependencies and retrying extras individually..."
         )
 
-    _install(["install", "-e", "."])
+    try:
+        _install(["install", "-e", "."])
+    except subprocess.CalledProcessError:
+        if deps_ok:
+            # The editable/base install almost always fails here because a running
+            # miho.exe holds Scripts/miho.exe (Windows can't replace a live .exe).
+            # Deps were already installed separately above, so the gateway's
+            # features (Discord, etc.) still work — don't fail the whole update.
+            print("  ⚠ entry-point(.exe) 교체가 막혔어요 (실행 중인 miho.exe로 추정).")
+            print("     의존성은 별도로 설치돼서 기능(디스코드 등)은 정상 동작합니다.")
+            print("     미호를 재시작하면 최신 코드로 돌아가요. (`miho --version`은 exe가 교체될 때까지 옛 번호로 보일 수 있어요.)")
+            return
+        raise
 
     failed_extras: list[str] = []
     installed_extras: list[str] = []
