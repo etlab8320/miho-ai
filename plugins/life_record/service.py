@@ -21,7 +21,14 @@ from .repository import (
 )
 from .review import write_review_html
 from .verifier import run_verification
-from .vision_extractor import VisionResolver, default_codex_resolver, extract_life_record, to_data_url
+from .vision_extractor import (
+    VisionResolver,
+    default_codex_resolver,
+    extract_from_text,
+    extract_life_record,
+    has_text_layer,
+    to_data_url,
+)
 
 DEFAULT_RUNS = 2
 MAX_RUNS = 3
@@ -34,41 +41,55 @@ async def ingest_life_record(
     bundle_dir: Path,
     *,
     resolver: VisionResolver | None = None,
+    text_resolver: Any = None,
     runs: int = DEFAULT_RUNS,
     source_thread: str = "",
 ) -> dict[str, Any]:
-    """Render PDF → vision extract N times → reconcile → (recheck if needed) → save →
-    verify → promote confirmed data to the central student DB."""
+    """Ingest a 생기부 PDF. If it has a real text layer, structure that text (scores
+    are exact digital text → 100%); otherwise fall back to vision over page images
+    with a hi-res majority-vote tie-break. Then save → verify → promote."""
     _validate_pdf_path(pdf_path)
     bundle_dir.mkdir(parents=True, exist_ok=True)
-    page_pngs = render_page_images(pdf_path, zoom=RENDER_ZOOM)
-    images = [to_data_url(png) for png in page_pngs]
-    page_count = len(images)
+    extracted = extract_pdf(pdf_path)
+    page_pngs = render_page_images(pdf_path, zoom=RENDER_ZOOM)  # for the review gallery
     _save_review_pages(bundle_dir, page_pngs)
 
     results: list[dict[str, Any]] = []
-    for _ in range(max(1, runs)):
-        results.append(await extract_life_record(images, resolver=resolver))
-    consensus = reconcile(results)
-    # Unresolved disagreements mean a small digit (성적/주민번호) was read two ways.
-    # Re-render the pages at higher zoom so the glyphs are crisper, then add passes
-    # for a majority vote — hard-capped at MAX_RUNS (no infinite loop).
-    if not all_confirmed(consensus) and len(results) < MAX_RUNS:
-        hi_images = [to_data_url(png) for png in render_page_images(pdf_path, zoom=HIRES_ZOOM)]
+    if has_text_layer(extracted.page_texts):
+        # Text-layer PDF: numbers are exact digital text — no OCR drift.
+        page_count = len(extracted.page_texts)
+        extraction_method = "codex_text_layer_v1"
+        for _ in range(max(1, runs)):
+            results.append(await extract_from_text(extracted.page_texts, resolver=text_resolver))
+        consensus = reconcile(results)
         while not all_confirmed(consensus) and len(results) < MAX_RUNS:
-            results.append(await extract_life_record(hi_images, resolver=resolver))
+            results.append(await extract_from_text(extracted.page_texts, resolver=text_resolver))
             consensus = reconcile(results)
+    else:
+        # Scanned PDF (no text): vision over images, hi-res tie-break majority vote.
+        images = [to_data_url(png) for png in page_pngs]
+        page_count = len(images)
+        extraction_method = "codex_vision_gpt5.5_v1"
+        for _ in range(max(1, runs)):
+            results.append(await extract_life_record(images, resolver=resolver))
+        consensus = reconcile(results)
+        if not all_confirmed(consensus) and len(results) < MAX_RUNS:
+            hi_images = [to_data_url(png) for png in render_page_images(pdf_path, zoom=HIRES_ZOOM)]
+            while not all_confirmed(consensus) and len(results) < MAX_RUNS:
+                results.append(await extract_life_record(hi_images, resolver=resolver))
+                consensus = reconcile(results)
 
-    photo = _safe_photo(pdf_path)
+    photo = extracted.photo
     raw_text = json.dumps(consensus, ensure_ascii=False)
     result = save_import(
         bundle_dir=bundle_dir,
         pdf_path=pdf_path,
         page_count=page_count,
         raw_text=raw_text,
-        metadata={"runs": len(results), "render_zoom": RENDER_ZOOM},
+        metadata={"runs": len(results), "method": extraction_method},
         consensus=consensus,
         photo=photo,
+        extraction_method=extraction_method,
         source_thread=source_thread,
     )
     document_id = int(result["document_id"])

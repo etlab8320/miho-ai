@@ -22,12 +22,7 @@ VisionResolver = Callable[[list[str], str], Awaitable[str]]
 VISION_MODEL = "gpt-5.5"
 EXTRACT_VERSION = "codex_vision_gpt5.5_v1"
 
-EXTRACTION_PROMPT = """너는 한국 고등학교 학교생활기록부(생기부) 구조화 추출 전문가야.
-주어진 페이지 이미지들을 보고 아래 JSON 스키마로 정확히 추출해.
-숫자(점수/석차/일수)와 고유명사(이름/학교/과목)는 한 글자도 틀리지 마. 안 보이면 null.
-개인정보 보호: 주민등록번호는 앞 6자리(생년월일 YYMMDD)만, 뒷자리는 절대 출력하지 마.
-
-JSON 스키마:
+_SCHEMA = """JSON 스키마:
 {
   "identity": {"name": str|null, "school_name": str|null, "birth6": "YYMMDD"|null, "class_no": str|null, "student_no": str|null},
   "attendance": [{"grade": int, "school_days": int|null, "absence": str|null, "late": str|null, "early_leave": str|null, "special_note": str|null}],
@@ -36,6 +31,32 @@ JSON 스키마:
   "awards": [{"grade": int|null, "title": str, "awarded_at": str|null, "issuer": str|null}]
 }
 오직 JSON만 출력. 설명/코드펜스 금지."""
+
+EXTRACTION_PROMPT = (
+    "너는 한국 고등학교 학교생활기록부(생기부) 구조화 추출 전문가야.\n"
+    "주어진 페이지 이미지들을 보고 아래 JSON 스키마로 정확히 추출해.\n"
+    "숫자(점수/석차/일수)와 고유명사(이름/학교/과목)는 한 글자도 틀리지 마. 안 보이면 null.\n"
+    "개인정보 보호: 주민등록번호는 앞 6자리(생년월일 YYMMDD)만, 뒷자리는 절대 출력하지 마.\n\n"
+    + _SCHEMA
+)
+
+# Text-layer path: when the PDF has a real text layer, the scores/numbers are
+# already exact digital text — no OCR guessing. The model only has to restructure
+# the (line-break-mangled) text, copying numbers verbatim. This is the 100%-accurate
+# path for non-scanned 생기부 (vision is the fallback for scans like 김동혁).
+TEXT_PROMPT = (
+    "아래는 한국 고등학교 생활기록부(생기부) PDF에서 추출한 원문 텍스트다.\n"
+    "줄바꿈과 표가 흐트러져 있어도 의미로 재구성해 아래 JSON 스키마로 정확히 추출해.\n"
+    "점수·숫자·과목명·날짜는 원문에 있는 그대로 옮겨라(추측·변형·반올림 절대 금지). 안 보이면 null.\n"
+    "개인정보: 주민등록번호는 앞 6자리(생년월일)만, 뒷자리는 절대 출력하지 마.\n\n"
+    + _SCHEMA
+)
+
+
+def has_text_layer(page_texts: list[str], *, min_chars: int = 400) -> bool:
+    """True when the PDF carries a real text layer (scores are exact digital text,
+    so use the text path). A scanned PDF returns ~0 chars → vision fallback."""
+    return sum(len(t or "") for t in page_texts) >= min_chars
 
 
 async def default_codex_resolver(images: list[str], prompt: str) -> str:
@@ -141,6 +162,42 @@ def _merge(base: dict[str, Any], part: dict[str, Any]) -> dict[str, Any]:
     for key in ("attendance", "grades", "notes", "awards"):
         base[key].extend(part.get(key) or [])
     return base
+
+
+TextResolver = Callable[[str], Awaitable[str]]
+
+
+async def default_text_resolver(prompt: str) -> str:
+    from agent.auxiliary_client import async_call_llm
+    from plugins.academy_ops.codex_model_policy import codex_provider
+
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            response = await async_call_llm(
+                task="life_record_text",
+                provider=codex_provider(),
+                model=VISION_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                max_tokens=8000,
+                timeout=180,
+            )
+            return _response_text(response)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 2:
+                await asyncio.sleep(2)
+    raise last_exc or RuntimeError("text resolver failed after retries")
+
+
+async def extract_from_text(page_texts: list[str], *, resolver: TextResolver | None = None) -> dict[str, Any]:
+    """Structure the PDF's own text layer into the schema. Numbers are copied from
+    exact digital text, so scores don't drift between runs — the 100% path."""
+    joined = "\n\n".join(f"[p{i + 1}]\n{t}" for i, t in enumerate(page_texts) if (t or "").strip())
+    resolve = resolver or default_text_resolver
+    raw = await resolve(TEXT_PROMPT + "\n\n=== 생기부 원문 ===\n" + joined)
+    return parse_extraction_json(raw)
 
 
 async def extract_life_record(

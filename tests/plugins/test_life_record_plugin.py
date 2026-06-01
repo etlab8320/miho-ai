@@ -55,6 +55,12 @@ def _fake_resolver_factory(payload):
 def _patch_vision(monkeypatch, payload, *, pages=1):
     import plugins.life_record.service as service_module
     import plugins.life_record.vision_extractor as vision_module
+    from types import SimpleNamespace
+    # No text layer → scan branch (vision). page_texts empty.
+    monkeypatch.setattr(
+        service_module, "extract_pdf",
+        lambda _p: SimpleNamespace(page_texts=[], raw_text="", page_count=pages, metadata={}, photo=None),
+    )
     monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"] * pages)
     monkeypatch.setattr(service_module, "_safe_photo", lambda _p: None)
     monkeypatch.setattr(vision_module, "default_codex_resolver", _fake_resolver_factory(payload))
@@ -196,7 +202,9 @@ def test_confirm_promotes_needs_review_rows(monkeypatch, tmp_path) -> None:
     import plugins.life_record.vision_extractor as vision_module
     from plugins.life_record import _capture_gateway_context
     from plugins.life_record.tools import _ingest_pdf_tool_handler
+    from types import SimpleNamespace
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setattr(service_module, "extract_pdf", lambda _p: SimpleNamespace(page_texts=[], raw_text="", page_count=1, metadata={}, photo=None))
     monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"])
     monkeypatch.setattr(service_module, "_safe_photo", lambda _p: None)
     # 3 runs all differ on raw_score → no majority → stays needs_review
@@ -246,6 +254,40 @@ def test_delete_requires_confirmation(monkeypatch, tmp_path) -> None:
     assert deleted["ok"] is True
 
 
+# ----------------------------------------------------------------- T-16 text-layer 100% path
+
+def test_text_layer_pdf_uses_text_extraction_not_vision(monkeypatch, tmp_path) -> None:
+    # A PDF with a real text layer must use extract_from_text (scores = exact digital
+    # text = 100%), NOT vision. The vision resolver must never be called.
+    from types import SimpleNamespace
+    import plugins.life_record.service as service_module
+    import plugins.life_record.vision_extractor as vision_module
+    from plugins.life_record.tools import _ingest_pdf_tool_handler
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        service_module, "extract_pdf",
+        lambda _p: SimpleNamespace(page_texts=["학교생활기록부 " * 80], raw_text="x", page_count=1, metadata={}, photo=None),
+    )
+    monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"])
+
+    async def _text_fake(prompt):
+        assert "원문" in prompt  # text-path prompt
+        return json.dumps(SAMPLE_1, ensure_ascii=False)
+
+    async def _vision_must_not_run(images, prompt):
+        raise AssertionError("vision resolver must not run for a text-layer PDF")
+
+    monkeypatch.setattr(vision_module, "default_text_resolver", _text_fake)
+    monkeypatch.setattr(vision_module, "default_codex_resolver", _vision_must_not_run)
+    pdf = tmp_path / "text.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    capture_gateway_context(_event("thread-t"))
+    result = json.loads(_ingest_pdf_tool_handler({"pdf_path": str(pdf)}))
+    assert result["ok"] is True
+    assert result["student"]["name"] == "홍길동"
+    assert result["consensus_complete"] is True
+
+
 # ----------------------------------------------------------------- T-13/T-14 PDF auto-route
 
 def test_attached_pdf_auto_routes_to_ingest_without_tool_name(monkeypatch, tmp_path) -> None:
@@ -256,6 +298,8 @@ def test_attached_pdf_auto_routes_to_ingest_without_tool_name(monkeypatch, tmp_p
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     pdf = tmp_path / "attached.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
+    from types import SimpleNamespace
+    monkeypatch.setattr(service_module, "extract_pdf", lambda _p: SimpleNamespace(page_texts=[], raw_text="", page_count=1, metadata={}, photo=None))
     monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"])
     monkeypatch.setattr(service_module, "_safe_photo", lambda _p: None)
 
