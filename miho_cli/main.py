@@ -8900,13 +8900,20 @@ def _maybe_reexec_update_off_exe_shim(args) -> None:
         "→ Handing the update off to python.exe so miho.exe can be replaced "
         "(Windows file-lock workaround)..."
     )
+    # REPLACE this miho.exe process — do NOT spawn-and-wait. Waiting keeps the
+    # miho.exe image alive, and it KEEPS holding Scripts/miho.exe open, so the
+    # child's editable reinstall still hits "os error 32" overwriting the shim.
+    # os.execv ends the miho.exe image entirely and hands the console to
+    # python.exe, which holds no handle on the shim and can rewrite it.
+    sys.stdout.flush()
+    sys.stderr.flush()
     try:
-        result = subprocess.run(child_argv, cwd=PROJECT_ROOT, env=env)
+        os.chdir(PROJECT_ROOT)
+        os.execve(str(py), child_argv, env)
     except OSError as exc:
         print(f"  ⚠ Re-exec hand-off failed to start ({exc}); "
               "continuing in-process.")
         return
-    sys.exit(result.returncode)
 
 
 def _reexec_update_arg_tokens(args) -> list[str]:
