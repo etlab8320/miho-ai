@@ -8046,29 +8046,81 @@ def _install_python_dependencies_with_optional_fallback(
         )
 
 
-def _verify_update_applied() -> None:
-    """After a reinstall, confirm the installed package metadata matches the source
-    on disk. If they differ, the reinstall didn't take — surface it loudly instead
-    of printing a misleading "Update complete". A running gateway holding file
-    locks is the usual cause on Windows."""
+def _source_vs_installed_version() -> tuple[str | None, str | None]:
+    """(source pyproject version, installed package-metadata version). Either may
+    be None if it can't be read. The installed version is read in a subprocess so
+    a metadata cache in the current process can't mask a stale .dist-info."""
+    expected = None
     try:
         import tomllib
 
         with open(os.path.join(PROJECT_ROOT, "pyproject.toml"), "rb") as f:
             expected = tomllib.load(f).get("project", {}).get("version")
     except Exception:
-        return
-    if not expected:
-        return
+        expected = None
+    installed = None
     try:
         proc = subprocess.run(
             [sys.executable, "-c", "import importlib.metadata as m; print(m.version('miho-agent'))"],
             cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=30,
         )
-        installed = (proc.stdout or "").strip()
+        installed = (proc.stdout or "").strip() or None
     except Exception:
-        return
-    if installed and installed != expected:
+        installed = None
+    return expected, installed
+
+
+def _install_is_stale() -> bool:
+    """True when the source is at one version but the installed metadata is a
+    different (older) one — i.e. `git pull` refreshed the code but a prior
+    reinstall failed, leaving deps/metadata behind (e.g. discord's aiohttp)."""
+    expected, installed = _source_vs_installed_version()
+    return bool(expected and installed and installed != expected)
+
+
+def _reinstall_python_package() -> None:
+    """Reinstall the editable package + deps into its venv — the same logic the
+    git path runs after a pull. Reused for the 'code is current but the install
+    is stale' recovery so an update can't be a no-op when deps are missing."""
+    install_group = "all"
+    uv_bin = shutil.which("uv")
+    if uv_bin:
+        uv_env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
+        if _is_termux_env(uv_env):
+            uv_env.pop("PYTHONPATH", None)
+            uv_env.pop("PYTHONHOME", None)
+            install_group = "termux-all"
+        if _is_termux_env(uv_env) and _is_android_python():
+            _install_psutil_android_compat([uv_bin, "pip"], env=uv_env)
+        _install_python_dependencies_with_optional_fallback([uv_bin, "pip"], env=uv_env, group=install_group)
+        # Belt-and-suspenders editable install so the .dist-info / metadata is
+        # rewritten to the current version even if an optional extra failed.
+        subprocess.run([uv_bin, "pip", "install", "-e", ".", "--no-deps"], cwd=PROJECT_ROOT, env=uv_env, check=False)
+    else:
+        pip_cmd = [sys.executable, "-m", "pip"]
+        try:
+            subprocess.run(pip_cmd + ["--version"], cwd=PROJECT_ROOT, check=True, capture_output=True)
+        except subprocess.CalledProcessError:
+            subprocess.run([sys.executable, "-m", "ensurepip", "--upgrade", "--default-pip"], cwd=PROJECT_ROOT, check=True)
+        if _is_termux_env():
+            install_group = "termux-all"
+        if _is_termux_env() and _is_android_python():
+            _install_psutil_android_compat(pip_cmd)
+        _install_python_dependencies_with_optional_fallback(pip_cmd, group=install_group)
+    try:
+        _update_node_dependencies()
+        _build_web_ui(PROJECT_ROOT / "web")
+    except Exception as exc:
+        logger.debug("post-reinstall node/web build skipped: %s", exc)
+
+
+def _verify_update_applied() -> None:
+    """After a reinstall, confirm the installed package metadata matches the source
+    on disk. If they differ, the reinstall didn't take — surface it loudly instead
+    of printing a misleading "Update complete". A running gateway holding file
+    locks is the usual cause on Windows."""
+    expected, installed = _source_vs_installed_version()
+    if expected and installed and installed != expected:
         print()
         print(f"  ⚠ 설치된 버전({installed})이 코드 버전({expected})과 달라요 — 재설치가 완전히 반영되지 않았습니다.")
         print("     미호(게이트웨이)가 실행 중이면 먼저 종료한 뒤 다시 `miho update`를 실행하세요.")
@@ -9044,6 +9096,17 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     text=True,
                     check=False,
                 )
+            # No new commits — but the code can be current while the *install* is
+            # stale: a prior update pulled the code yet failed to reinstall, so
+            # metadata/deps stayed behind (e.g. discord's aiohttp missing →
+            # offline gateway, `miho --version` stuck on the old number). Don't
+            # let "already up to date" be a no-op in that case: reinstall.
+            if _install_is_stale():
+                expected, installed = _source_vs_installed_version()
+                print(f"→ Code is current but the install is stale (installed {installed} ≠ code {expected}).")
+                print("→ Reinstalling Python dependencies to repair it...")
+                _reinstall_python_package()
+                _verify_update_applied()
             print("✓ Already up to date!")
             return
 
