@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,36 @@ def _life_record_command(raw_args: str = "") -> str:
         "- 장기기억/RAG에는 원문을 넣지 않습니다.\n"
         "- 검수 전 데이터는 needs_review로 다룹니다."
     )
+
+
+_LIFE_RECORD_TOOLS = {
+    "life_record_ingest_pdf", "life_record_verify", "life_record_search",
+    "life_record_summary", "life_record_delete", "life_record_lookup", "life_record_confirm",
+}
+# Unique fingerprints of the life-record DB — if a general-purpose tool's args
+# contain these, the model is hand-rolling/poking the 생기부 DB directly.
+_DB_MARKERS = ("life_records.sqlite3", "student_documents", "subject_special_notes")
+
+
+def _block_life_record_handcoding(tool_name: Any = None, args: Any = None, **_: Any) -> dict[str, str] | None:
+    """pre_tool_call guard: forbid touching the 생기부 DB with execute_code/terminal/
+    sqlite. The dedicated life_record_* tools (which legitimately use that DB) pass."""
+    if not tool_name or tool_name in _LIFE_RECORD_TOOLS:
+        return None
+    try:
+        blob = json.dumps(args or {}, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return None
+    if any(marker in blob for marker in _DB_MARKERS):
+        return {
+            "action": "block",
+            "message": (
+                "생기부 데이터는 직접 코드(execute_code·terminal·sqlite)로 만들거나 고치지 마. "
+                "반드시 life_record_ingest_pdf(PDF 저장) / life_record_summary·search·lookup(조회) "
+                "도구를 사용해. PDF가 있으면 첨부하면 자동으로 처리돼."
+            ),
+        }
+    return None
 
 
 def _pdf_attachment(event: Any) -> Path | None:
@@ -77,6 +108,7 @@ def register(ctx: Any) -> None:
         args_hint="[status]",
     )
     ctx.register_hook("pre_gateway_dispatch", _capture_gateway_context)
+    ctx.register_hook("pre_tool_call", _block_life_record_handcoding)
     ctx.register_tool(
         name="life_record_ingest_pdf",
         toolset="life_record",

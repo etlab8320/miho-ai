@@ -87,6 +87,25 @@ def test_life_record_tools_register() -> None:
         assert tool in manager._plugin_tool_names
 
 
+def test_pre_tool_call_blocks_handcoding_the_life_record_db() -> None:
+    # execute_code/terminal touching the 생기부 DB must be blocked → forces tool use.
+    from plugins.life_record import _block_life_record_handcoding
+    blocked = _block_life_record_handcoding(
+        tool_name="execute_code",
+        args={"code": "import sqlite3; sqlite3.connect('x/life_records.sqlite3')"},
+    )
+    assert blocked and blocked["action"] == "block"
+    blocked2 = _block_life_record_handcoding(
+        tool_name="terminal",
+        args={"command": "sqlite3 db \"INSERT INTO student_documents VALUES(...)\""},
+    )
+    assert blocked2 and blocked2["action"] == "block"
+    # the dedicated tools (which legitimately use the DB) pass
+    assert _block_life_record_handcoding(tool_name="life_record_ingest_pdf", args={"pdf_path": "/x.pdf"}) is None
+    # unrelated execute_code passes
+    assert _block_life_record_handcoding(tool_name="execute_code", args={"code": "print(1 + 1)"}) is None
+
+
 # ----------------------------------------------------------------- T-01 render
 
 def test_render_page_images_produces_png_bytes(tmp_path) -> None:
