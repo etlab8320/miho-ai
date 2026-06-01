@@ -1,4 +1,5 @@
 import type { DashboardTheme, ThemeTypography, ThemeLayout } from "./types";
+import mihoNineTailsBgUrl from "@/assets/miho-nine-tails-dashboard.webp";
 
 /**
  * Built-in dashboard themes.
@@ -51,6 +52,16 @@ export const defaultTheme: DashboardTheme = {
   },
   typography: DEFAULT_TYPOGRAPHY,
   layout: DEFAULT_LAYOUT,
+  assets: {
+    bg: mihoNineTailsBgUrl,
+  },
+  componentStyles: {
+    backdrop: {
+      fillerOpacity: "0.07",
+      fillerBlendMode: "soft-light",
+      backgroundPosition: "right 12% top 44%",
+    },
+  },
 };
 
 export const midnightTheme: DashboardTheme = {
@@ -191,8 +202,14 @@ export const roseTheme: DashboardTheme = {
 export const defaultLargeTheme: DashboardTheme = {
   name: "default-large",
   label: "Miho Teal (Large)",
-  description: "Miho Teal with bigger fonts and roomier spacing",
-  palette: defaultTheme.palette,
+  description: "Bright Miho teal with bigger fonts and roomier spacing",
+  palette: {
+    background: { hex: "#dff6f2", alpha: 1 },
+    midground: { hex: "#103f3b", alpha: 1 },
+    foreground: { hex: "#0f766e", alpha: 0.18 },
+    warmGlow: "rgba(255, 184, 117, 0.24)",
+    noiseOpacity: 0.22,
+  },
   typography: {
     ...DEFAULT_TYPOGRAPHY,
     baseSize: "18px",
@@ -201,6 +218,43 @@ export const defaultLargeTheme: DashboardTheme = {
   layout: {
     ...DEFAULT_LAYOUT,
     density: "spacious",
+  },
+  assets: {
+    bg: mihoNineTailsBgUrl,
+  },
+  customCSS: `
+    :root {
+      --component-backdrop-filler-opacity: 0.22 !important;
+      --component-backdrop-filler-blend-mode: normal !important;
+      --component-backdrop-background-position: right -4vw center !important;
+    }
+    @media (max-width: 640px) {
+      :root {
+        --component-backdrop-filler-opacity: 0.12 !important;
+        --component-backdrop-background-position: 70% center !important;
+      }
+    }
+  `,
+  colorOverrides: {
+    card: "#eefbf8",
+    cardForeground: "#103f3b",
+    popover: "#f4fffc",
+    popoverForeground: "#103f3b",
+    primary: "#0f766e",
+    primaryForeground: "#f4fffc",
+    secondary: "#caebe4",
+    secondaryForeground: "#173f3b",
+    muted: "#d5f0eb",
+    mutedForeground: "#43635f",
+    accent: "#bde8df",
+    accentForeground: "#103f3b",
+    border: "#96cfc4",
+    input: "#9acfc6",
+    ring: "#0f8f83",
+    destructive: "#b42318",
+    destructiveForeground: "#fff7f2",
+    success: "#16825d",
+    warning: "#b56a18",
   },
 };
 

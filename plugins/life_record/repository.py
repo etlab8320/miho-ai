@@ -164,8 +164,17 @@ def _upsert_student(conn: sqlite3.Connection, identity: dict[str, str], now: str
 
 
 def _upsert_document(conn, student_id, identity, page_count, raw_text, metadata, pdf_path, stored_pdf, pdf_hash, method, confidence, now) -> int:
+    # P2-5: re-ingesting the same PDF (same sha256) must refresh the document
+    # header too, not just the rows. INSERT OR IGNORE left raw_text / metadata /
+    # method / confidence stale. UPSERT on the unique file_sha256 keeps created_at
+    # but updates the extraction fields.
     conn.execute(
-        "INSERT OR IGNORE INTO student_documents(student_id, document_type, source_pdf_path, stored_pdf_path, file_sha256, page_count, issued_at, issuer_school, document_number, verification_number, raw_text, metadata_json, extraction_method, extraction_confidence, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO student_documents(student_id, document_type, source_pdf_path, stored_pdf_path, file_sha256, page_count, issued_at, issuer_school, document_number, verification_number, raw_text, metadata_json, extraction_method, extraction_confidence, created_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(file_sha256) DO UPDATE SET "
+        "student_id=excluded.student_id, source_pdf_path=excluded.source_pdf_path, stored_pdf_path=excluded.stored_pdf_path, "
+        "page_count=excluded.page_count, issuer_school=excluded.issuer_school, raw_text=excluded.raw_text, "
+        "metadata_json=excluded.metadata_json, extraction_method=excluded.extraction_method, extraction_confidence=excluded.extraction_confidence",
         (student_id, "school_life_record", str(pdf_path), str(stored_pdf), pdf_hash, page_count, None, identity["school_name"], None, None, raw_text, json.dumps(metadata, ensure_ascii=False), method, confidence, now),
     )
     row = conn.execute("SELECT id FROM student_documents WHERE file_sha256=?", (pdf_hash,)).fetchone()
@@ -310,7 +319,16 @@ def record_verification(path: Path, document_id: int, round_name: str, status: s
 def delete_bundle(bundle_dir: Path) -> bool:
     if not bundle_dir.exists():
         return False
-    shutil.rmtree(bundle_dir)
+    # Confinement (P2-7): only ever rmtree a real life_record bundle — one that
+    # lives under MIHO_HOME inside a 'life_records' directory. Never delete an
+    # arbitrary/relative path or a system root, even if the caller passed one.
+    resolved = bundle_dir.resolve()
+    home = get_miho_home().resolve()
+    if home != resolved and home not in resolved.parents:
+        raise ValueError(f"refusing to delete outside MIHO_HOME: {resolved}")
+    if "life_records" not in resolved.parts:
+        raise ValueError(f"refusing to delete a non-life_record path: {resolved}")
+    shutil.rmtree(resolved)
     return True
 
 
@@ -341,6 +359,13 @@ def promote_to_central(bundle_path: Path, document_id: int, *, source_thread: st
         ).fetchone()
         if not doc:
             return {"ok": False, "reason": "document_not_found"}
+        # Identity guard (P1-4): never promote a record whose identity key
+        # (name + school + birth) is incomplete — it would land as "미상" and
+        # collide with 동명이인 in the central DB. Keep it in the thread bundle
+        # for a human to complete instead.
+        if (not doc["name"]) or doc["name"] == "미상" or (not doc["school_name"]) or (not doc["birth_masked"]):
+            return {"ok": False, "reason": "incomplete_identity",
+                    "message": "신원(이름·학교·생년월일)이 확정되지 않아 중앙 학생DB로 승격할 수 없어. 원본과 대조해 확정해줘."}
         grades = [dict(r) for r in bundle.execute("SELECT * FROM subject_grades WHERE student_document_id=? AND review_status='confirmed'", (document_id,)).fetchall()]
         notes = [dict(r) for r in bundle.execute("SELECT * FROM subject_special_notes WHERE student_document_id=? AND review_status='confirmed'", (document_id,)).fetchall()]
         attendance = [dict(r) for r in bundle.execute("SELECT * FROM attendance_records WHERE student_document_id=? AND review_status='confirmed'", (document_id,)).fetchall()]

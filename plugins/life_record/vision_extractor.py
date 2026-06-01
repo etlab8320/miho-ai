@@ -153,6 +153,10 @@ def _mask_birth(value: Any) -> str | None:
 
 
 DEFAULT_BATCH = 5
+# Cap how many image batches are in flight at once. Unbounded asyncio.gather over
+# a large 생기부 would hold every batch's base64 in memory and hammer the codex
+# stream simultaneously (P2-6). 3 keeps peak memory/connections bounded.
+MAX_CONCURRENT_BATCHES = 3
 
 
 def _merge(base: dict[str, Any], part: dict[str, Any]) -> dict[str, Any]:
@@ -245,9 +249,16 @@ async def extract_life_record(
     if len(images) <= batch_size:
         return parse_extraction_json(await resolve(images, EXTRACTION_PROMPT))
     # Smaller batches in parallel — each request stays light enough that the codex
-    # stream doesn't drop, and total wall-clock is one batch, not the sum.
+    # stream doesn't drop. A semaphore caps how many are in flight at once so a
+    # large 생기부 doesn't hold every batch's base64 in memory simultaneously.
     chunks = [images[i : i + batch_size] for i in range(0, len(images), batch_size)]
-    raws = await asyncio.gather(*(resolve(chunk, EXTRACTION_PROMPT) for chunk in chunks))
+    sem = asyncio.Semaphore(MAX_CONCURRENT_BATCHES)
+
+    async def _resolve_one(chunk: list[str]) -> str:
+        async with sem:
+            return await resolve(chunk, EXTRACTION_PROMPT)
+
+    raws = await asyncio.gather(*(_resolve_one(chunk) for chunk in chunks))
     merged = _empty()
     for raw in raws:
         merged = _merge(merged, parse_extraction_json(raw))

@@ -73,10 +73,27 @@ def _pdf_attachment(event: Any) -> Path | None:
     return None
 
 
-async def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, Any]:
+def _is_authorized_for_life_record(gateway: Any, source: Any) -> bool:
+    """Whether this sender may have a 생기부 (PII) auto-ingested. The
+    pre_gateway_dispatch hook runs BEFORE the gateway's own auth check, so we must
+    verify here. Fail-safe: if authorization can't be determined, treat as NOT
+    authorized (PII is never auto-processed on an unknown sender)."""
+    if gateway is None or source is None:
+        return False
+    try:
+        return bool(gateway._is_user_authorized(source))
+    except Exception as exc:  # unknown gateway shape / auth error → deny
+        logger.info("life_record auth check failed, treating as unauthorized: %s", exc)
+        return False
+
+
+async def _capture_gateway_context(event: Any = None, gateway: Any = None, **_: Any) -> dict[str, Any]:
     """Capture thread context, and auto-route an attached 생기부 PDF straight into
     life_record_ingest_pdf — no tool name or command needed. A PDF that isn't a
-    생기부 returns 'no' from the vision gate and passes through untouched."""
+    생기부 returns 'no' from the vision gate and passes through untouched.
+
+    생기부 is PII, so auto-ingest only fires for an *authorized* sender; otherwise
+    the PDF passes through untouched (the gateway's normal auth/pairing flow runs)."""
     capture_gateway_context(event)
     try:
         urls = getattr(event, "media_urls", None) or []
@@ -84,6 +101,10 @@ async def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, Any
         if pdf is None:
             if urls:
                 logger.info("life_record pre-dispatch: %d attachment(s), no usable PDF: %s", len(urls), urls[:3])
+            return {"action": "allow"}
+        # PII guard (P1-3): never auto-process a 생기부 from an unauthorized sender.
+        if not _is_authorized_for_life_record(gateway, getattr(event, "source", None)):
+            logger.info("life_record auto-route skipped: sender not authorized for 생기부 PII")
             return {"action": "allow"}
         logger.info("life_record pre-dispatch: PDF detected (%s) — running 생기부 vision gate", pdf.name)
         from .service import format_ingest_summary, ingest_life_record, looks_like_life_record

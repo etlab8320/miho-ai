@@ -17,6 +17,11 @@ CONFIRMED = "confirmed"
 NEEDS_REVIEW = "needs_review"
 
 IDENTITY_FIELDS = ("name", "school_name", "birth6", "class_no", "student_no")
+# Central-DB student identity key = name + school + birth. All three must be
+# present AND agreed before a record can be promoted — otherwise a missing name
+# becomes "미상" and ambiguous/동명이인 data pollutes the central DB (P1-4).
+# class_no / student_no stay optional (often absent on a 생기부).
+REQUIRED_IDENTITY = ("name", "school_name", "birth6")
 ROW_KEYS = {
     "attendance": ("grade",),
     "grades": ("grade", "semester", "subject"),
@@ -126,10 +131,19 @@ def needs_recheck_fields(reconciled_identity: dict[str, dict[str, Any]]) -> list
 
 
 def all_confirmed(consensus: dict[str, Any]) -> bool:
-    """True only when every identity field and every row reached agreement."""
+    """True only when the required identity (name/school/birth) is present AND
+    agreed, any *present* optional identity field agrees, and every row reached
+    agreement. A missing required field blocks promotion (no '미상' in central)."""
     identity = consensus.get("identity") or {}
-    if any(not info.get("agreed") for info in identity.values() if info.get("value") is not None):
-        return False
+    for field in REQUIRED_IDENTITY:
+        info = identity.get(field) or {}
+        if not info.get("value") or not info.get("agreed"):
+            return False
+    for field, info in identity.items():
+        if field in REQUIRED_IDENTITY:
+            continue
+        if info.get("value") is not None and not info.get("agreed"):
+            return False
     for section in ("attendance", "grades", "notes", "awards"):
         for row in consensus.get(section) or []:
             if row.get("_status") != CONFIRMED:

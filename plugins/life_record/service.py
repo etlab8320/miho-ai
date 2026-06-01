@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from .consensus import all_confirmed, reconcile
 from .pdf_reader import crop_id_photo, extract_pdf, render_page_images
@@ -36,6 +39,8 @@ DEFAULT_RUNS = 2
 MAX_RUNS = 3
 RENDER_ZOOM = 3.0
 HIRES_ZOOM = 4.5  # re-render for the tie-break pass — crisper small digits (성적/주민번호)
+MAX_PAGES = 50  # 생기부 is normally 10~30 pages; cap rendering/vision so a huge or
+# malformed PDF can't explode memory/time (P2-6). Excess pages are not processed.
 
 
 async def ingest_life_record(
@@ -53,7 +58,14 @@ async def ingest_life_record(
     _validate_pdf_path(pdf_path)
     bundle_dir.mkdir(parents=True, exist_ok=True)
     extracted = extract_pdf(pdf_path)
-    page_pngs = render_page_images(pdf_path, zoom=RENDER_ZOOM)  # for the review gallery
+    # P2-6: cap how many pages we render/send so a huge or malformed PDF can't
+    # blow up memory/time. Excess pages are skipped (and logged).
+    render_pages: list[int] | None = None
+    if extracted.page_count > MAX_PAGES:
+        logger.warning("life_record: %s has %d pages (> cap %d) — processing only the first %d",
+                       pdf_path.name, extracted.page_count, MAX_PAGES, MAX_PAGES)
+        render_pages = list(range(MAX_PAGES))
+    page_pngs = render_page_images(pdf_path, zoom=RENDER_ZOOM, pages=render_pages)  # for the review gallery
     _save_review_pages(bundle_dir, page_pngs)
 
     results: list[dict[str, Any]] = []
@@ -80,7 +92,7 @@ async def ingest_life_record(
             results.append(await extract_life_record(images, resolver=resolver))
         consensus = reconcile(results)
         if not all_confirmed(consensus) and len(results) < MAX_RUNS:
-            hi_images = [to_data_url(png) for png in render_page_images(pdf_path, zoom=HIRES_ZOOM)]
+            hi_images = [to_data_url(png) for png in render_page_images(pdf_path, zoom=HIRES_ZOOM, pages=render_pages)]
             while not all_confirmed(consensus) and len(results) < MAX_RUNS:
                 results.append(await extract_life_record(hi_images, resolver=resolver))
                 consensus = reconcile(results)

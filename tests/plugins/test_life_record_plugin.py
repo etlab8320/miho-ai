@@ -46,6 +46,11 @@ SAMPLE_1 = {
 }
 
 
+def _authed_gateway(ok: bool = True):
+    """Minimal gateway stub for the pre_gateway_dispatch hook's PII auth gate."""
+    return SimpleNamespace(_is_user_authorized=lambda _source: ok, session_store=None)
+
+
 def _fake_resolver_factory(payload):
     async def _resolver(images, prompt):
         return json.dumps(payload, ensure_ascii=False)
@@ -197,6 +202,69 @@ def test_same_student_reingest_keeps_single_student(monkeypatch, tmp_path) -> No
     assert {(g["grade"], g["subject"]) for g in grades} == {(1, "국어"), (2, "수학"), (3, "영어")}  # T-05: accumulated
 
 
+# ----------------------------------------------------------------- P1-4 identity guard
+
+def test_missing_name_blocks_consensus_and_promotion(monkeypatch, tmp_path) -> None:
+    # P1-4: 이름이 없으면 all_confirmed=False → '미상'으로 중앙DB 자동 승격되지 않음
+    from plugins.life_record.consensus import reconcile, all_confirmed
+    no_name = dict(SAMPLE_1, identity=dict(SAMPLE_1["identity"], name=None))
+    assert all_confirmed(reconcile([no_name, no_name])) is False
+    result = _ingest(monkeypatch, tmp_path, "thread-noname", no_name, pdf_name="noname.pdf")
+    assert result["consensus_complete"] is False
+    assert not (result.get("promoted") and result["promoted"].get("ok"))
+
+
+def test_promote_to_central_rejects_unidentified_even_after_confirm(monkeypatch, tmp_path) -> None:
+    # P1-4 2차 방어: 사람이 행을 모두 confirm해도, 신원(생년월일)이 비면 promote 거부
+    from plugins.life_record.repository import promote_to_central, db_path, latest_document, confirm_rows
+    no_birth = dict(SAMPLE_1, identity=dict(SAMPLE_1["identity"], birth6=None))
+    result = _ingest(monkeypatch, tmp_path, "thread-nobirth", no_birth, pdf_name="nobirth.pdf")
+    bundle_dir = Path(result["db_path"]).parent
+    doc = latest_document(db_path(bundle_dir))
+    confirm_rows(db_path(bundle_dir), int(doc["id"]))
+    out = promote_to_central(db_path(bundle_dir), int(doc["id"]))
+    assert out["ok"] is False and out["reason"] == "incomplete_identity"
+
+
+# ----------------------------------------------------------------- P2-5 reingest / P2-7 delete confinement
+
+def test_reingest_same_pdf_updates_document_header(monkeypatch, tmp_path) -> None:
+    # P2-5: re-ingesting the same PDF (same sha256) must refresh the document
+    # header (raw_text), not leave it stale, and must not create a duplicate doc.
+    import sqlite3
+    from plugins.life_record.repository import db_path
+    _ingest(monkeypatch, tmp_path, "thread-a", SAMPLE_1, pdf_name="x.pdf")
+    altered = dict(SAMPLE_1, grades=[dict(SAMPLE_1["grades"][0], subject="수학", raw_score="77/70(12)")])
+    r2 = _ingest(monkeypatch, tmp_path, "thread-a", altered, pdf_name="x.pdf")
+    conn = sqlite3.connect(str(db_path(Path(r2["db_path"]).parent)))
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM student_documents").fetchone()[0]
+        raw = conn.execute("SELECT raw_text FROM student_documents ORDER BY id DESC LIMIT 1").fetchone()[0]
+    finally:
+        conn.close()
+    assert count == 1          # UPSERT — no duplicate document row
+    assert "수학" in raw        # header refreshed with the re-ingested extraction
+
+
+def test_delete_bundle_refuses_paths_outside_life_records(monkeypatch, tmp_path) -> None:
+    # P2-7: delete_bundle must never rmtree a path outside MIHO_HOME or one that
+    # isn't a 'life_records' bundle, even if handed one.
+    from plugins.life_record.repository import delete_bundle
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    outside = tmp_path.parent / "miho_delete_test_outside"
+    outside.mkdir(exist_ok=True)
+    with pytest.raises(ValueError):
+        delete_bundle(outside)
+    inside_nonlr = tmp_path / "random_dir"
+    inside_nonlr.mkdir(exist_ok=True)
+    with pytest.raises(ValueError):
+        delete_bundle(inside_nonlr)
+    good = tmp_path / "threads" / "t1" / "life_records"
+    good.mkdir(parents=True, exist_ok=True)
+    assert delete_bundle(good) is True
+    assert not good.exists()
+
+
 # ----------------------------------------------------------------- T-08 lookup
 
 def test_lookup_central_returns_accumulated_student(monkeypatch, tmp_path) -> None:
@@ -331,10 +399,34 @@ def test_attached_pdf_auto_routes_to_ingest_without_tool_name(monkeypatch, tmp_p
     monkeypatch.setattr(vision_module, "default_codex_resolver", _smart)
     event = _event("thread-a")
     event.media_urls = [str(pdf)]
-    result = asyncio.run(_capture_gateway_context(event))
+    result = asyncio.run(_capture_gateway_context(event, gateway=_authed_gateway()))
     assert result["action"] == "respond"
     assert "생기부" in result["text"]
     assert "홍길동" in result["text"]
+
+
+def test_unauthorized_sender_pdf_is_not_auto_ingested(monkeypatch, tmp_path) -> None:
+    # P1-3: an unauthorized sender's 생기부 PDF (PII) must NOT be auto-processed —
+    # it passes through to the gateway's normal auth/pairing flow instead.
+    from plugins.life_record import _capture_gateway_context
+    import plugins.life_record.service as service_module
+    import plugins.life_record.vision_extractor as vision_module
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    pdf = tmp_path / "attached.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    called = {"gate": False}
+
+    async def _smart(images, prompt):
+        called["gate"] = True  # vision gate must never run for an unauthorized sender
+        return "yes"
+
+    monkeypatch.setattr(vision_module, "default_codex_resolver", _smart)
+    event = _event("thread-a")
+    event.media_urls = [str(pdf)]
+    # no gateway / unauthorized → fail-safe skip
+    assert asyncio.run(_capture_gateway_context(event))["action"] == "allow"
+    assert asyncio.run(_capture_gateway_context(event, gateway=_authed_gateway(ok=False)))["action"] == "allow"
+    assert called["gate"] is False
 
 
 def test_non_life_record_pdf_passes_through(monkeypatch, tmp_path) -> None:
