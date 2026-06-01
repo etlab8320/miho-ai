@@ -81,6 +81,11 @@ async def ingest_life_record(
         promoted = promote_to_central(Path(result["db_path"]), document_id, source_thread=source_thread)
 
     identity = {field: (consensus["identity"].get(field) or {}).get("value") for field in consensus["identity"]}
+    pending_grades = [
+        {"grade": g.get("grade"), "semester": g.get("semester"), "subject": g.get("subject"), "raw_score": g.get("raw_score"), "rank_grade": g.get("rank_grade")}
+        for g in (consensus.get("grades") or [])
+        if g.get("_status") != "confirmed"
+    ]
     return {
         **result,
         "identity": identity,
@@ -90,6 +95,7 @@ async def ingest_life_record(
         "consensus_complete": complete,
         "promoted": promoted,
         "runs": len(results),
+        "pending_grades": pending_grades,
     }
 
 
@@ -174,14 +180,21 @@ def format_ingest_summary(result: dict[str, Any]) -> str:
         f"- 성적 {counts.get('subject_grade_rows', 0)} · 세특 {counts.get('special_note_rows', 0)} · "
         f"출결 {counts.get('attendance_rows', 0)} · 수상 {counts.get('award_rows', 0)}"
     )
-    pending = counts.get("needs_review_rows", 0)
-    if pending:
-        lines.append(f"- 합의가 안 된 {pending}건은 검수 필요(needs_review) — 확인 후 life_record_confirm으로 확정")
+    pending_grades = result.get("pending_grades") or []
+    if pending_grades:
+        lines.append(f"\n⚠️ 점수 검수 필요 {len(pending_grades)}건 (원본과 대조해 확정):")
+        for g in pending_grades[:12]:
+            sem = f"{g.get('semester')}학기" if g.get("semester") else ""
+            rank = f" {g.get('rank_grade')}등급" if g.get("rank_grade") else ""
+            lines.append(f"  · {g.get('grade')}학년{sem} {g.get('subject')} {g.get('raw_score') or '—'}{rank}")
+        if len(pending_grades) > 12:
+            lines.append(f"  · …외 {len(pending_grades) - 12}건")
+        lines.append("→ 맞으면 life_record_confirm으로 일괄 확정, 틀린 건 말해주면 고칠게.")
     promoted = result.get("promoted")
     if result.get("consensus_complete") and promoted and promoted.get("ok"):
         lines.append("- 전 항목 합의 완료 → 중앙 학생DB에 저장됨 (이후 life_record_lookup으로 조회 가능)")
     if result.get("review_path"):
-        lines.append(f"- 검수표: {result['review_path']}")
+        lines.append(f"- (PC 상세 검수표·원본 페이지 포함: {result['review_path']})")
     return "\n".join(lines)
 
 
