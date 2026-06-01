@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .consensus import all_confirmed, reconcile
-from .pdf_reader import extract_pdf, render_page_images
+from .pdf_reader import extract_markdown, extract_pdf, render_page_images
 from .repository import (
     confirm_rows,
     db_path,
@@ -56,14 +56,20 @@ async def ingest_life_record(
 
     results: list[dict[str, Any]] = []
     if has_text_layer(extracted.page_texts):
-        # Text-layer PDF: numbers are exact digital text — no OCR drift.
+        # Text-layer PDF: numbers are exact digital text — no OCR drift. Prefer
+        # markdown (tables/structure preserved) so the LLM reconstructs less; fall
+        # back to plain page_texts when pymupdf4llm isn't installed.
         page_count = len(extracted.page_texts)
         extraction_method = "codex_text_layer_v1"
+        markdown = extract_markdown(pdf_path)
+        text_source = [markdown] if markdown else extracted.page_texts
+        if markdown:
+            extraction_method = "codex_text_markdown_v1"
         for _ in range(max(1, runs)):
-            results.append(await extract_from_text(extracted.page_texts, resolver=text_resolver))
+            results.append(await extract_from_text(text_source, resolver=text_resolver))
         consensus = reconcile(results)
         while not all_confirmed(consensus) and len(results) < MAX_RUNS:
-            results.append(await extract_from_text(extracted.page_texts, resolver=text_resolver))
+            results.append(await extract_from_text(text_source, resolver=text_resolver))
             consensus = reconcile(results)
     else:
         # Scanned PDF (no text): vision over images, hi-res tie-break majority vote.

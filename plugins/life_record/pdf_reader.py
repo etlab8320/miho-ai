@@ -101,6 +101,23 @@ def _photo_score(page_index: int, width: int, height: int) -> int:
     return score
 
 
+def extract_markdown(pdf_path: Path) -> str | None:
+    """Convert a text-layer PDF to markdown via pymupdf4llm so tables/columns keep
+    their structure (the LLM has far less to reconstruct than from raw get_text).
+    Returns None when the dep is unavailable — caller falls back to plain page_texts,
+    so this is a pure accuracy boost with no hard dependency. Mirrors miho's
+    ocr-and-documents skill (pymupdf4llm --markdown)."""
+    try:
+        import pymupdf4llm
+    except ImportError:
+        return None
+    try:
+        text = pymupdf4llm.to_markdown(str(pdf_path), show_progress=False)
+        return text if text and text.strip() else None
+    except Exception:
+        return None
+
+
 def render_page_images(pdf_path: Path, *, zoom: float = 3.0, pages: list[int] | None = None) -> list[bytes]:
     """Render PDF pages to PNG bytes for vision extraction.
 
