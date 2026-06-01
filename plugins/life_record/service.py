@@ -41,8 +41,10 @@ async def ingest_life_record(
     verify → promote confirmed data to the central student DB."""
     _validate_pdf_path(pdf_path)
     bundle_dir.mkdir(parents=True, exist_ok=True)
-    images = [to_data_url(png) for png in render_page_images(pdf_path, zoom=RENDER_ZOOM)]
+    page_pngs = render_page_images(pdf_path, zoom=RENDER_ZOOM)
+    images = [to_data_url(png) for png in page_pngs]
     page_count = len(images)
+    _save_review_pages(bundle_dir, page_pngs)
 
     results: list[dict[str, Any]] = []
     for _ in range(max(1, runs)):
@@ -181,6 +183,15 @@ def format_ingest_summary(result: dict[str, Any]) -> str:
     if result.get("review_path"):
         lines.append(f"- 검수표: {result['review_path']}")
     return "\n".join(lines)
+
+
+def _save_review_pages(bundle_dir: Path, page_pngs: list[bytes]) -> None:
+    """Persist rendered pages so the review HTML can show the original beside the
+    extracted values — the human confirms needs_review rows against the source."""
+    pages_dir = bundle_dir / "pages"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    for index, png in enumerate(page_pngs):
+        (pages_dir / f"p{index + 1:02d}.png").write_bytes(png)
 
 
 def _safe_photo(pdf_path: Path) -> Any:
