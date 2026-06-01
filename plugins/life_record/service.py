@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -121,6 +122,7 @@ async def ingest_life_record(
         "promoted": promoted,
         "runs": len(results),
         "pending_grades": pending_grades,
+        "photo_display_path": _copy_photo_for_display(result.get("photo_paths") or []),
     }
 
 
@@ -201,6 +203,8 @@ def format_ingest_summary(result: dict[str, Any]) -> str:
     counts = result.get("counts") or {}
     name = ident.get("name") or "학생"
     lines = [f"📄 {name} 생기부를 정리해서 DB에 저장했어."]
+    if result.get("photo_display_path"):
+        lines.append(f"MEDIA:{result['photo_display_path']}")
     lines.append(
         f"- 성적 {counts.get('subject_grade_rows', 0)} · 세특 {counts.get('special_note_rows', 0)} · "
         f"출결 {counts.get('attendance_rows', 0)} · 수상 {counts.get('award_rows', 0)}"
@@ -221,6 +225,27 @@ def format_ingest_summary(result: dict[str, Any]) -> str:
     if result.get("review_path"):
         lines.append(f"- (PC 상세 검수표·원본 페이지 포함: {result['review_path']})")
     return "\n".join(lines)
+
+
+def _copy_photo_for_display(photo_paths: list[str]) -> str | None:
+    """Copy the student photo into cache/media (a delivery-allowed root) so the
+    Discord reply can attach it via MEDIA:. The bundle photo lives under the thread
+    workspace, which isn't a delivery root."""
+    if not photo_paths:
+        return None
+    src = Path(photo_paths[0])
+    if not src.exists():
+        return None
+    try:
+        from miho_constants import get_miho_dir
+
+        dest_dir = get_miho_dir("cache/media", "media_cache") / "life_record_photos"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / src.name
+        shutil.copy2(src, dest)
+        return str(dest)
+    except OSError:
+        return None
 
 
 def _save_review_pages(bundle_dir: Path, page_pngs: list[bytes]) -> None:
