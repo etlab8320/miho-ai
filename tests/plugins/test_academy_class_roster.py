@@ -48,22 +48,20 @@ class RosterClient:
         ]
 
     def get_paca_schedule_attendance(self, schedule_id: int) -> dict:
+        # PACA's schedule-attendance payload carries NO school/grade — those come
+        # from the student record and are joined in by search_paca_students.
         rosters = {
             616: {
                 "students": [
                     {
                         "student_id": 301,
                         "student_name": "강도훈",
-                        "school": "풍동고",
-                        "grade": "고3",
                         "is_trial": True,
                         "attendance_status": None,
                     },
                     {
                         "student_id": 302,
                         "student_name": "백지민",
-                        "school": "백양고",
-                        "grade": "N수",
                         "is_trial": False,
                         "attendance_status": None,
                     },
@@ -74,8 +72,6 @@ class RosterClient:
                     {
                         "student_id": 303,
                         "student_name": "이서준",
-                        "school": "주엽고",
-                        "grade": "고2",
                         "is_trial": False,
                         "attendance_status": "present",
                     }
@@ -83,6 +79,14 @@ class RosterClient:
             },
         }
         return rosters.get(schedule_id, {"students": []})
+
+    def search_paca_students(self, query: str) -> list[dict]:
+        assert query == ""
+        return [
+            {"id": 301, "name": "강도훈", "school": "풍동고", "grade": "고3"},
+            {"id": 302, "name": "백지민", "school": "백양고", "grade": "N수"},
+            {"id": 303, "name": "이서준", "school": "주엽고", "grade": "고2"},
+        ]
 
 
 def test_class_roster_range_returns_class_schedules_with_student_rosters() -> None:
@@ -102,9 +106,46 @@ def test_class_roster_range_returns_class_schedules_with_student_rosters() -> No
     evening = next(row for row in result["schedules"] if row["id"] == 616)
     assert [s["name"] for s in evening["students"]] == ["강도훈", "백지민"]
     assert evening["students"][0]["is_trial"] is True
+    # School/grade are absent from the attendance payload and joined in from the
+    # student roster (search_paca_students) by student_id.
+    assert evening["students"][0]["school"] == "풍동고"
+    assert evening["students"][0]["grade"] == "고3"
+    assert evening["students"][1]["school"] == "백양고"
+    afternoon = next(row for row in result["schedules"] if row["id"] == 722)
+    assert afternoon["students"][0]["school"] == "주엽고"
+    assert afternoon["students"][0]["grade"] == "고2"
     assert "수업 2건" in result["message"]
     assert "강도훈" in result["message"]
     assert "백지민" in result["message"]
+    # Enriched school/grade must surface in the LLM-facing message too.
+    assert "풍동고" in result["message"]
+    assert "고3" in result["message"]
+
+
+class _NoProfileClient:
+    """A client whose roster carries no school/grade (real PACA shape) AND
+    cannot look up student profiles. Enrichment must degrade gracefully —
+    blank school/grade, never a crash."""
+
+    def list_paca_schedules(self, start_day: date, end_day: date) -> list[dict]:
+        return [{"id": 722, "class_date": "2026-05-31", "time_slot": "afternoon", "student_count": 1}]
+
+    def get_paca_schedule_attendance(self, schedule_id: int) -> dict:
+        return {"students": [{"student_id": 303, "student_name": "이서준", "is_trial": False}]}
+
+
+def test_class_roster_degrades_when_profiles_unavailable() -> None:
+    result = _payload(
+        _class_roster_range_tool_handler(
+            {"start_date": "2026-05-31", "end_date": "2026-05-31"},
+            client=_NoProfileClient(),
+        )
+    )
+    assert result["ok"] is True
+    student = result["schedules"][0]["students"][0]
+    assert student["name"] == "이서준"
+    assert student["school"] == ""
+    assert student["grade"] == ""
 
 
 def test_class_roster_range_can_skip_roster_and_use_counts() -> None:

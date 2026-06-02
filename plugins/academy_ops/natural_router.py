@@ -108,9 +108,9 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "args": ["start_date", "end_date"],
     },
     "academy_class_roster_range": {
-        "purpose": "오늘 출석할/등원할 학생, 수업 일정별 배정 학생 명단(이름/학교/학년/출결상태) 조회. class_schedules 기반",
+        "purpose": "특정 날짜(오늘뿐 아니라 이번주/다음주 등 미래 날짜 포함)에 출석·등원 '예정'인, 수업에 배정된 학생 명단(이름/학교/학년) 조회. '출석해야 할 / 나와야 할 / 등원 예정 / 수업 있는' 학생 명단은 날짜와 무관하게 반드시 이 도구. class_schedules 기반 — 아직 출결을 체크하기 전의 '예정자' 명단이다 (실제 출결 기록이 아님).",
         "args": ["start_date", "end_date", "with_roster"],
-        "aliases": ["오늘 출석할 학생", "오늘 등원할 학생", "오늘 수업", "수업 명단", "수업별 학생"],
+        "aliases": ["오늘 출석할 학생", "출석해야 할 학생", "나와야 할 학생", "이번주 금요일 출석할 학생", "등원 예정 학생", "수업 명단", "수업별 학생"],
     },
     "academy_consultation_schedule_range": {
         "purpose": "신규 상담, 상담 일정, 체험수업, 무료체험, trial lesson 일정 조회",
@@ -125,7 +125,7 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "purpose": "특정 학생의 출석을 달력 PNG 이미지로 생성. 날짜별 긴 출석 목록, 달력, 이미지 요청에 사용",
         "args": ["student_query", "start_date", "end_date", "today"],
     },
-    "academy_attendance_day": {"purpose": "특정 날짜의 학생 전체 출석 현황/명단 조회와 PNG 이미지 생성", "args": ["date", "image"]},
+    "academy_attendance_day": {"purpose": "특정 날짜 학생 전체의 '이미 체크된' 실제 출결 현황/명단(출석/지각/결석/미체크) 조회 + PNG. 과거·오늘의 출결 '기록' 전용이다. 미래 날짜는 아직 출결 기록이 없어 전원 '미체크 0'으로 나오므로, '출석해야 할 예정 명단'에는 절대 쓰지 말고 academy_class_roster_range를 써라.", "args": ["date", "image"]},
     "academy_staff_attendance_day": {
         "purpose": "이미 출근한 강사, 출근 기록, 어제/과거 출근자 조회",
         "args": ["date"],
@@ -387,11 +387,16 @@ def _resolver_messages(
                 "출력 초점이 있으면 response_focus를 함께 반환해. "
                 "가능한 response_focus는 summary, daily_attendance, unchecked_dates 중 하나야. "
                 "기본 출석 조회는 response_focus=summary야. "
-                "출석 요청에 이미지, 사진, PNG가 포함되고 특정 학생이 없으며 전체/명단/대상/해야할 학생 목적이면 "
-                "academy_attendance_day에 image=true를 넣어. "
+                "특정 날짜에 '이미 체크된 실제 출결 현황'(출석/지각/결석/미체크)을 이미지로 달라는 요청이고 특정 학생이 없으면 "
+                "academy_attendance_day에 image=true를 넣어. 이 도구는 '이미 체크된 출결 기록'의 PNG 전용이다. "
                 "특정 학생 출석을 달력, 캘린더, 이미지, 긴 날짜별 화면으로 보려는 요청은 "
                 "academy_student_attendance_calendar_image를 써. "
                 "학생관리카드, 학생 카드, 카드 이미지 요청은 academy_student_summary가 아니라 academy_student_card_image를 써. "
+                "위 전용 도구들은 '이미 체크된 출결 현황 이미지', '학생 출석 달력', '학생 관리카드'라는 본래 용도에만 써라. "
+                "그 밖의 일반적인 '명단/표/임의 데이터를 이미지로 달라'는 요청 — 예: 출석 예정 명단 이미지, 수업별 학생 표, "
+                "기록/순위 표를 이미지로 — 은 전용 도구에 억지로 끼워맞추지 말고 action=allow로 둬. "
+                "그러면 미호 본문이 데이터 조회 도구(academy_class_roster_range 등)로 데이터를 얻고 "
+                "academy_render_image로 직접 HTML 표를 만들어 이미지화한다. 이것이 일반 표/명단 이미지의 기본 경로다. "
                 "직전 학원업무 맥락이 특정 학생 출석 조회이고 현재 후속 요청에 이미지, 사진, PNG, 달력, 캘린더가 있으면 "
                 "academy_student_attendance_calendar_image를 써. "
                 "사용자가 텍스트 날짜별, 일자별, 하루씩, 전체 날짜를 명시적으로 원할 때만 daily_attendance를 써. "

@@ -54,6 +54,7 @@ from .student_context_tool import _student_context_tool_handler
 from .monthly_test_records_tool import register_monthly_test_records_tool
 from .student_records_tool import register_student_records_tool
 from .report_render_tool import register_report_image_tool
+from .render_image_tool import register_render_image_tool
 
 logger = logging.getLogger(__name__)
 
@@ -339,6 +340,7 @@ def register(ctx: Any) -> None:
     register_student_records_tool(ctx)
     register_monthly_test_records_tool(ctx)
     register_report_image_tool(ctx)
+    register_render_image_tool(ctx)
     register_consultation_note_tool(ctx)
     register_brand_logo_tools(ctx)
     ctx.register_tool(
@@ -376,7 +378,9 @@ def register(ctx: Any) -> None:
         },
         handler=_attendance_day_tool_handler,
         description=(
-            "Return a safe Peak attendance summary or roster PNG for one explicit date, grouped by slot. "
+            "ALREADY-RECORDED attendance (출결 기록) for one explicit date — 출석/지각/결석/미체크 현황, grouped by slot, as summary or PNG. "
+            "Use ONLY for past/today actual attendance. A FUTURE date has no attendance recorded yet (everyone shows 미체크 0), "
+            "so for '출석해야 할 / 나와야 할 / 예정' 학생 명단 (future or planned roster) use academy_class_roster_range instead — NOT this tool. "
             "Do not call with empty arguments; resolve natural-language dates to YYYY-MM-DD first."
         ),
     )
@@ -531,10 +535,12 @@ def register(ctx: Any) -> None:
         },
         handler=_class_roster_range_tool_handler,
         description=(
-            "오늘 출석할/등원할 학생, 수업 일정별 학생 명단 — class_schedules 기반. "
+            "특정 날짜(오늘뿐 아니라 이번주/다음주 등 미래 날짜 포함)에 출석·등원 '예정'인, 수업에 배정된 학생 명단 — class_schedules 기반 (아직 출결 체크 전의 '예정자'). "
             "Return PACA class schedules (수업 일정) for a date range and, for each class, the assigned student "
-            "roster (이름/학교/학년/출결상태) from live PACA data. "
-            "Use for questions like '오늘 출석할 학생', '오늘 등원할 학생', '오늘 수업', '이번주 수업별 학생 명단'. "
+            "roster (이름/학교/학년) from live PACA data. "
+            "'출석해야 할 / 나와야 할 / 등원 예정' 학생 명단은 날짜와 무관하게(미래 날짜도) 이 도구를 써라. 과거·오늘의 실제 '출결 기록'은 academy_attendance_day. "
+            "Use for '오늘/이번주 금요일 출석할 학생', '나와야 할 학생', '수업별 학생 명단'. "
+            "명단을 이미지로 달라고 하면, 이 도구로 데이터를 얻은 뒤 academy_render_image로 HTML을 만들어 PNG로 줘라. "
             "학원 행사/이벤트(academy_events)는 academy_schedule_range로 따로 조회. "
             "The assistant must resolve natural-language periods into start_date/end_date first. "
             "Do not call with empty arguments."
