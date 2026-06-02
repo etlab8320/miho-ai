@@ -72,7 +72,7 @@
 
 ## Test Plan
 - Anti-hardcoding scan: 한국어 문자열 직접 매칭, 특정 학생/지점/학원 ID 예외, 서버 기본값을 검사한다.
-- Semantic benchmark: 같은 의도를 50개 이상 다른 표현으로 바꿔 route/tool/args가 안정적인지 확인한다.
+- Semantic benchmark: 최초 제품화 기준선은 500개 자연어 시나리오로 시작하고, 같은 의도를 여러 표현으로 바꿔 route/tool/args가 안정적인지 확인한다.
 - Temporal benchmark: 어제/오늘/내일/지난달/다음 주/이미 체크된/예정된 표현을 분리한다.
 - Context benchmark: "그 학생만", "이미지로", "아까 거 다시" 같은 후속 질문이 직전 맥락을 올바르게 잇는지 확인한다.
 - Negative benchmark: 학원업무가 아닌 요청은 학원 도구로 끌고 가지 않는지 확인한다.
@@ -80,7 +80,7 @@
 - Speed-quality check: 라우터가 맞는 도구를 첫 선택으로 고르고, 잘못된 도구 실행/재시도/과다 조회 없이 끝나는지 확인한다.
 
 ## Operating Loop
-- Initial baseline: 제품화 전 최소 기준 테스트셋을 만들고, 그 기준을 통과할 때까지 라우터를 수정한다.
+- Initial baseline: 제품화 전 최소 500개 기준 테스트셋을 만들고, 그 기준을 통과할 때까지 라우터를 수정한다.
 - Quality rule: 실패를 고칠 때마다 구현을 리뷰하고, anti-hardcoding 검사와 관련 라우팅 테스트를 다시 돌린다.
 - Release gate: 기준 테스트, 테넌트 경계, 속도 확인이 통과하기 전에는 판매용 안정 상태로 보지 않는다.
 - Runtime logging: 출시 후에는 실제 사용 로그에서 실패 유형, 오타/비문, 시제 혼동, 도구 선택 실패, 계정 경계 위험을 분류한다.
@@ -89,10 +89,10 @@
 - Regression loop: 새 실패 유형을 테스트셋에 추가한 뒤 기존 기준 테스트와 함께 다시 돌린다.
 
 ## Implementation Tasks
-- [ ] T1: 라우팅 벤치마크 데이터셋을 만든다.
+- [x] T1: 라우팅 벤치마크 데이터셋을 만든다.
   - Files: `tests/plugins/`
   - Tests: 의미/시제/맥락/negative case.
-  - Acceptance: 같은 의도 표현 변형이 특정 문장 암기 없이 통과한다.
+  - Acceptance: 최초 500개 기준선이 특정 문장 암기 없이 통과한다.
 - [ ] T2: anti-hardcoding 검사 범위를 확장한다.
   - Files: `tests/plugins/test_academy_no_hardcoded_nlp.py`
   - Tests: 학생명, 지점명, 학원 ID, 서버 기본값 금지.

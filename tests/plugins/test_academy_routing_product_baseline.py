@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -23,57 +24,35 @@ class _Response:
 class RoutingScenario:
     name: str
     utterance: str
+    expected_action: str
     expected_tool: str
     expected_args: dict[str, Any]
     wrong_tools: tuple[str, ...] = field(default_factory=tuple)
     response_focus: str = ""
 
 
-BASELINE_SCENARIOS = (
-    RoutingScenario(
-        name="future roster",
-        utterance="다음주 금요일 수업 나와야 하는 애들 명단 줘",
-        expected_tool="academy_class_roster_range",
-        expected_args={
-            "start_date": "2026-06-12",
-            "end_date": "2026-06-12",
-            "with_roster": True,
-        },
-        wrong_tools=("academy_attendance_day", "academy_student_attendance_range"),
-    ),
-    RoutingScenario(
-        name="actual attendance image",
-        utterance="어제 실제 출결 체크된거 이미지로 보여줘",
-        expected_tool="academy_attendance_day",
-        expected_args={"date": "2026-06-02", "image": True},
-        wrong_tools=("academy_class_roster_range", "academy_student_attendance_calendar_image"),
-    ),
-    RoutingScenario(
-        name="student record typo",
-        utterance="김보민 제멀 기록좀 봐줘",
-        expected_tool="academy_student_record_lookup",
-        expected_args={
-            "student_query": "김보민",
-            "event_query": "제멀",
-            "date": "",
-            "today": "2026-06-03",
-        },
-        wrong_tools=("academy_student_attendance_range", "academy_plan_by_date"),
-    ),
-    RoutingScenario(
-        name="monthly aggregate",
-        utterance="5월 월말테스트 남녀 평균 학교 빼고 정리해줘",
-        expected_tool="academy_monthly_test_records",
-        expected_args={
-            "event_query": "",
-            "test_id": None,
-            "test_month": "2026-05",
-            "exclude_schools": True,
-            "today": "2026-06-03",
-        },
-        wrong_tools=("academy_student_record_lookup", "academy_schedule_range"),
-    ),
-)
+FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "academy_routing_product_baseline.json"
+
+
+def _load_scenarios() -> tuple[RoutingScenario, ...]:
+    raw = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    return tuple(
+        RoutingScenario(
+            name=str(item["name"]),
+            utterance=str(item["utterance"]),
+            expected_action=str(item["expected_action"]),
+            expected_tool=str(item.get("expected_tool") or ""),
+            expected_args=dict(item.get("expected_args") or {}),
+            wrong_tools=tuple(item.get("wrong_tools") or ()),
+            response_focus=str(item.get("response_focus") or ""),
+        )
+        for item in raw["scenarios"]
+    )
+
+
+BASELINE_SCENARIOS = _load_scenarios()
+EXECUTE_SCENARIOS = tuple(s for s in BASELINE_SCENARIOS if s.expected_action == "execute")
+ALLOW_SCENARIOS = tuple(s for s in BASELINE_SCENARIOS if s.expected_action == "allow")
 
 
 def test_router_prompt_defines_speed_as_correct_first_tool_choice() -> None:
@@ -88,8 +67,14 @@ def test_router_prompt_defines_speed_as_correct_first_tool_choice() -> None:
     assert "잘못된 도구를 골라 실패한 뒤 재시도" in system_prompt
 
 
+def test_product_baseline_fixture_has_initial_500_cases() -> None:
+    assert len(BASELINE_SCENARIOS) == 500
+    assert len(EXECUTE_SCENARIOS) >= 470
+    assert len(ALLOW_SCENARIOS) >= 20
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", BASELINE_SCENARIOS, ids=[s.name for s in BASELINE_SCENARIOS])
+@pytest.mark.parametrize("scenario", EXECUTE_SCENARIOS, ids=[s.name for s in EXECUTE_SCENARIOS])
 async def test_product_baseline_uses_correct_tool_on_first_execution(scenario: RoutingScenario) -> None:
     resolver_calls = 0
     handler_calls: list[tuple[str, dict[str, Any]]] = []
@@ -132,11 +117,12 @@ async def test_product_baseline_uses_correct_tool_on_first_execution(scenario: R
 
 
 @pytest.mark.asyncio
-async def test_product_baseline_keeps_non_academy_request_out_of_tools() -> None:
+@pytest.mark.parametrize("scenario", ALLOW_SCENARIOS, ids=[s.name for s in ALLOW_SCENARIOS])
+async def test_product_baseline_keeps_non_academy_request_out_of_tools(scenario: RoutingScenario) -> None:
     handler_called = False
 
     async def resolver(messages: list[dict[str, str]]) -> object:
-        assert "오늘 비오나?" in messages[-1]["content"]
+        assert scenario.utterance in messages[-1]["content"]
         return _Response(router_allow())
 
     def handler(args: dict[str, Any], **_: object) -> str:
@@ -145,7 +131,7 @@ async def test_product_baseline_keeps_non_academy_request_out_of_tools() -> None
         return json.dumps({"ok": True, "message": str(args)}, ensure_ascii=False)
 
     route = await resolve_and_execute_academy_request(
-        "오늘 비오나?",
+        scenario.utterance,
         resolver=resolver,
         handlers={"academy_schedule_range": handler},
         today="2026-06-03",
