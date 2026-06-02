@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 import json
-import os
 from typing import Any
 
 from .academy_api import AcademyApiClient, AcademyApiError
@@ -17,10 +16,10 @@ from .consultation_candidate_renderer import (
 )
 from .attendance_day_image_payload import with_attendance_day_image
 from .context import current_discord_user_id
-from .paca_client import DEFAULT_PACA_BASE_URL
 from .plan_lookup import plan_lookup_for_day
 from .response_guidance import academy_response_guidance
 from .student_card import AcademyClient, AcademyStudentCardService, StudentCardError
+from .token_metadata import binding_token_error
 
 
 def _capability_status_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
@@ -360,10 +359,13 @@ def _resolve_client(injected: Any = None) -> AcademyClient | str:
     token = decrypt_token(binding.token_ciphertext) or ""
     if not token:
         return "학원 계정 연결을 복호화하지 못했어. `/academy login`으로 다시 연결해줘."
-    return AcademyApiClient(
-        token=token,
-        base_url=os.getenv("MIHO_ACADEMY_PACA_BASE_URL", DEFAULT_PACA_BASE_URL),
-    )
+    token_error = binding_token_error(token, academy_id=binding.academy_id)
+    if token_error:
+        return token_error
+    try:
+        return AcademyApiClient(token=token)
+    except AcademyApiError as exc:
+        return str(exc)
 
 
 def _assistant_guidance() -> dict[str, Any]:

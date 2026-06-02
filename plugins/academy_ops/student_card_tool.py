@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import date
 import json
-import os
 from typing import Any
 
 from .academy_api import AcademyApiClient, AcademyApiError
@@ -12,13 +11,13 @@ from .auth_store import decrypt_token, get_binding
 from .consultation_notes_tool import attach_recent_consultation_notes
 from .context import current_discord_user_id
 from .response_guidance import academy_response_guidance
-from .paca_client import DEFAULT_PACA_BASE_URL
 from .student_card import (
     AcademyClient,
     AcademyStudentCardService,
     StudentCardError,
 )
 from .student_card_renderer import StudentCardImageRenderer, StudentCardRenderError
+from .token_metadata import binding_token_error
 
 
 def _student_card_image_tool_handler(
@@ -49,12 +48,15 @@ def _student_card_image_tool_handler(
         token = decrypt_token(binding.token_ciphertext) or ""
         if not token:
             return _json_error("학원 계정 연결을 복호화하지 못했어. `/academy login`으로 다시 연결해줘.")
+        token_error = binding_token_error(token, academy_id=binding.academy_id)
+        if token_error:
+            return _json_error(token_error)
 
     if client is None:
-        client = AcademyApiClient(
-            token=token,
-            base_url=os.getenv("MIHO_ACADEMY_PACA_BASE_URL", DEFAULT_PACA_BASE_URL),
-        )
+        try:
+            client = AcademyApiClient(token=token)
+        except AcademyApiError as exc:
+            return _json_error(str(exc))
     renderer = renderer or StudentCardImageRenderer()
     try:
         card = AcademyStudentCardService(_typed_client(client)).build(

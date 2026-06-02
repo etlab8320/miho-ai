@@ -27,6 +27,7 @@ class AcademyBinding:
     token_ciphertext: str
     created_at: int
     updated_at: int
+    token_expires_at: int | None = None
 
 
 def store_dir() -> Path:

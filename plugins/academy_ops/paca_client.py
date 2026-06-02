@@ -7,9 +7,10 @@ from typing import Any
 import httpx
 
 from .auth_flow import AcademyLoginResult
+from .paca_config import AcademyConfigError, resolve_paca_base_url
 
 
-DEFAULT_PACA_BASE_URL = "https://chejump.com"
+DEFAULT_PACA_BASE_URL = ""
 
 
 class AcademyLoginError(RuntimeError):
@@ -20,10 +21,14 @@ def login_paca(
     *,
     email: str,
     password: str,
-    base_url: str = DEFAULT_PACA_BASE_URL,
+    base_url: str | None = None,
     transport: httpx.BaseTransport | None = None,
 ) -> AcademyLoginResult:
-    url = f"{base_url.rstrip('/')}/paca/auth/login"
+    try:
+        resolved_base_url = resolve_paca_base_url(base_url)
+    except AcademyConfigError as exc:
+        raise AcademyLoginError(str(exc)) from exc
+    url = f"{resolved_base_url}/paca/auth/login"
     try:
         with httpx.Client(timeout=12.0, follow_redirects=True, transport=transport) as client:
             response = client.post(url, json={"email": email, "password": password})

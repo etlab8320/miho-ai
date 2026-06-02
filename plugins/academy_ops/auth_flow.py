@@ -20,6 +20,7 @@ from .remote_auth import (
     is_loopback_base_url,
     register_remote_pending,
 )
+from .token_metadata import assert_token_matches_binding
 
 
 DEFAULT_AUTH_BASE_URL = "https://academy-login.etlab.kr"
@@ -95,6 +96,7 @@ def create_login_link(
 
 
 def complete_login(state: str, result: AcademyLoginResult, *, now: int | None = None) -> AcademyBinding:
+    metadata = assert_token_matches_binding(result.token, academy_id=str(result.academy_id), now=now)
     pending = consume_pending_login(state, now=now)
     current = int(now or time.time())
     binding = AcademyBinding(
@@ -108,6 +110,7 @@ def complete_login(state: str, result: AcademyLoginResult, *, now: int | None = 
         token_ciphertext=encrypt_token(result.token),
         created_at=current,
         updated_at=current,
+        token_expires_at=metadata.expires_at,
     )
     save_binding(binding)
     return binding

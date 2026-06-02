@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from .paca_client import DEFAULT_PACA_BASE_URL
+from .paca_config import AcademyConfigError, resolve_paca_base_url
 
 
 class AcademyApiError(RuntimeError):
@@ -19,12 +19,15 @@ class AcademyApiClient:
         self,
         *,
         token: str,
-        base_url: str = DEFAULT_PACA_BASE_URL,
+        base_url: str | None = None,
         transport: httpx.BaseTransport | None = None,
         timeout: float = 15.0,
     ) -> None:
         self._token = token
-        self._base_url = base_url.rstrip("/")
+        try:
+            self._base_url = resolve_paca_base_url(base_url)
+        except AcademyConfigError as exc:
+            raise AcademyApiError(str(exc)) from exc
         self._transport = transport
         self._timeout = timeout
 

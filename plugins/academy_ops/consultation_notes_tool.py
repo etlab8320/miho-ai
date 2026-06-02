@@ -5,16 +5,15 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date
 import json
-import os
 from typing import Any
 
 from .academy_api import AcademyApiClient, AcademyApiError
 from .auth_store import decrypt_token, get_binding
 from .consultation_notes import ConsultationNoteRepository
 from .context import current_discord_user_id
-from .paca_client import DEFAULT_PACA_BASE_URL
 from .response_guidance import academy_response_guidance
 from .student_card import AcademyClient, AcademyStudentCardService, StudentCardError
+from .token_metadata import binding_token_error
 
 
 def _consultation_note_save_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
@@ -116,7 +115,13 @@ def _runtime(kwargs: dict[str, Any]) -> dict[str, Any]:
     token = decrypt_token(binding.token_ciphertext) or ""
     if not token:
         return {"ok": False, "message": "학원 계정 연결을 복호화하지 못했어. `/academy login`으로 다시 연결해줘."}
-    client = AcademyApiClient(token=token, base_url=os.getenv("MIHO_ACADEMY_PACA_BASE_URL", DEFAULT_PACA_BASE_URL))
+    token_error = binding_token_error(token, academy_id=binding.academy_id)
+    if token_error:
+        return {"ok": False, "message": token_error}
+    try:
+        client = AcademyApiClient(token=token)
+    except AcademyApiError as exc:
+        return {"ok": False, "message": str(exc)}
     return {
         "ok": True,
         "client": _typed_client(client),

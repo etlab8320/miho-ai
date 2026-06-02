@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .auth_flow import complete_login, load_pending_logins
 from .auth_pages import render_error_page, render_login_page, render_success_page
-from .paca_client import DEFAULT_PACA_BASE_URL, AcademyLoginError, login_paca
+from .paca_client import AcademyLoginError, login_paca
 from .rate_limit import is_limited, record_failure, record_success
 from .remote_auth import (
     BrokerPendingLogin,
@@ -80,7 +80,6 @@ class AcademyAuthHandler(BaseHTTPRequestHandler):
             login_result = login_paca(
                 email=email,
                 password=password,
-                base_url=os.getenv("MIHO_ACADEMY_PACA_BASE_URL", DEFAULT_PACA_BASE_URL),
             )
             if state in load_pending_logins():
                 binding = complete_login(state, login_result)
