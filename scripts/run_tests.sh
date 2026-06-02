@@ -48,6 +48,13 @@ fi
 
 PYTHON="$VENV/bin/python"
 
+# Parallel per-file pytest can briefly hold many pipes/sockets while API-server
+# tests tear down async clients. macOS often starts shells at 256, which is too
+# low for the canonical -j run.
+if [ "$(ulimit -n)" -lt 4096 ]; then
+  ulimit -n 4096 2>/dev/null || true
+fi
+
 
 # ── Live-gateway plugin (computed before we drop env) ───────────────────────
 EXTRA_PYTHONPATH=""

@@ -533,7 +533,7 @@ def load_cli_config() -> Dict[str, Any]:
             logger.warning("Failed to load cli-config.yaml: %s", e)
 
     env_default_skin = os.environ.get("MIHO_DEFAULT_SKIN", "default")
-    if env_default_skin != "default" and defaults.get("display", {}).get("skin") == "default":
+    if env_default_skin != "default":
         defaults["display"]["skin"] = env_default_skin
     try:
         from miho_cli.brand import current_brand

@@ -344,8 +344,8 @@ def test_cmd_update_retries_optional_extras_individually_when_all_fails(monkeypa
 
     miho_main.cmd_update(SimpleNamespace())
 
-    install_cmds = [c for c in recorded if "pip" in c and "install" in c]
-    assert install_cmds == [
+    editable_installs = [c for c in recorded if "-e" in c and "--no-deps" not in c]
+    assert editable_installs == [
         ["/usr/bin/uv", "pip", "install", "-e", ".[all]"],
         ["/usr/bin/uv", "pip", "install", "-e", "."],
         ["/usr/bin/uv", "pip", "install", "-e", ".[matrix]"],
@@ -382,9 +382,10 @@ def test_cmd_update_succeeds_with_extras(monkeypatch, tmp_path):
 
     miho_main.cmd_update(SimpleNamespace())
 
-    install_cmds = [c for c in recorded if "pip" in c and "install" in c]
-    assert len(install_cmds) == 1
-    assert ".[all]" in install_cmds[0]
+    editable_installs = [c for c in recorded if "-e" in c and "--no-deps" not in c]
+    assert editable_installs == [
+        ["/usr/bin/uv", "pip", "install", "-e", ".[all]"],
+    ]
 
 
 def test_install_with_optional_fallback_honors_custom_group(monkeypatch):
@@ -409,7 +410,8 @@ def test_install_with_optional_fallback_honors_custom_group(monkeypatch):
         group="termux-all",
     )
 
-    assert calls == [
+    editable_installs = [c for c in calls if "-e" in c]
+    assert editable_installs == [
         ["/usr/bin/uv", "pip", "install", "-e", ".[termux-all]"],
         ["/usr/bin/uv", "pip", "install", "-e", "."],
         ["/usr/bin/uv", "pip", "install", "-e", ".[termux]"],

@@ -7988,7 +7988,7 @@ def _read_project_dependencies(group: str = "all") -> list[str]:
     try:
         import tomllib
 
-        with open(os.path.join(PROJECT_ROOT, "pyproject.toml"), "rb") as f:
+        with open(os.path.join(PROJECT_ROOT, "pyproject.toml"), "rb") as f:  # windows-footgun: ok
             proj = tomllib.load(f).get("project", {})
     except Exception:
         return []
@@ -8128,7 +8128,7 @@ def _source_vs_installed_version() -> tuple[str | None, str | None]:
     try:
         import tomllib
 
-        with open(os.path.join(PROJECT_ROOT, "pyproject.toml"), "rb") as f:
+        with open(os.path.join(PROJECT_ROOT, "pyproject.toml"), "rb") as f:  # windows-footgun: ok
             expected = tomllib.load(f).get("project", {}).get("version")
     except Exception:
         expected = None

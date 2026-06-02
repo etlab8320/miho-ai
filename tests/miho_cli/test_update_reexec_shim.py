@@ -81,17 +81,17 @@ def test_reexec_triggers_on_windows_via_exe_shim(_winp, tmp_path, monkeypatch):
     (scripts_dir / "python.exe").write_bytes(b"")
 
     monkeypatch.setattr(sys, "argv", [str(scripts_dir / "miho.exe"), "update"])
-    fake_run = MagicMock(return_value=SimpleNamespace(returncode=7))
+    fake_execve = MagicMock(side_effect=SystemExit(7))
 
     with patch.object(
         cli_main, "_venv_scripts_dir", return_value=scripts_dir
-    ), patch.object(cli_main.subprocess, "run", fake_run):
+    ), patch.object(cli_main.os, "execve", fake_execve):
         with pytest.raises(SystemExit) as exc:
             cli_main._maybe_reexec_update_off_exe_shim(_args(force=True))
 
     assert exc.value.code == 7
-    fake_run.assert_called_once()
-    child_argv = fake_run.call_args.args[0]
+    fake_execve.assert_called_once()
+    child_argv = fake_execve.call_args.args[1]
     # Hands off to python.exe running the module, NOT miho.exe.
     assert child_argv[0] == str(scripts_dir / "python.exe")
     assert child_argv[1:4] == ["-m", "miho_cli.main", "update"]
@@ -100,7 +100,7 @@ def test_reexec_triggers_on_windows_via_exe_shim(_winp, tmp_path, monkeypatch):
     # Behaviour flag forwarded.
     assert "--force" in child_argv
     # Guard env set for belt-and-suspenders loop protection.
-    assert fake_run.call_args.kwargs["env"]["MIHO_UPDATE_REEXECED"] == "1"
+    assert fake_execve.call_args.args[2]["MIHO_UPDATE_REEXECED"] == "1"
 
 
 @patch.object(cli_main, "_is_windows", return_value=True)
@@ -173,16 +173,16 @@ def test_reexec_falls_back_to_sys_executable_when_no_venv_python(
     real_py = str(tmp_path / "sys_python.exe")
     monkeypatch.setattr(sys, "argv", [str(tmp_path / "miho.exe"), "update"])
     monkeypatch.setattr(sys, "executable", real_py)
-    fake_run = MagicMock(return_value=SimpleNamespace(returncode=0))
+    fake_execve = MagicMock(side_effect=SystemExit(0))
 
     with patch.object(
         cli_main, "_venv_scripts_dir", return_value=None
-    ), patch.object(cli_main.subprocess, "run", fake_run):
+    ), patch.object(cli_main.os, "execve", fake_execve):
         with pytest.raises(SystemExit) as exc:
             cli_main._maybe_reexec_update_off_exe_shim(_args())
 
     assert exc.value.code == 0
-    assert fake_run.call_args.args[0][0] == real_py
+    assert fake_execve.call_args.args[1][0] == real_py
 
 
 @patch.object(cli_main, "_is_windows", return_value=True)
