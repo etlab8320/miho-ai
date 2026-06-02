@@ -74,6 +74,15 @@
 - Tenant smoke: 강남 계정과 일산 계정이 서로 다른 학원 데이터로 저장/조회되지 않는지 확인한다.
 - Speed check: warm 상태에서 라우터 p95를 측정하고, timeout 시 사용자에게 내부 오류 표현 없이 안전하게 본문 LLM 경로로 넘긴다.
 
+## Operating Loop
+- Initial baseline: 제품화 전 최소 기준 테스트셋을 만들고, 그 기준을 통과할 때까지 라우터를 수정한다.
+- Quality rule: 실패를 고칠 때마다 구현을 리뷰하고, anti-hardcoding 검사와 관련 라우팅 테스트를 다시 돌린다.
+- Release gate: 기준 테스트, 테넌트 경계, 속도 확인이 통과하기 전에는 판매용 안정 상태로 보지 않는다.
+- Runtime logging: 출시 후에는 실제 사용 로그에서 실패 유형, 오타/비문, 시제 혼동, 도구 선택 실패, 계정 경계 위험을 분류한다.
+- Human review: 운영 로그는 자동 코드 수정 재료가 아니라 테스트 후보와 개선 후보로만 사용한다.
+- Generalized fix: 승인된 개선은 특정 로그 문장 암기가 아니라 의미 규칙, 도구 계약, 시간 해석, 맥락 처리, confidence 조정으로 반영한다.
+- Regression loop: 새 실패 유형을 테스트셋에 추가한 뒤 기존 기준 테스트와 함께 다시 돌린다.
+
 ## Implementation Tasks
 - [ ] T1: 라우팅 벤치마크 데이터셋을 만든다.
   - Files: `tests/plugins/`
