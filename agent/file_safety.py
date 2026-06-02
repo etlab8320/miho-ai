@@ -254,3 +254,67 @@ def get_read_block_error(path: str) -> Optional[str]:
         )
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Sandbox-mirror write guard
+#
+# Non-local terminal backends can mirror a per-task home under:
+#
+#   <MIHO_HOME>/sandboxes/<backend>/<task>/home/.miho/...
+#
+# Writes to that mirror look successful but do not update the authoritative
+# host-side Miho state. This guard is a soft, model-facing warning so file
+# tools can stop the confusing divergent-copy path before writing.
+# ---------------------------------------------------------------------------
+
+
+def _find_sandbox_mirror_segments(parts: tuple) -> Optional[int]:
+    """Return the index of the inner ``.miho`` part in a mirror path."""
+    for i, part in enumerate(parts):
+        if part != "sandboxes":
+            continue
+        if i + 5 >= len(parts):
+            continue
+        if parts[i + 3] == "home" and parts[i + 4] == ".miho":
+            return i + 4
+    return None
+
+
+def classify_sandbox_mirror_target(path: str) -> Optional[dict]:
+    """Classify writes into a per-task mirror of authoritative Miho state."""
+    try:
+        target = Path(os.path.expanduser(str(path))).resolve()
+    except (OSError, RuntimeError):
+        return None
+
+    parts = target.parts
+    inner_idx = _find_sandbox_mirror_segments(parts)
+    if inner_idx is None:
+        return None
+
+    mirror_root = str(Path(*parts[: inner_idx + 1]))
+    inner_path = str(Path(*parts[inner_idx + 1 :])) if inner_idx + 1 < len(parts) else ""
+    return {
+        "target_path": str(target),
+        "mirror_root": mirror_root,
+        "inner_path": inner_path,
+    }
+
+
+def get_sandbox_mirror_warning(path: str) -> Optional[str]:
+    """Return a model-facing warning when ``path`` lands in a sandbox mirror."""
+    info = classify_sandbox_mirror_target(path)
+    if info is None:
+        return None
+    return (
+        f"Sandbox-mirror write blocked by soft guard: {info['target_path']} "
+        f"sits under {info['mirror_root']!r}, which is a per-task mirror "
+        f"created by a non-local terminal backend. Writes here land on a "
+        f"copy that the host Miho process never reads; the authoritative "
+        f"file is likely {info['inner_path']!r} under the real MIHO_HOME. "
+        f"Use the host-side tool for authoritative state, or address the "
+        f"host path directly. To bypass this guard after explicit user "
+        f"direction, retry the call with ``cross_profile=True``. "
+        f"(Defense-in-depth, not a security boundary.)"
+    )
