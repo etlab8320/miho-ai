@@ -47,6 +47,7 @@ from .student_card_tool import _student_card_image_tool_handler
 from .student_context_tool import _student_context_tool_handler
 from .monthly_test_records_tool import _monthly_test_records_tool_handler
 from .natural_router_prompt import build_resolver_messages
+from .student_record_cohort_tool import _student_record_cohort_tool_handler
 from .student_records_tool import _student_record_lookup_tool_handler
 from .response_commentary import append_summary_comment_or_fallback
 from .response_focus import focused_response
@@ -96,6 +97,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_student_summary": _student_summary_tool_handler,
     "academy_student_card_image": _student_card_image_tool_handler,
     "academy_student_context": _student_context_tool_handler,
+    "academy_student_record_cohort_latest": _student_record_cohort_tool_handler,
     "academy_student_record_lookup": _student_record_lookup_tool_handler,
     "academy_monthly_test_records": _monthly_test_records_tool_handler,
     "academy_set_brand_logo": _academy_set_brand_logo_tool_handler,
@@ -159,6 +161,10 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
             "최근 기록 컨텍스트 조회. 학생 후속 질문이나 모호한 읽기 질문에 우선 사용"
         ),
         "args": ["student_query", "today", "period_days"],
+    },
+    "academy_student_record_cohort_latest": {
+        "purpose": "현재 재원생 전체의 Peak 최신 실기 기록 집계. 재원생 기준 최신기록, 남녀 평균, 순위, 기록 명단 요청에 사용. 월말테스트/정기평가 참가자 집계가 아니라 실제 현재 재원생의 최신 기록이다.",
+        "args": ["event_query", "limit"],
     },
     "academy_student_record_lookup": {
         "purpose": "특정 학생의 Peak 실기, 측정, 종목별 기록 조회. 출석 기록, 강사 출근, 운동계획서가 아니라 학생 수행 기록일 때 사용",
@@ -254,11 +260,6 @@ async def resolve_and_execute_academy_request(
             attempts=resolver_attempts,
         )
     except TimeoutError:
-        # The intent-classifier (resolver LLM) was slow — that is NOT an academy
-        # server failure, so don't reply "서버가 불안정해". The router is only a
-        # fast shortcut; when it's unavailable, fall back to the proper path —
-        # hand off to the body agent (Nous "the agent decides"), which has the
-        # academy tools and recent thread history and can resolve it itself.
         logger.info("academy request resolver timed out -> ALLOW (body agent handles)")
         return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="resolver_timeout")
     except Exception as exc:
@@ -494,7 +495,6 @@ def _is_login_required_payload(payload: dict[str, Any]) -> bool:
 
 def _today() -> str:
     return datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
-
 
 def _tool_timeout_message() -> str:
     return "PACA/Peak API 조회가 제한시간을 넘겨서 중단했어. 잠시 뒤 다시 시도해줘."

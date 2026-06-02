@@ -38,6 +38,7 @@ from .student_attendance_tool import register_student_attendance_tool
 from .student_card_tool import _student_card_image_tool_handler
 from .student_context_tool import _student_context_tool_handler
 from .monthly_test_records_tool import register_monthly_test_records_tool
+from .student_record_cohort_tool import register_student_record_cohort_tool
 from .student_records_tool import register_student_records_tool
 from .report_render_tool import register_report_image_tool
 from .render_image_tool import register_render_image_tool
@@ -154,6 +155,7 @@ def register(ctx: Any) -> None:
         ),
     )
     register_student_attendance_tool(ctx)
+    register_student_record_cohort_tool(ctx)
     register_student_records_tool(ctx)
     register_monthly_test_records_tool(ctx)
     register_report_image_tool(ctx)
