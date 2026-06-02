@@ -333,6 +333,7 @@ def test_academy_api_client_parses_verified_route_shapes() -> None:
     )
 
     assert client.search_paca_students("김민준") == [{"id": 101, "name": "김민준"}]
+    assert client.list_paca_students(status="active") == [{"id": 101, "name": "김민준"}]
     assert client.get_paca_student_detail(101)["student"]["id"] == 101
     assert client.get_paca_student_attendance(101, year_month="2026-05")["records"][0]["attendance_status"] == "present"
     assert client.list_peak_students() == [{"id": 501, "paca_student_id": 101}]
@@ -341,6 +342,7 @@ def test_academy_api_client_parses_verified_route_shapes() -> None:
     assert client.get_consultation_candidates(today=date(2026, 5, 25), attendance_days=14, limit=5)["candidates"] == []
     assert client.get_student_context("서하", today=date(2026, 5, 25), period_days=14)["student"]["name"] == "이서하"
     assert any("search=%EA%B9%80%EB%AF%BC%EC%A4%80" in url for url in seen)
+    assert any("status=active" in url for url in seen)
     assert any("student_id=501" in url for url in seen)
 
 

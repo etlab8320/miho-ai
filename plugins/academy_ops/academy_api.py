@@ -33,10 +33,12 @@ class AcademyApiClient:
 
     def search_paca_students(self, query: str) -> list[dict[str, Any]]:
         payload = self._get("/paca/students", params={"search": query.strip()})
-        if isinstance(payload, list):
-            return [item for item in payload if isinstance(item, dict)]
-        students = payload.get("students") if isinstance(payload, dict) else None
-        return [item for item in students or [] if isinstance(item, dict)]
+        return _student_rows(payload)
+
+    def list_paca_students(self, *, status: str = "") -> list[dict[str, Any]]:
+        params = {"status": status} if status else None
+        payload = self._get("/paca/students", params=params)
+        return _student_rows(payload)
 
     def get_paca_student_detail(self, paca_student_id: int) -> dict[str, Any]:
         payload = self._get(f"/paca/students/{paca_student_id}")
@@ -193,6 +195,13 @@ def _to_int(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _student_rows(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    students = payload.get("students") if isinstance(payload, dict) else None
+    return [item for item in students or [] if isinstance(item, dict)]
 
 
 def _conflict_message(response: httpx.Response) -> str:

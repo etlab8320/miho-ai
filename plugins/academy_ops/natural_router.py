@@ -163,7 +163,7 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "args": ["student_query", "today", "period_days"],
     },
     "academy_student_record_cohort_latest": {
-        "purpose": "현재 재원생 전체의 Peak 최신 실기 기록 집계. 재원생 기준 최신기록, 남녀 평균, 순위, 기록 명단 요청에 사용. 월말테스트/정기평가 참가자 집계가 아니라 실제 현재 재원생의 최신 기록이다.",
+        "purpose": "PACA 재원생 기준 Peak 최신 실기 기록 집계. 재원생 기준 최신기록, 남녀 평균, 순위, 기록 명단 요청에 사용. 월말테스트/정기평가 참가자 집계가 아니라 실제 현재 재원생의 최신 기록이다.",
         "args": ["event_query", "limit"],
     },
     "academy_student_record_lookup": {

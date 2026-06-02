@@ -1,4 +1,4 @@
-"""Read-only latest record aggregation for current Peak students."""
+"""Read-only latest record aggregation for current PACA students."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def register_student_record_cohort_tool(ctx: Any) -> None:
         },
         handler=_student_record_cohort_tool_handler,
         description=(
-            "현재 재원생 전체의 Peak 최신 실기 기록을 종목별로 집계한다. "
+            "PACA 재원생 기준으로 Peak 최신 실기 기록을 종목별로 집계한다. "
             "Use for current enrolled students / 재원생 기준 latest records, gender-separated averages, "
             "rankings, and name lists. This is NOT 월말테스트 참가자 집계; use monthly_test only when "
             "the user explicitly asks 월말테스트/정기평가/test participants."
@@ -50,7 +50,7 @@ def _student_record_cohort_tool_handler(args: dict[str, Any] | None = None, **kw
     if isinstance(client_or_error, str):
         return _json_error(client_or_error)
     try:
-        profiles = _profile_map(client_or_error)
+        profiles = _active_profile_map(client_or_error)
         students = _current_peak_students(client_or_error.list_peak_students(), profiles)
         rows = _latest_records_for_students(client_or_error, students, profiles, event_query)
     except (AcademyApiError, ValueError) as exc:
@@ -61,7 +61,7 @@ def _student_record_cohort_tool_handler(args: dict[str, Any] | None = None, **kw
     return _json_ok(
         {
             "operation": "student.record_cohort_latest",
-            "basis": "current_peak_students_latest_record",
+            "basis": "paca_active_students_latest_peak_record",
             "event": {"query": event_query, "name": event_name},
             "summary": summary,
             "groups": groups,
@@ -71,16 +71,16 @@ def _student_record_cohort_tool_handler(args: dict[str, Any] | None = None, **kw
     )
 
 
-def _profile_map(client: Any) -> dict[int, dict[str, Any]]:
+def _active_profile_map(client: Any) -> dict[int, dict[str, Any]]:
     try:
-        rows = client.search_paca_students("")
+        rows = client.list_paca_students(status="active")
     except (AcademyApiError, AttributeError):
-        return {}
+        rows = _search_active_paca_students(client)
     profiles: dict[int, dict[str, Any]] = {}
     for row in rows:
         if isinstance(row, dict):
             paca_id = _to_int(row.get("id") or row.get("student_id"))
-            if paca_id:
+            if paca_id and _is_current_student(row):
                 profiles[paca_id] = row
     return profiles
 
@@ -91,10 +91,8 @@ def _current_peak_students(rows: list[dict[str, Any]], profiles: dict[int, dict[
         if not isinstance(row, dict):
             continue
         paca_id = _to_int(row.get("paca_student_id"))
-        profile = profiles.get(paca_id, {})
-        if not _is_current_student(row, profile):
-            continue
-        students.append(row)
+        if paca_id in profiles:
+            students.append(row)
     return students
 
 
@@ -205,12 +203,16 @@ def _message(event_name: str, summary: dict[str, Any], groups: dict[str, dict[st
     return "\n".join(lines)
 
 
-def _is_current_student(row: dict[str, Any], profile: dict[str, Any]) -> bool:
-    status = _norm(row.get("status") or profile.get("status") or profile.get("student_status"))
-    if not status:
-        return True
-    inactive = {"inactive", "paused", "leave", "left", "withdrawn", "graduated", "휴원", "퇴원", "졸업", "비활성"}
-    return status not in inactive
+def _search_active_paca_students(client: Any) -> list[dict[str, Any]]:
+    try:
+        rows = client.search_paca_students("")
+    except (AcademyApiError, AttributeError):
+        return []
+    return [row for row in rows if isinstance(row, dict) and _is_current_student(row)]
+
+
+def _is_current_student(row: dict[str, Any]) -> bool:
+    return _norm(row.get("status") or row.get("student_status")) == "active"
 
 
 def _gender(row: dict[str, Any], profile: dict[str, Any]) -> str:

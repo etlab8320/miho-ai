@@ -19,19 +19,22 @@ class _Response:
 
 def test_student_record_cohort_latest_groups_current_students_by_gender() -> None:
     class Client:
-        def search_paca_students(self, query: str) -> list[dict]:
-            assert query == ""
+        def list_paca_students(self, *, status: str = "") -> list[dict]:
+            assert status == "active"
             return [
                 {"id": 101, "name": "김남준", "gender": "male", "school": "일산고", "grade": "고3", "status": "active"},
                 {"id": 102, "name": "이여름", "gender": "female", "school": "정발고", "grade": "고2", "status": "active"},
-                {"id": 103, "name": "휴원생", "gender": "male", "status": "inactive"},
             ]
+
+        def search_paca_students(self, query: str) -> list[dict]:
+            raise AssertionError("cohort tool must use PACA active student list")
 
         def list_peak_students(self) -> list[dict]:
             return [
                 {"id": 501, "paca_student_id": 101, "name": "김남준"},
                 {"id": 502, "paca_student_id": 102, "name": "이여름"},
                 {"id": 503, "paca_student_id": 103, "name": "휴원생"},
+                {"id": 504, "paca_student_id": 104, "name": "대기생"},
             ]
 
         def list_peak_records(self, peak_student_id: int) -> list[dict]:
@@ -42,6 +45,7 @@ def test_student_record_cohort_latest_groups_current_students_by_gender() -> Non
                 ],
                 502: [{"record_type_name": "제자리멀리뛰기", "measured_at": "2026-05-30", "value": "220", "unit": "cm"}],
                 503: [{"record_type_name": "제자리멀리뛰기", "measured_at": "2026-06-01", "value": "300", "unit": "cm"}],
+                504: [{"record_type_name": "제자리멀리뛰기", "measured_at": "2026-06-01", "value": "260", "unit": "cm"}],
             }[peak_student_id]
 
     result = json.loads(
@@ -57,6 +61,7 @@ def test_student_record_cohort_latest_groups_current_students_by_gender() -> Non
     assert [row["name"] for row in result["groups"]["male"]["rows"]] == ["김남준"]
     assert [row["name"] for row in result["groups"]["female"]["rows"]] == ["이여름"]
     assert "휴원생" not in json.dumps(result, ensure_ascii=False)
+    assert "대기생" not in json.dumps(result, ensure_ascii=False)
     assert "5월 월말테스트" not in result["message"]
 
 
