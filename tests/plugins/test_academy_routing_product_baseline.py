@@ -67,6 +67,20 @@ def test_router_prompt_defines_speed_as_correct_first_tool_choice() -> None:
     assert "잘못된 도구를 골라 실패한 뒤 재시도" in system_prompt
 
 
+def test_router_prompt_supports_staff_month_followups() -> None:
+    messages = natural_router._resolver_messages(
+        "그 강사 6월도 봐줘",
+        "2026-06-03",
+        {"kind": "staff", "staff_query": "정의솔"},
+        temporal_context="now: 2026-06-03T10:00:00+09:00",
+    )
+
+    system_prompt = messages[0]["content"]
+    assert "특정 강사의 출근 기록" in system_prompt
+    assert "academy_staff_attendance_range" in system_prompt
+    assert "해당 월 전체의 start_date/end_date" in system_prompt
+
+
 def test_product_baseline_fixture_has_initial_500_cases() -> None:
     assert len(BASELINE_SCENARIOS) == 500
     assert len(EXECUTE_SCENARIOS) >= 470
