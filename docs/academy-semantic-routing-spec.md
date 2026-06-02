@@ -48,6 +48,11 @@
   5. 도구 계약에 맞는 도구와 인자만 만든다.
   6. confidence가 낮거나 계약에 맞지 않으면 본문 LLM으로 넘긴다.
 
+## Speed Quality Standard
+- 속도 기준은 단순히 몇 초 안에 답하는지가 아니다.
+- 정확한 도구와 필요한 인자를 첫 선택으로 고르면 불필요한 LLM 왕복, 실패 후 재시도, 과다 조회가 줄어 사용자 체감 속도가 좋아진다.
+- 속도 품질은 correct first tool, correct first args, no wrong fallback, no avoidable retry, minimal data fetch로 평가한다.
+
 ## Forbidden Fixes
 - `if "출석" in text`처럼 사용자 문장의 특정 한국어 문자열을 직접 검사해서 라우팅하는 코드.
 - 테스트에 나온 문장을 그대로 예외 목록에 추가하는 코드.
@@ -72,7 +77,7 @@
 - Context benchmark: "그 학생만", "이미지로", "아까 거 다시" 같은 후속 질문이 직전 맥락을 올바르게 잇는지 확인한다.
 - Negative benchmark: 학원업무가 아닌 요청은 학원 도구로 끌고 가지 않는지 확인한다.
 - Tenant smoke: 강남 계정과 일산 계정이 서로 다른 학원 데이터로 저장/조회되지 않는지 확인한다.
-- Speed check: warm 상태에서 라우터 p95를 측정하고, timeout 시 사용자에게 내부 오류 표현 없이 안전하게 본문 LLM 경로로 넘긴다.
+- Speed-quality check: 라우터가 맞는 도구를 첫 선택으로 고르고, 잘못된 도구 실행/재시도/과다 조회 없이 끝나는지 확인한다.
 
 ## Operating Loop
 - Initial baseline: 제품화 전 최소 기준 테스트셋을 만들고, 그 기준을 통과할 때까지 라우터를 수정한다.
