@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +13,7 @@ from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 from plugins.academy_ops import _academy_pre_gateway_dispatch
 from plugins.academy_ops.auth_flow import create_login_link, load_pending_logins
+from plugins.academy_ops.auth_gate import academy_request_needs_login
 from plugins.academy_ops.auth_store import AcademyBinding, encrypt_token, save_binding
 from plugins.academy_ops.login_preflight import is_academy_login_request, is_academy_login_status_request
 
@@ -45,6 +48,200 @@ def test_academy_login_request_detection_is_intent_based() -> None:
     assert is_academy_login_request("paca login please")
     assert not is_academy_login_request("학생 카드 디자인 의견 줘")
     assert not is_academy_login_status_request("학생 카드 디자인 의견 줘")
+
+
+@pytest.mark.asyncio
+async def test_academy_domain_request_without_binding_returns_login_before_body_agent(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setenv("MIHO_ACADEMY_AUTH_BASE_URL", "https://academy-login.etlab.kr")
+    monkeypatch.setattr("plugins.academy_ops.gateway_dispatch.refresh_remote_pending_logins", lambda: 0)
+
+    async def needs_login(*_: object, **__: object) -> bool:
+        return True
+
+    async def fail_if_real_tool_router_runs(*_: object, **__: object) -> object:
+        raise AssertionError("unauthenticated academy request must not reach tool execution")
+
+    monkeypatch.setattr("plugins.academy_ops.gateway_dispatch.academy_request_needs_login", needs_login)
+    monkeypatch.setattr(
+        "plugins.academy_ops.gateway_dispatch.resolve_and_execute_academy_request",
+        fail_if_real_tool_router_runs,
+    )
+    event = MessageEvent(
+        text="현재 재원생들 남여 따로 제멀 최든기록 평균이 어느정도야?",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="discord-user-1",
+            chat_id="channel-1",
+            guild_id="guild-1",
+        ),
+    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
+
+    result = await _academy_pre_gateway_dispatch(event, gateway=gateway)
+
+    assert result["action"] == "respond"
+    assert "https://academy-login.etlab.kr/academy/login?state=" in result["text"]
+    assert len(load_pending_logins()) == 1
+
+
+@pytest.mark.asyncio
+async def test_non_academy_request_without_binding_still_allows_body_agent(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setattr("plugins.academy_ops.gateway_dispatch.refresh_remote_pending_logins", lambda: 0)
+
+    async def does_not_need_login(*_: object, **__: object) -> bool:
+        return False
+
+    monkeypatch.setattr("plugins.academy_ops.gateway_dispatch.academy_request_needs_login", does_not_need_login)
+    event = MessageEvent(
+        text="오늘 날씨 보고 운동복 뭐 입을지 알려줘",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="discord-user-1",
+            chat_id="channel-1",
+            guild_id="guild-1",
+        ),
+    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
+
+    assert await _academy_pre_gateway_dispatch(event, gateway=gateway) == {"action": "allow"}
+    assert load_pending_logins() == {}
+
+
+@pytest.mark.asyncio
+async def test_expired_binding_academy_domain_request_returns_login_before_tools(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setenv("MIHO_ACADEMY_AUTH_BASE_URL", "https://academy-login.etlab.kr")
+    monkeypatch.setattr("plugins.academy_ops.gateway_dispatch.refresh_remote_pending_logins", lambda: 0)
+    save_binding(
+        AcademyBinding(
+            discord_user_id="discord-user-1",
+            user_id="academy-user-1",
+            email="owner@example.com",
+            name="정으뜸",
+            role="owner",
+            academy_id="3",
+            academy_name="학원",
+            token_ciphertext=encrypt_token("expired-token"),
+            token_expires_at=1,
+            created_at=1,
+            updated_at=1,
+        )
+    )
+
+    async def needs_login(*_: object, **__: object) -> bool:
+        return True
+
+    async def fail_if_real_tool_router_runs(*_: object, **__: object) -> object:
+        raise AssertionError("expired token must be blocked before tool execution")
+
+    monkeypatch.setattr("plugins.academy_ops.gateway_dispatch.academy_request_needs_login", needs_login)
+    monkeypatch.setattr(
+        "plugins.academy_ops.gateway_dispatch.resolve_and_execute_academy_request",
+        fail_if_real_tool_router_runs,
+    )
+    event = MessageEvent(
+        text="강남 박서현 최근 기록 보여줘",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="discord-user-1",
+            chat_id="channel-1",
+            guild_id="guild-1",
+        ),
+    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
+
+    result = await _academy_pre_gateway_dispatch(event, gateway=gateway)
+
+    assert result["action"] == "respond"
+    assert "https://academy-login.etlab.kr/academy/login?state=" in result["text"]
+    assert len(load_pending_logins()) == 1
+
+
+@pytest.mark.asyncio
+async def test_academy_mismatch_binding_returns_admin_contact_without_login_link(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setenv("MIHO_ACADEMY_AUTH_BASE_URL", "https://academy-login.etlab.kr")
+    monkeypatch.setattr("plugins.academy_ops.gateway_dispatch.refresh_remote_pending_logins", lambda: 0)
+    save_binding(
+        AcademyBinding(
+            discord_user_id="discord-user-1",
+            user_id="academy-user-1",
+            email="owner@example.com",
+            name="정으뜸",
+            role="owner",
+            academy_id="3",
+            academy_name="학원",
+            token_ciphertext=encrypt_token(_jwt({"academyId": 9, "exp": 1_800_000_000})),
+            token_expires_at=1_800_000_000,
+            created_at=1,
+            updated_at=1,
+        )
+    )
+
+    async def needs_login(*_: object, **__: object) -> bool:
+        return True
+
+    monkeypatch.setattr("plugins.academy_ops.gateway_dispatch.academy_request_needs_login", needs_login)
+    event = MessageEvent(
+        text="강남 박서현 최근 기록 보여줘",
+        source=SessionSource(
+            platform=Platform.DISCORD,
+            user_id="discord-user-1",
+            chat_id="channel-1",
+            guild_id="guild-1",
+        ),
+    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
+
+    result = await _academy_pre_gateway_dispatch(event, gateway=gateway)
+
+    assert result == {"action": "respond", "text": "학원 계정 정보를 확인하지 못했어. 관리자에게 문의해줘."}
+    assert load_pending_logins() == {}
+
+
+@pytest.mark.asyncio
+async def test_auth_gate_detects_academy_execute_decision_without_running_real_tool() -> None:
+    async def resolver(_messages: list[dict[str, str]]) -> object:
+        return _response(
+            {
+                "action": "execute",
+                "domain": "academy_ops",
+                "tool": "academy_student_record_lookup",
+                "confidence": 0.92,
+                "intent": {"kind": "student_record_lookup"},
+                "evidence": ["최근 기록"],
+                "args": {"student_query": "박서현"},
+            }
+        )
+
+    assert await academy_request_needs_login("박서현 최근 기록 보여줘", resolver=resolver)
+
+
+@pytest.mark.asyncio
+async def test_auth_gate_allows_non_academy_decision() -> None:
+    async def resolver(_messages: list[dict[str, str]]) -> object:
+        return _response(
+            {
+                "action": "allow",
+                "domain": "general",
+                "confidence": 0.95,
+                "intent": {"kind": "weather"},
+                "evidence": ["날씨"],
+            }
+        )
+
+    assert not await academy_request_needs_login("오늘 날씨 알려줘", resolver=resolver)
 
 
 @pytest.mark.asyncio
@@ -233,3 +430,18 @@ async def test_academy_login_status_question_does_not_create_link(monkeypatch, t
     assert result["action"] == "respond"
     assert "아직 학원 계정이 연결되지 않았어" in result["text"]
     assert load_pending_logins() == {}
+
+
+def _jwt(payload: dict[str, object]) -> str:
+    header = {"alg": "none", "typ": "JWT"}
+    return ".".join((_b64(header), _b64(payload), "signature"))
+
+
+def _b64(payload: dict[str, object]) -> str:
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _response(payload: dict[str, object]) -> SimpleNamespace:
+    content = json.dumps(payload, ensure_ascii=False)
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
