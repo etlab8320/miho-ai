@@ -85,3 +85,12 @@ def test_windows_installer_platform_sdks_use_locked_specs():
     assert "slack-sdk==3.40.1" in text
     assert "slack-bolt==1.27.0" in text
     assert "qrcode==7.4.2" in text
+
+
+def test_tui_lockfile_keeps_external_hermes_package_names():
+    text = (REPO_ROOT / "ui-tui" / "package-lock.json").read_text(encoding="utf-8")
+
+    assert "miho-parser" not in text
+    assert "miho-estree" not in text
+    assert "hermes-parser" in text
+    assert "hermes-estree" in text
