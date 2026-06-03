@@ -1,0 +1,5 @@
+name: conversation_guard
+version: 0.1.0
+description: "Gateway safety guard for low-information chat turns."
+author: "ET Lab"
+kind: backend
