@@ -60,6 +60,7 @@ from .response_focus import focused_response
 from .response_synthesis import compact_payload, synthesize_or_fallback
 from .route_overrides import forced_tool_for_output_request, should_render_attendance_day_image
 from .routing_decision import reject_execute_reason
+from .route_plan import execute_route_plan
 from .thread_context import (
     INHERITABLE_ENTITY_ARGS,
     MONTHLY_TEST_CONTEXT_TOOLS,
@@ -274,6 +275,18 @@ async def resolve_and_execute_academy_request(
 
     tool_name = str(decision.get("tool") or "").strip()
     active_handlers = handlers or TOOL_HANDLERS
+    plan_response = await execute_route_plan(
+        decision,
+        handlers=active_handlers,
+        min_confidence=MIN_CONFIDENCE,
+        tool_timeout=tool_timeout,
+        today=today,
+        context_key=context_key,
+        resolve_args=_resolved_args,
+        with_reference_today=_with_reference_today,
+    )
+    if plan_response is not None:
+        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, plan_response, "route_plan")
     reject_reason = reject_execute_reason(
         decision,
         allowed_tools=active_handlers.keys(),

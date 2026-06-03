@@ -39,3 +39,20 @@ def router_allow(*, confidence: float = 0.1, domain: str = "non_academy") -> str
         },
         ensure_ascii=False,
     )
+
+
+def router_execute_plan(actions: list[dict[str, Any]], *, confidence: float = 0.96) -> str:
+    return json.dumps(
+        {
+            "action": "execute",
+            "domain": "academy_ops",
+            "intent": "compound academy request",
+            "evidence": ["academy operations context"],
+            "ambiguous": False,
+            "tool": "",
+            "args": {},
+            "actions": actions,
+            "confidence": confidence,
+        },
+        ensure_ascii=False,
+    )

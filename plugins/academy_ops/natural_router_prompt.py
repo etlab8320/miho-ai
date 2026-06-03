@@ -34,7 +34,8 @@ def build_resolver_messages(
                 '반환 형식: {"action":"execute|allow","domain":"academy_ops|non_academy|ambiguous",'
                 '"intent":"사용자 목적","evidence":["학원업무로 판단한 근거"],"ambiguous":false,'
                 '"tool":"도구명","args":{},"response_focus":"summary|daily_attendance|unchecked_dates",'
-                '"confidence":0.0}\n'
+                '"confidence":0.0,"actions":[{"title":"짧은 제목","tool":"도구명","args":{},'
+                '"intent":"부분 목적","evidence":["근거"]}]}\n'
                 f"사용자 문장: {text}"
             ),
         },
@@ -54,6 +55,8 @@ def _system_prompt() -> str:
         "도메인이 조금이라도 불명확하면 action=allow, ambiguous=true로 둬. "
         "상대 날짜와 범위는 reference_date와 turn_time을 함께 보고 ISO 날짜로 넣어. "
         "도구 계약에 없는 인자는 만들지 말고, 모르는 값은 빈 문자열이나 false로 둬. "
+        "사용자 문장 안에 독립적인 조회 목적이 2개 이상 있으면 한 도구로 뭉개지 말고 actions 배열에 필요한 조회를 순서대로 넣어. "
+        "actions를 쓸 때도 각 도구의 필수 날짜/기간 인자는 reference_date와 turn_time 기준 ISO 날짜로 모두 채워. "
         "출력 초점이 있으면 response_focus를 함께 반환해. "
         "가능한 response_focus는 summary, daily_attendance, unchecked_dates 중 하나야. "
         "기본 출석 조회는 response_focus=summary야. "

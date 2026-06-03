@@ -18,7 +18,6 @@ class _Response:
     def __init__(self, content: str) -> None:
         self.choices = [SimpleNamespace(message=SimpleNamespace(content=content))]
 
-
 @pytest.mark.asyncio
 async def test_routes_trial_lesson_schedule_through_router() -> None:
     calls: list[dict] = []
