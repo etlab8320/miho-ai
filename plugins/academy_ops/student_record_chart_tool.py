@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from html import escape
 import json
+import struct
 import uuid
 from typing import Any
 
@@ -17,6 +18,11 @@ from .response_guidance import academy_response_guidance
 from .student_card_capture import StudentCardCaptureError, capture_html_to_png
 from .student_lookup import StudentLookupAmbiguous, StudentLookupNotFound, resolve_paca_student
 from .student_records_tool import _event_matches, _float_or_none, _record_day
+
+CHART_CANVAS_WIDTH = 1240
+PNG_HEADER_BYTES = 24
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+IMAGE_QA_ERROR_MESSAGE = "실기 그래프 이미지 검수에 실패했어. 관리자에게 문의해줘."
 
 
 def register_student_record_chart_tool(ctx: Any) -> None:
@@ -154,7 +160,9 @@ def _render_chart_image(
     html_path = out_dir / f"{stem}.html"
     image_path = out_dir / f"{stem}.png"
     html_path.write_text(_chart_html(student_name, groups, limit=limit, today=today, period_days=period_days), encoding="utf-8")
-    capture_html_to_png(html_path, image_path, width=1240, height=_chart_height(groups))
+    height = _chart_height(groups)
+    capture_html_to_png(html_path, image_path, width=CHART_CANVAS_WIDTH, height=height)
+    _validate_chart_image(image_path, width=CHART_CANVAS_WIDTH, min_height=height)
     return str(image_path)
 
 
@@ -175,8 +183,8 @@ def _chart_html(student_name: str, groups: list[dict[str, Any]], *, limit: int, 
 def _event_card(group: dict[str, Any]) -> str:
     records = group["records"]
     latest = records[-1]
-    values = [float(item["value"]) for item in records]
-    delta = values[-1] - values[0] if len(values) > 1 else 0.0
+    scores = [_score(item) for item in records]
+    delta = scores[-1] - scores[0] if len(scores) > 1 else 0.0
     sign = "+" if delta > 0 else ""
     rows = "".join(
         f"<tr><td>{escape(str(item['measured_at'])[:10])}</td><td>{item['value']:g}{escape(item['unit'])}</td></tr>"
@@ -193,7 +201,7 @@ def _event_card(group: dict[str, Any]) -> str:
 
 def _svg(records: list[dict[str, Any]]) -> str:
     width, height = 500, 160
-    values = [float(item["value"]) for item in records]
+    values = [_score(item) for item in records]
     low, high = min(values), max(values)
     span = high - low or 1.0
     points = []
@@ -204,6 +212,18 @@ def _svg(records: list[dict[str, Any]]) -> str:
     circles = "".join(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='5'/>" for x, y in points)
     polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
     return f"<svg viewBox='0 0 {width} {height}'><polyline points='{polyline}'/>{circles}</svg>"
+
+
+def _score(record: dict[str, Any]) -> float:
+    value = float(record["value"])
+    return -value if _is_lower_better(record) else value
+
+
+def _is_lower_better(record: dict[str, Any]) -> bool:
+    direction = str(record.get("direction") or "").strip().lower()
+    if direction:
+        return direction in {"lower", "low", "asc", "less", "fast", "낮을수록"}
+    return str(record.get("unit") or "").strip().lower() in {"초", "s", "sec", "second", "seconds"}
 
 
 def _css() -> str:
@@ -221,7 +241,36 @@ footer{margin-top:24px;color:#78808c;font-size:16px}
 
 
 def _chart_height(groups: list[dict[str, Any]]) -> int:
-    return max(760, 270 + ((len(groups) + 1) // 2) * 390)
+    total = 250
+    for index in range(0, len(groups), 2):
+        row = groups[index : index + 2]
+        max_records = max((len(group.get("records") or []) for group in row), default=0)
+        total += 330 + max_records * 36
+        if index:
+            total += 18
+    return min(8000, max(760, total + 100))
+
+
+def _validate_chart_image(image_path: Any, *, width: int, min_height: int) -> None:
+    dimensions = _png_dimensions(image_path)
+    if dimensions is None:
+        raise StudentCardCaptureError(IMAGE_QA_ERROR_MESSAGE)
+    actual_width, actual_height = dimensions
+    if actual_width != width or actual_height < min_height:
+        raise StudentCardCaptureError(IMAGE_QA_ERROR_MESSAGE)
+
+
+def _png_dimensions(image_path: Any) -> tuple[int, int] | None:
+    try:
+        header = image_path.read_bytes()[:PNG_HEADER_BYTES]
+    except OSError:
+        return None
+    if len(header) < PNG_HEADER_BYTES or header[:8] != PNG_SIGNATURE or header[12:16] != b"IHDR":
+        return None
+    width, height = struct.unpack(">II", header[16:24])
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
 
 
 def _public_group(group: dict[str, Any]) -> dict[str, Any]:
