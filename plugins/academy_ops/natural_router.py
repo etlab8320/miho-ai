@@ -59,6 +59,7 @@ from .response_commentary import append_summary_comment_or_fallback
 from .response_focus import focused_response
 from .response_synthesis import compact_payload, synthesize_or_fallback
 from .route_overrides import forced_tool_for_output_request, should_render_attendance_day_image
+from .route_arg_normalization import normalize_route_args
 from .routing_decision import reject_execute_reason
 from .route_plan import execute_route_plan
 from .student_record_fast_path import try_student_record_fast_path
@@ -315,6 +316,7 @@ async def resolve_and_execute_academy_request(
     if should_render_attendance_day_image(clean, tool_name):
         args["image"] = True
     args = _with_reference_today(tool_name, args, today)
+    args = normalize_route_args(tool_name, args, today=today)
     # 원문을 kwargs로 함께 넘겨, LLM이 event 인자를 잘못 추출해도 도구가 원문에서 회수.
     handler_kwargs = {"source_text": clean} if tool_name in MONTHLY_TEST_CONTEXT_TOOLS else {}
     try:
@@ -410,19 +412,12 @@ def _resolver_messages(
 
 
 def _resolved_args(tool_name: str, args: dict[str, Any], context_key: str | None) -> dict[str, Any]:
-    """Fill args a follow-up question left implicit from the last academy turn.
-
-    Generalised across all tools via TOOL_CONTRACTS: any inheritable entity arg
-    (student/staff/event/trainer) the current tool declares but the user omitted
-    is carried over from the prior context. Previously only 7 whitelisted tools
-    did this, so follow-ups after e.g. a record lookup lost their subject.
-    """
+    """Fill follow-up args left implicit from the last academy turn."""
     context = get_thread_context(context_key)
     if not context:
         return args
     contract_args = TOOL_CONTRACTS.get(tool_name, {}).get("args", [])
     resolved = dict(args)
-    # Carry the subject (학생/강사/종목/트레이너) into follow-ups that omit it.
     for name in INHERITABLE_ENTITY_ARGS:
         if name in contract_args and _is_blank(resolved.get(name)) and not _is_blank(context.get(name)):
             resolved[name] = context[name]

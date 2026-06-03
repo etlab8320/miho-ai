@@ -8,12 +8,30 @@ from types import SimpleNamespace
 import pytest
 
 from plugins.academy_ops.natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
+from plugins.academy_ops.route_arg_normalization import normalize_route_args
 from tests.plugins.academy_router_helpers import router_execute
 
 
 class _Response:
     def __init__(self, content: str) -> None:
         self.choices = [SimpleNamespace(message=SimpleNamespace(content=content))]
+
+
+def test_student_record_route_args_recover_recent_when_router_uses_today_only() -> None:
+    args = normalize_route_args(
+        "academy_student_record_lookup",
+        {
+            "student_query": "김동혁",
+            "event_query": "",
+            "date": "2026-06-03",
+            "today": "2026-06-03",
+            "period_days": 1,
+        },
+        today="2026-06-03",
+    )
+
+    assert args["period_days"] == 30
+    assert args["fallback_recent_when_empty"] is True
 
 
 @pytest.mark.asyncio

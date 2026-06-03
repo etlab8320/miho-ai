@@ -49,6 +49,7 @@ def _student_record_lookup_tool_handler(args: dict[str, Any] | None = None, **kw
     target_day = _date_arg(payload.get("date"))
     today = _date_arg(payload.get("today")) or date.today()
     period_days = _int_arg(payload.get("period_days"), default=30, maximum=180)
+    fallback_recent = bool(payload.get("fallback_recent_when_empty"))
     client_or_error = _resolve_client(kwargs.get("client"))
     if isinstance(client_or_error, str):
         return _json_error(client_or_error)
@@ -65,6 +66,10 @@ def _student_record_lookup_tool_handler(args: dict[str, Any] | None = None, **kw
     except (AcademyApiError, ValueError) as exc:
         return _json_error(str(exc))
     records = _filtered_records(rows, event_query=event_query, target_day=target_day, today=today, period_days=period_days)
+    used_target_day = target_day
+    if fallback_recent and target_day and not records:
+        records = _filtered_records(rows, event_query=event_query, target_day=None, today=today, period_days=period_days)
+        used_target_day = None
     student_name = _student_name(student)
     return _json_ok(
         {
@@ -75,11 +80,11 @@ def _student_record_lookup_tool_handler(args: dict[str, Any] | None = None, **kw
                 "name": student_name,
             },
             "event_query": event_query,
-            "date": target_day.isoformat() if target_day else "",
-            "period_days": period_days if target_day is None else 1,
+            "date": used_target_day.isoformat() if used_target_day else "",
+            "period_days": period_days if used_target_day is None else 1,
             "records": records,
             "message": _message(
-                student_name, records, event_query=event_query, target_day=target_day, period_days=period_days
+                student_name, records, event_query=event_query, target_day=used_target_day, period_days=period_days
             ),
             "assistant_guidance": academy_response_guidance(use_message_as_facts=True),
         }

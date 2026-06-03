@@ -6,6 +6,7 @@ import asyncio
 from typing import Any, Callable
 
 from .natural_router_payload import load_payload, payload_message, tool_timeout_message
+from .route_arg_normalization import normalize_route_args
 from .routing_decision import reject_execute_reason
 from .thread_context import remember_thread_context
 
@@ -38,6 +39,7 @@ async def execute_route_plan(
             return None
         args = action.get("args") if isinstance(action.get("args"), dict) else {}
         args = with_reference_today(tool_name, resolve_args(tool_name, args, context_key), today)
+        args = normalize_route_args(tool_name, args, today=today)
         payload = await _run_tool(handlers[tool_name], args, tool_timeout=tool_timeout)
         remember_thread_context(context_key, tool_name=tool_name, args=args, payload=payload)
         messages.append(_format_step(index, action, payload))
