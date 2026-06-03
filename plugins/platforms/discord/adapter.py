@@ -92,6 +92,11 @@ def _discord_brand():
     return current_brand()
 
 
+def _is_unknown_discord_channel_error(error: Exception) -> bool:
+    text = str(error)
+    return "error code: 10003" in text or "Unknown Channel" in text
+
+
 def _thread_created_message(thread_name: str) -> str:
     return f"\U0001f9f5 Thread created by {_discord_brand().short_name}: **{thread_name}**"
 
@@ -1546,6 +1551,9 @@ class DiscordAdapter(BasePlatformAdapter):
             )
 
         except Exception as e:  # pragma: no cover - defensive logging
+            if _is_unknown_discord_channel_error(e):
+                logger.debug("[%s] Discord channel no longer exists: %s", self.name, e)
+                return SendResult(success=False, error=str(e))
             logger.error("[%s] Failed to send Discord message: %s", self.name, e, exc_info=True)
             return SendResult(success=False, error=str(e))
 

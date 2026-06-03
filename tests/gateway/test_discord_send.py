@@ -190,6 +190,26 @@ async def test_send_does_not_retry_on_unrelated_errors():
     assert send_calls[0]["reference"] is reference_obj
 
 
+@pytest.mark.asyncio
+async def test_send_unknown_channel_returns_failure_without_error_log(caplog):
+    adapter = DiscordAdapter(PlatformConfig(enabled=True, token="***"))
+
+    adapter._client = SimpleNamespace(
+        get_channel=lambda _chat_id: None,
+        fetch_channel=AsyncMock(
+            side_effect=RuntimeError(
+                "404 Not Found (error code: 10003): Unknown Channel"
+            )
+        ),
+    )
+
+    result = await adapter.send("555", "hello")
+
+    assert result.success is False
+    assert "10003" in (result.error or "")
+    assert not [record for record in caplog.records if record.levelname == "ERROR"]
+
+
 # ---------------------------------------------------------------------------
 # Forum channel tests
 # ---------------------------------------------------------------------------
