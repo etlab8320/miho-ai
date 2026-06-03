@@ -70,8 +70,8 @@ def test_assignment_by_date_tool_returns_safe_class_assignment() -> None:
     assert evening["classes"][0]["instructors"][0]["name"] == "박성준"
     assert evening["classes"][0]["students"][0]["student_name"] == "박지안"
     assert evening["waiting_students"][0]["student_name"] == "김태양"
-    assert "1반 / 박성준: 박지안" in result["message"]
-    assert "미배정: 김태양" in result["message"]
+    assert "1반 / 박성준 (1명): 박지안" in result["message"]
+    assert "미배정 (1명): 김태양" in result["message"]
     dumped = json.dumps(result, ensure_ascii=False)
     assert "010-" not in dumped
 

@@ -58,12 +58,12 @@ def _assignment_message(payload: dict[str, Any]) -> str:
             student_names = _names(class_row.get("students"), key="student_name")
             class_name = f"{class_row.get('class_num')}반" if class_row.get("class_num") else "반 미지정"
             teacher = f" / {', '.join(instructor_names)}" if instructor_names else ""
-            lines.append(f"- {class_name}{teacher}: {', '.join(student_names[:_MESSAGE_LIMIT])}")
+            lines.append(f"- {class_name}{teacher} ({len(student_names)}명): {', '.join(student_names[:_MESSAGE_LIMIT])}")
             if len(student_names) > _MESSAGE_LIMIT:
                 lines.append(f"  외 {len(student_names) - _MESSAGE_LIMIT}명")
         waiting_names = _names(body.get("waiting_students"), key="student_name")
         if waiting_names:
-            lines.append(f"- 미배정: {', '.join(waiting_names[:_MESSAGE_LIMIT])}")
+            lines.append(f"- 미배정 ({len(waiting_names)}명): {', '.join(waiting_names[:_MESSAGE_LIMIT])}")
             if len(waiting_names) > _MESSAGE_LIMIT:
                 lines.append(f"  외 {len(waiting_names) - _MESSAGE_LIMIT}명")
     return "\n".join(lines)
