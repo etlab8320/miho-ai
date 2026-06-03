@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import plugins.academy_ops.assignment_followup as assignment_followup
 from plugins.academy_ops.natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
 from plugins.academy_ops.thread_context import clear_thread_contexts
 from tests.plugins.academy_router_helpers import router_execute
@@ -92,6 +93,60 @@ async def test_assignment_followup_handles_explicit_per_class_count_wording() ->
     assert "2026-06-03 반배치 각 반 인원" in followup.response_text
     assert "저녁반" in followup.response_text
     assert "1반 / 오철민 (2명)" in followup.response_text
+
+
+@pytest.mark.asyncio
+async def test_assignment_image_followup_uses_context_renderer(monkeypatch) -> None:
+    async def first_resolver(messages: list[dict[str, str]]) -> object:
+        return _Response(router_execute("academy_assignment_by_date", {"date": "2026-06-03", "time_slot": ""}))
+
+    async def followup_resolver(messages: list[dict[str, str]]) -> object:
+        raise AssertionError("assignment image follow-up should not call the LLM router")
+
+    def handler(args: dict, **_: object) -> str:
+        return json.dumps(_assignment_payload(), ensure_ascii=False)
+
+    captured: dict[str, object] = {}
+
+    def fake_render(args: dict, **_: object) -> str:
+        captured.update(args)
+        return json.dumps(
+            {
+                "ok": True,
+                "media_tag": "MEDIA:/tmp/assignment.png",
+                "image_path": "/tmp/assignment.png",
+                "message": "이미지야. MEDIA:/tmp/assignment.png",
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(assignment_followup, "_render_image_tool_handler", fake_render)
+
+    await resolve_and_execute_academy_request(
+        "오늘 반배치 알려줘",
+        resolver=first_resolver,
+        handlers={"academy_assignment_by_date": handler},
+        context_key="assignment-thread",
+        today="2026-06-03",
+        synthesize=False,
+    )
+    followup = await resolve_and_execute_academy_request(
+        "이미지로 줄래?",
+        resolver=followup_resolver,
+        handlers={"academy_assignment_by_date": handler},
+        context_key="assignment-thread",
+        today="2026-06-03",
+        synthesize=False,
+    )
+
+    assert followup == AcademyNaturalRoute.HANDLED
+    assert followup.reason == "assignment_count_followup"
+    assert "MEDIA:/tmp/assignment.png" in followup.response_text
+    assert "academy_render_image" not in followup.response_text
+    assert "백지민" in str(captured["html"])
+    assert "1반" in str(captured["html"])
+    assert captured["width"] == 1200
+    assert int(captured["height"]) >= 560
 
 
 def _assignment_payload() -> dict:
