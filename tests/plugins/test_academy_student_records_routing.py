@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from plugins.academy_ops.natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
-from plugins.academy_ops.route_arg_normalization import normalize_route_args
+from plugins.academy_ops.route_arg_normalization import normalize_route_args, normalize_route_decision_tools
 from tests.plugins.academy_router_helpers import router_execute
 
 
@@ -32,6 +32,57 @@ def test_student_record_route_args_recover_recent_when_router_uses_today_only() 
 
     assert args["period_days"] == 30
     assert args["fallback_recent_when_empty"] is True
+
+
+def test_student_record_chart_conversion_keeps_attempt_limit_not_tiny_date_window() -> None:
+    decision = normalize_route_decision_tools(
+        "학생 최근 5회차 실기 그래프 이미지로 줘",
+        {
+            "actions": [
+                {
+                    "tool": "academy_student_record_lookup",
+                    "args": {
+                        "student_query": "김동혁",
+                        "event_query": "",
+                        "date": "2026-06-03",
+                        "today": "2026-06-03",
+                        "period_days": 5,
+                    },
+                }
+            ]
+        },
+    )
+
+    action = decision["actions"][0]
+    assert action["tool"] == "academy_student_record_chart_image"
+    assert action["args"] == {
+        "student_query": "김동혁",
+        "event_query": "",
+        "today": "2026-06-03",
+        "period_days": 180,
+        "limit": 5,
+    }
+
+
+def test_student_record_chart_args_reject_zero_day_window() -> None:
+    args = normalize_route_args(
+        "academy_student_record_chart_image",
+        {
+            "student_query": "깅동혁",
+            "event_query": "",
+            "today": "2026-06-03",
+            "period_days": 0,
+            "limit": 5,
+        },
+    )
+
+    assert args == {
+        "student_query": "깅동혁",
+        "event_query": "",
+        "today": "2026-06-03",
+        "period_days": 180,
+        "limit": 5,
+    }
 
 
 @pytest.mark.asyncio
@@ -175,3 +226,56 @@ async def test_student_record_fast_path_abstains_for_image_requests(monkeypatch)
     )
 
     assert route == AcademyNaturalRoute.ALLOW
+
+
+@pytest.mark.asyncio
+async def test_student_record_chart_fast_path_handles_image_requests(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    def classify(text: str, group_key: str, *_: object, **__: object) -> str | None:
+        if group_key == "academy_student_record_chart_fast_path":
+            return "chart"
+        if group_key == "academy_student_record_fast_path":
+            return "record"
+        if group_key == "academy_output_format":
+            return "image"
+        return None
+
+    monkeypatch.setattr("plugins.academy_ops.student_record_fast_path.semantic_intents.classify", classify)
+
+    async def failing_resolver(_: list[dict[str, str]]) -> object:
+        raise RuntimeError("router model should not be needed")
+
+    def chart_handler(args: dict, **_: object) -> str:
+        calls.append(args)
+        return json.dumps(
+            {
+                "ok": True,
+                "operation": "student.record_chart_image",
+                "student": {"name": "김동혁"},
+                "message": "김동혁 최근 5회차 실기 그래프야. MEDIA:/tmp/chart.png",
+                "media_tag": "MEDIA:/tmp/chart.png",
+            },
+            ensure_ascii=False,
+        )
+
+    route = await resolve_and_execute_academy_request(
+        "깅동혁 최근 5회차실기기록들 각 종목별 그래프로 그려서 이미지로줘",
+        resolver=failing_resolver,
+        handlers={"academy_student_record_chart_image": chart_handler},
+        today="2026-06-03",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.HANDLED
+    assert route.reason == "student_record_chart_fast_path"
+    assert calls == [
+        {
+            "student_query": "깅동혁 최근 5회차실기기록들 각 종목별 그래프로 그려서 이미지로줘",
+            "event_query": "",
+            "today": "2026-06-03",
+            "period_days": 180,
+            "limit": 5,
+        }
+    ]
+    assert "MEDIA:/tmp/chart.png" in route.response_text

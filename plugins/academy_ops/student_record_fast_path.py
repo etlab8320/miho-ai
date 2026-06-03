@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 ToolHandler = Callable[..., str]
 
 RECORD_INTENT_GROUP = "academy_student_record_fast_path"
+CHART_INTENT_GROUP = "academy_student_record_chart_fast_path"
 RECORD_INTENTS: dict[str, tuple[str, ...]] = {
     "record": (
         "학생 최근 실기 기록 보여줘",
@@ -32,6 +33,49 @@ RECORD_INTENTS: dict[str, tuple[str, ...]] = {
         "학원 일정 확인해줘",
     ),
 }
+CHART_INTENTS: dict[str, tuple[str, ...]] = {
+    "chart": (
+        "학생 최근 실기 기록을 그래프 이미지로 보여줘",
+        "학생 종목별 기록 추세를 PNG로 그려줘",
+        "학생 측정 기록을 회차별 차트로 만들어줘",
+        "학생 수행 기록 그래프 이미지를 보내줘",
+    ),
+    "none": RECORD_INTENTS["none"],
+}
+
+
+async def try_student_record_chart_fast_path(
+    text: str,
+    *,
+    handlers: dict[str, ToolHandler],
+    tool_timeout: float,
+    today: str | None,
+    context_key: str | None,
+) -> str | None:
+    """Handle student record chart image requests without the body agent."""
+
+    if not _is_record_chart_lookup(text):
+        return None
+    handler = handlers.get("academy_student_record_chart_image")
+    if handler is None:
+        return None
+    args = {
+        "student_query": text,
+        "event_query": "",
+        "today": today or today_kst(),
+        "period_days": 180,
+        "limit": 5,
+    }
+    try:
+        raw_result = await asyncio.wait_for(asyncio.to_thread(handler, args), timeout=tool_timeout)
+    except TimeoutError:
+        return tool_timeout_message()
+    except Exception as exc:
+        logger.info("academy student record chart fast path failed: %s", exc)
+        return "학원 데이터를 조회하다가 오류가 났어."
+    payload = load_payload(raw_result)
+    remember_thread_context(context_key, tool_name="academy_student_record_chart_image", args=args, payload=payload)
+    return payload_message(payload)
 
 
 async def try_student_record_fast_path(
@@ -89,3 +133,23 @@ def _is_plain_record_lookup(text: str) -> bool:
         min_margin=0.04,
     )
     return output_label not in {"image", "card"}
+
+
+def _is_record_chart_lookup(text: str) -> bool:
+    chart_label = semantic_intents.classify(
+        text,
+        CHART_INTENT_GROUP,
+        CHART_INTENTS,
+        negative_label="none",
+        min_margin=0.04,
+    )
+    if chart_label != "chart":
+        return False
+    output_label = semantic_intents.classify(
+        text,
+        OUTPUT_INTENT_GROUP,
+        OUTPUT_INTENTS,
+        negative_label="none",
+        min_margin=0.04,
+    )
+    return output_label == "image"

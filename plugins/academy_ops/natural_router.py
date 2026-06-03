@@ -59,10 +59,11 @@ from .response_commentary import append_summary_comment_or_fallback
 from .response_focus import focused_response
 from .response_synthesis import compact_payload, synthesize_or_fallback
 from .route_overrides import forced_tool_for_output_request, should_render_attendance_day_image
-from .route_arg_normalization import normalize_route_args
+from .route_arg_normalization import normalize_route_args, normalize_route_decision_tools
 from .routing_decision import reject_execute_reason
 from .route_plan import execute_route_plan
-from .student_record_fast_path import try_student_record_fast_path
+from .student_record_fast_path import try_student_record_chart_fast_path, try_student_record_fast_path
+from .student_record_chart_tool import _student_record_chart_image_tool_handler
 from .thread_context import (
     INHERITABLE_ENTITY_ARGS,
     MONTHLY_TEST_CONTEXT_TOOLS,
@@ -79,9 +80,7 @@ Resolver = Callable[[list[dict[str, str]]], Awaitable[Any]]
 ToolHandler = Callable[..., str]
 
 ROUTER_TASK = "academy_request_router"
-# Outer wait_for that wraps the whole resolver call. Must exceed the primary
-# model cap (ROUTER_MODEL_TIMEOUT_SECONDS = 25) so a cold-start primary call can
-# finish inside it, with a little room left for a fallback model attempt.
+# Outer wait_for must exceed the primary model cap and leave fallback room.
 ROUTER_TIMEOUT_SECONDS = 28
 ROUTER_MAX_ATTEMPTS = 1
 TOOL_TIMEOUT_SECONDS = 70
@@ -108,6 +107,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_student_context": _student_context_tool_handler,
     "academy_student_record_cohort_latest": _student_record_cohort_tool_handler,
     "academy_student_record_lookup": _student_record_lookup_tool_handler,
+    "academy_student_record_chart_image": _student_record_chart_image_tool_handler,
     "academy_monthly_test_records": _monthly_test_records_tool_handler,
     "academy_set_brand_logo": _academy_set_brand_logo_tool_handler,
     "academy_reset_brand_logo": _academy_reset_brand_logo_tool_handler,
@@ -178,6 +178,10 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
     "academy_student_record_lookup": {
         "purpose": "특정 학생의 Peak 실기, 측정, 종목별 기록 조회. 출석 기록, 강사 출근, 운동계획서가 아니라 학생 수행 기록일 때 사용",
         "args": ["student_query", "event_query", "date", "today", "period_days"],
+    },
+    "academy_student_record_chart_image": {
+        "purpose": "특정 학생의 Peak 실기, 측정, 종목별 최근 기록을 종목별 그래프 PNG 이미지로 생성",
+        "args": ["student_query", "event_query", "today", "period_days", "limit"],
     },
     "academy_monthly_test_records": {"purpose": "월별 또는 정기 실기 평가 참가자 기준 종목 평균, 순위, 학교 제외 집계 조회. 일반 최신 학생 기록이 아니라 평가 참가자 집계를 원할 때 사용", "args": ["event_query", "test_id", "test_month", "exclude_schools", "today"]},
     "academy_set_brand_logo": {
@@ -259,6 +263,11 @@ async def resolve_and_execute_academy_request(
     )
     if pending_route is not None:
         return pending_route
+    fast_chart_response = await try_student_record_chart_fast_path(
+        clean, handlers=handlers or TOOL_HANDLERS, tool_timeout=tool_timeout, today=today, context_key=context_key
+    )
+    if fast_chart_response is not None:
+        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, fast_chart_response, "student_record_chart_fast_path")
     fast_record_response = await try_student_record_fast_path(
         clean, handlers=handlers or TOOL_HANDLERS, tool_timeout=tool_timeout, today=today, context_key=context_key
     )
@@ -280,6 +289,7 @@ async def resolve_and_execute_academy_request(
         logger.info("academy request resolver failed: %s", exc)
         return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW, reason="resolver_error")
 
+    decision = normalize_route_decision_tools(clean, decision)
     tool_name = str(decision.get("tool") or "").strip()
     active_handlers = handlers or TOOL_HANDLERS
     plan_response = await execute_route_plan(
@@ -421,9 +431,7 @@ def _resolved_args(tool_name: str, args: dict[str, Any], context_key: str | None
     for name in INHERITABLE_ENTITY_ARGS:
         if name in contract_args and _is_blank(resolved.get(name)) and not _is_blank(context.get(name)):
             resolved[name] = context[name]
-    # Carry the date range forward only for subject-scoped queries (a student's
-    # or staff's range). Subject-less tools like academy_schedule_range must not
-    # inherit a prior student's window, so gate on having an entity arg.
+    # Carry date ranges only for subject-scoped queries.
     has_entity_arg = any(name in contract_args for name in INHERITABLE_ENTITY_ARGS)
     if has_entity_arg and "start_date" in contract_args:
         if _is_blank(resolved.get("start_date")) and context.get("start_date"):

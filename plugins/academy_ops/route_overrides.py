@@ -68,12 +68,15 @@ def _semantic_output(text: str) -> str | None:
 
 def forced_tool_for_output_request(text: str, tool_name: str) -> str:
     label = _semantic_output(text)
+    explicit_image = _has_any(text.lower(), IMAGE_OUTPUT_MARKERS)
     if label is None:
         return _keyword_forced_tool(text, tool_name)
-    if tool_name == "academy_student_attendance_range" and label == "image":
+    if tool_name == "academy_student_attendance_range" and (label == "image" or explicit_image):
         return "academy_student_attendance_calendar_image"
     if tool_name == "academy_student_summary" and label in ("card", "image"):
         return "academy_student_card_image"
+    if tool_name == "academy_student_record_lookup" and (label == "image" or explicit_image):
+        return "academy_student_record_chart_image"
     return ""
 
 
@@ -81,7 +84,7 @@ def should_render_attendance_day_image(text: str, tool_name: str) -> bool:
     label = _semantic_output(text)
     if label is None:
         return _keyword_should_render(text, tool_name)
-    return tool_name == "academy_attendance_day" and label == "image"
+    return tool_name == "academy_attendance_day" and (label == "image" or _has_any(text.lower(), IMAGE_OUTPUT_MARKERS))
 
 
 def _keyword_forced_tool(text: str, tool_name: str) -> str:
@@ -90,6 +93,8 @@ def _keyword_forced_tool(text: str, tool_name: str) -> str:
         return "academy_student_attendance_calendar_image"
     if tool_name == "academy_student_summary" and _asks_for_card_image(normalized):
         return "academy_student_card_image"
+    if tool_name == "academy_student_record_lookup" and _has_any(normalized, IMAGE_OUTPUT_MARKERS):
+        return "academy_student_record_chart_image"
     return ""
 
 
