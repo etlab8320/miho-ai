@@ -17,6 +17,7 @@ from .academy_calendar_tool import (
     _class_roster_range_tool_handler,
     _consultation_schedule_range_tool_handler,
 )
+from .assignment_followup import assignment_count_followup_response
 from .academy_query_tools import (
     _attendance_day_tool_handler,
     _consultation_candidates_tool_handler,
@@ -78,7 +79,6 @@ from .thread_context import (
 logger = logging.getLogger(__name__)
 Resolver = Callable[[list[dict[str, str]]], Awaitable[Any]]
 ToolHandler = Callable[..., str]
-
 ROUTER_TASK = "academy_request_router"
 # Outer wait_for must exceed the primary model cap and leave fallback room.
 ROUTER_TIMEOUT_SECONDS = 28
@@ -86,7 +86,6 @@ ROUTER_MAX_ATTEMPTS = 1
 TOOL_TIMEOUT_SECONDS = 70
 MIN_CONFIDENCE = 0.55
 TIMEOUT_RESPONSE = "지금 학원 서버 응답이 불안정해서 요청을 처리하지 못했어. 잠시 후 다시 한 번 보내줘."
-
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_schedule_range": _academy_schedule_range_tool_handler,
@@ -254,6 +253,8 @@ async def resolve_and_execute_academy_request(
     clean = text.strip()
     if not clean or clean.startswith("/"):
         return AcademyNaturalRoute(AcademyNaturalRoute.ALLOW)
+    if response := assignment_count_followup_response(clean, get_thread_context(context_key)):
+        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, response, "assignment_count_followup")
     pending_route = await _try_pending_request_retry(
         clean,
         handlers=handlers,

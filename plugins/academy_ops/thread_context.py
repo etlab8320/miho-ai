@@ -20,6 +20,9 @@ STAFF_CONTEXT_TOOLS = {
 MONTHLY_TEST_CONTEXT_TOOLS = {
     "academy_monthly_test_records",
 }
+ASSIGNMENT_CONTEXT_TOOLS = {
+    "academy_assignment_by_date",
+}
 # Entity args a follow-up question naturally inherits when left unspecified
 # ("그 학생", "여자 평균은?"): the subject carries over from the last turn. The
 # key name encodes meaning, so inheritance only fires between tools that share
@@ -79,6 +82,9 @@ def remember_thread_context(
         return
     if tool_name in MONTHLY_TEST_CONTEXT_TOOLS:
         _remember_monthly_test_context(key, tool_name=tool_name, args=args, payload=payload)
+        return
+    if tool_name in ASSIGNMENT_CONTEXT_TOOLS:
+        _remember_assignment_context(key, tool_name=tool_name, args=args, payload=payload)
         return
     if tool_name in STAFF_CONTEXT_TOOLS:
         _remember_staff_context(key, tool_name=tool_name, args=args, payload=payload)
@@ -195,6 +201,27 @@ def _remember_staff_context(
     }
 
 
+def _remember_assignment_context(
+    key: str,
+    *,
+    tool_name: str,
+    args: dict[str, Any],
+    payload: dict[str, Any],
+) -> None:
+    slots = payload.get("slots") if isinstance(payload.get("slots"), dict) else {}
+    if not slots:
+        return
+    _CONTEXTS[key] = {
+        "kind": "assignment",
+        "tool": tool_name,
+        "date": str(payload.get("date") or args.get("date") or ""),
+        "time_slot": str(payload.get("time_slot") or args.get("time_slot") or ""),
+        "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
+        "slots": slots,
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+
 def remember_pending_request(
     key: str | None,
     *,
@@ -249,6 +276,9 @@ def format_context_note(ctx: dict[str, Any]) -> str:
     elif kind == "staff":
         name = str(ctx.get("staff_query") or "").strip()
         parts.append(f"방금 대화의 주제는 강사/직원 '{name}'이었어." if name else "방금 대화는 특정 강사/직원에 대한 거였어.")
+    elif kind == "assignment":
+        date_text = str(ctx.get("date") or "").strip()
+        parts.append(f"방금 대화는 {date_text} 반배치 조회였어." if date_text else "방금 대화는 반배치 조회였어.")
     else:  # generic — carry whatever inheritable entity was in play
         entity = next(
             (str(ctx.get(name)).strip() for name in INHERITABLE_ENTITY_ARGS if not _is_blank(ctx.get(name))),
