@@ -221,7 +221,11 @@ def _path_matches_any(path: str, candidates: set[str]) -> bool:
     clean = _clean_path(path)
     if not clean:
         return False
-    if clean in candidates:
+    candidate_paths = {clean}
+    promoted = _promoted_equivalent_path(clean)
+    if promoted:
+        candidate_paths.add(promoted)
+    if candidate_paths & candidates:
         return True
     try:
         resolved = Path(clean).resolve(strict=True)
@@ -234,6 +238,19 @@ def _path_matches_any(path: str, candidates: set[str]) -> bool:
         except (OSError, RuntimeError, ValueError):
             continue
     return False
+
+
+def _promoted_equivalent_path(path: str) -> str:
+    try:
+        resolved = Path(path).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return ""
+    normalized = str(resolved)
+    if "/.miho/cache/media/" in normalized:
+        return str(resolved)
+    if not _is_safe_generated_media_path(str(resolved)):
+        return ""
+    return str(_MEDIA_CACHE_DIR / resolved.name)
 
 
 def _media_paths_from_tool_content(content: str) -> list[str]:

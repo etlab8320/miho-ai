@@ -255,6 +255,35 @@ def test_does_not_duplicate_media_already_present_from_structured_tool_output(tm
     assert not (promoted_dir / image.name).exists()
 
 
+def test_does_not_duplicate_original_when_promoted_copy_is_already_present(tmp_path, monkeypatch):
+    miho_home = tmp_path / ".miho"
+    image = miho_home / "media_cache" / "academy_reports" / "assignment.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"\x89PNG\r\n\x1a\nsame")
+    promoted_dir = miho_home / "cache" / "media" / "gateway_promoted"
+    promoted_dir.mkdir(parents=True)
+    promoted = promoted_dir / image.name
+    promoted.write_bytes(image.read_bytes())
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", promoted_dir)
+    tool_output = json.dumps(
+        {
+            "ok": True,
+            "message": f"보고서야. MEDIA:{image}",
+            "image_path": str(image),
+            "media_tag": f"MEDIA:{image}",
+        },
+        ensure_ascii=False,
+    )
+    final = f"정리했어.\nMEDIA:{promoted}"
+
+    response = append_missing_generated_media_directives(
+        final,
+        [_user_message("이미지로 줘"), _tool_message(tool_output, "academy_report_image")],
+    )
+
+    assert response == final
+
+
 def test_ignores_media_cache_path_in_stdout_text_not_structured(tmp_path, monkeypatch):
     # A media_cache path appearing only in stdout text (not a structured path
     # key) is still ignored — same policy as read_file/execute_code, so the new

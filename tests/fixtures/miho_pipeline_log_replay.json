@@ -1,0 +1,44 @@
+{
+  "source": "mac_and_etserver_gateway_logs_2026_06_03",
+  "cases": [
+    {
+      "name": "assignment_count_followup_mac_1705",
+      "utterance": "맨뒤에 몇명씩인지 보여줘",
+      "kind": "assignment_followup_count",
+      "expected_reason": "assignment_count_followup"
+    },
+    {
+      "name": "assignment_image_followup_mac_1723",
+      "utterance": "이미지로 줄래?",
+      "kind": "assignment_followup_image",
+      "expected_reason": "assignment_count_followup",
+      "expected_media_count": 1
+    },
+    {
+      "name": "student_chart_typo_mac_1518",
+      "utterance": "깅동혁 최근 5회차실기기록들  각 종목별 그래프로 그려서 이미지로줘",
+      "kind": "academy_router_execute",
+      "expected_tool": "academy_student_record_chart_image",
+      "expected_media_count": 1
+    },
+    {
+      "name": "student_chart_etserver_0622",
+      "utterance": "김동혁 최근기록 추세 이미지로 정리해줘",
+      "kind": "academy_router_execute",
+      "expected_tool": "academy_student_record_chart_image",
+      "expected_media_count": 1
+    },
+    {
+      "name": "generated_media_duplicate_etserver_0620",
+      "utterance": "고준희 최근기록 및 추세이미지 부탁할게",
+      "kind": "generated_media_dedupe",
+      "expected_media_count": 1
+    },
+    {
+      "name": "assignment_report_duplicate_mac_2350",
+      "utterance": "오늘 강사들 수업계획서  정리해서 이미지로 줘 ~",
+      "kind": "generated_media_dedupe",
+      "expected_media_count": 1
+    }
+  ]
+}
