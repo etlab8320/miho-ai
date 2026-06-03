@@ -1145,6 +1145,29 @@ def check_all_command_guards(command: str, env_type: str,
     if not warnings:
         return {"approved": True, "message": None}
 
+    # Gateway read-only/tool-output work should not wait on an approval card
+    # just because the agent used a shell/python wrapper to gather data.
+    if is_gateway or is_ask:
+        try:
+            from tools.read_only_auto_approval import should_auto_approve_gateway_command
+
+            if should_auto_approve_gateway_command(
+                command,
+                [desc for _, desc, _ in warnings],
+            ):
+                logger.info(
+                    "Auto-approved gateway read-only command: %s",
+                    command[:120],
+                )
+                return {
+                    "approved": True,
+                    "message": None,
+                    "read_only_auto_approved": True,
+                    "description": "; ".join(desc for _, desc, _ in warnings),
+                }
+        except Exception as exc:
+            logger.debug("Read-only auto-approval classifier failed: %s", exc)
+
     # --- Phase 2.5: Smart approval (auxiliary LLM risk assessment) ---
     # When approvals.mode=smart, ask the aux LLM before prompting the user.
     # Inspired by OpenAI Codex's Smart Approvals guardian subagent
