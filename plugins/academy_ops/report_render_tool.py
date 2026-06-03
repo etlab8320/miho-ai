@@ -10,27 +10,61 @@ academy data.
 from __future__ import annotations
 
 import json
+import subprocess
 import uuid
+from pathlib import Path
 from typing import Any
 
 from miho_constants import get_miho_home
 
-from .report_design import ColumnSpec, GroupSpec, ReportSpec, render_report_html
-from .student_card_capture import StudentCardCaptureError, capture_html_to_png
+from .report_design import ColumnSpec, GroupSpec, ReportSpec, estimate_report_height, render_report_html
+from .student_card_capture import StudentCardCaptureError, capture_html_to_png, find_browser_executable
 
 
 def _json_error(message: str) -> str:
     return json.dumps({"ok": False, "message": message}, ensure_ascii=False)
 
 
-def _estimate_height(groups: list[GroupSpec]) -> int:
-    """Window height so Chromium's fixed-size screenshot doesn't clip rows."""
-    height = 360  # header band + title + subtitle + footer
-    for group in groups:
-        height += 54   # section label
-        height += 64   # table head
-        height += (len(group.rows) + (1 if group.avg_label else 0)) * 56
-    return max(820, height + 90)
+def _capture_height(html_path: Path, spec: ReportSpec) -> int:
+    measured = _measure_html_height(html_path)
+    if measured:
+        return max(820, min(8000, measured + 36))
+    return estimate_report_height(spec)
+
+
+def _measure_html_height(html_path: Path) -> int:
+    browser = find_browser_executable()
+    if browser is None:
+        return 0
+    command = [
+        browser,
+        "--headless=new",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--window-size=1240,900",
+        "--dump-dom",
+        html_path.as_uri(),
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+    if result.returncode != 0:
+        return 0
+    marker = 'data-render-height="'
+    start = result.stdout.find(marker)
+    if start < 0:
+        return 0
+    start += len(marker)
+    end = result.stdout.find('"', start)
+    if end < 0:
+        return 0
+    try:
+        return int(result.stdout[start:end])
+    except ValueError:
+        return 0
 
 
 def _report_image_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
@@ -85,7 +119,7 @@ def _report_image_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any
     html_path.write_text(html, encoding="utf-8")
 
     try:
-        capture_html_to_png(html_path, image_path, width=1240, height=_estimate_height(groups))
+        capture_html_to_png(html_path, image_path, width=1240, height=_capture_height(html_path, spec))
     except StudentCardCaptureError as exc:
         return _json_error(str(exc))
 

@@ -108,6 +108,21 @@ tr.avg.female td.name{{color:var(--female);}}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
 .roster .pmeta{{margin-top:3px;font-size:13px;color:var(--muted);font-weight:500;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
+/* ---- adaptive grouped layout: for rows where one long list column would
+   waste the rest of a table. ---- */
+.adaptive-groups{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:6px 0 10px;}}
+.adaptive-item{{border:1px solid var(--line);border-radius:16px;background:#fcfdff;
+  padding:18px 18px 16px;min-width:0;}}
+.adaptive-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:13px;}}
+.adaptive-title{{font-size:20px;font-weight:800;letter-spacing:-.015em;line-height:1.2;}}
+.adaptive-facts{{display:flex;flex-wrap:wrap;gap:7px;justify-content:flex-end;}}
+.fact{{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--line);
+  border-radius:999px;padding:6px 10px;background:#fff;font-size:12.5px;font-weight:700;color:var(--ink-soft);}}
+.fact b{{color:var(--muted);font-weight:700;}}
+.chips{{display:flex;flex-wrap:wrap;gap:7px;align-items:flex-start;}}
+.chip{{display:inline-flex;align-items:center;border:1px solid #dfe4ec;border-radius:999px;
+  background:#fff;padding:7px 11px;font-size:14px;font-weight:700;color:var(--ink);line-height:1;}}
+.list-text{{font-size:14px;line-height:1.55;color:var(--ink-soft);word-break:keep-all;}}
 .foot{{display:flex;justify-content:space-between;align-items:center;
   margin:26px 46px 0;padding-top:16px;border-top:1px solid var(--line);}}
 .foot .note{{font-size:13px;color:var(--muted);font-weight:500;}}
@@ -200,6 +215,67 @@ def _sorted_rows(group: GroupSpec, rank_by: str) -> list[dict[str, Any]]:
     return sorted(group.rows, key=sort_key, reverse=True)
 
 
+def _flat_rows(groups: list[GroupSpec]) -> list[dict[str, Any]]:
+    return [row for group in groups for row in group.rows]
+
+
+def _text_len(value: Any) -> int:
+    if isinstance(value, list):
+        return sum(len(str(item.get("name") if isinstance(item, dict) else item)) for item in value)
+    return len(str(value or ""))
+
+
+def _split_list_value(value: Any) -> list[str]:
+    if isinstance(value, list):
+        out: list[str] = []
+        for item in value:
+            raw = item.get("name") if isinstance(item, dict) else item
+            text = str(raw or "").strip()
+            if text:
+                out.append(text)
+        return out
+    text = str(value or "").strip()
+    if not text:
+        return []
+    for sep in ("\n", "、", "，", ","):
+        text = text.replace(sep, ",")
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _blank_identity_ratio(rows: list[dict[str, Any]]) -> float:
+    if not rows:
+        return 0.0
+    blanks = sum(1 for row in rows if not str(row.get("name") or row.get("meta") or "").strip())
+    return blanks / len(rows)
+
+
+def _long_list_column(columns: list[ColumnSpec], rows: list[dict[str, Any]]) -> ColumnSpec | None:
+    best_col: ColumnSpec | None = None
+    best_score = 0
+    for col in columns:
+        values = [row.get(col.key) for row in rows]
+        split_count = max((len(_split_list_value(value)) for value in values), default=0)
+        max_len = max((_text_len(value) for value in values), default=0)
+        score = split_count * 10 + max_len
+        if split_count >= 4 or max_len >= 34:
+            if score > best_score:
+                best_col = col
+                best_score = score
+    return best_col
+
+
+def _adaptive_list_column(spec: ReportSpec) -> ColumnSpec | None:
+    rows = _flat_rows(spec.groups)
+    if len(spec.columns) < 2 or not rows:
+        return None
+    list_col = _long_list_column(spec.columns, rows)
+    if not list_col:
+        return None
+    if _blank_identity_ratio(rows) < 0.65:
+        return None
+    return list_col
+
+
 def _colgroup(columns: list[ColumnSpec]) -> str:
     cols = ['<col style="width:64px">', '<col style="width:104px">', '<col style="width:132px">']
     cols += ["<col>" for _ in columns]
@@ -278,6 +354,66 @@ def _render_group(spec: ReportSpec, group: GroupSpec) -> str:
     return table
 
 
+def _first_display_column(columns: list[ColumnSpec], list_col: ColumnSpec) -> ColumnSpec | None:
+    for col in columns:
+        if col.key != list_col.key:
+            return col
+    return None
+
+
+def _render_adaptive_row(row: dict[str, Any], columns: list[ColumnSpec], list_col: ColumnSpec) -> str:
+    title_col = _first_display_column(columns, list_col)
+    title = str(row.get(title_col.key) if title_col else row.get("name") or "").strip() or "항목"
+    facts: list[str] = []
+    for col in columns:
+        if col.key == list_col.key or col is title_col:
+            continue
+        value = row.get(col.key)
+        if value is None or value == "":
+            continue
+        facts.append(f'<span class="fact"><b>{html.escape(col.label)}</b>{_fmt(value)}</span>')
+    chips = [f'<span class="chip">{html.escape(item)}</span>' for item in _split_list_value(row.get(list_col.key))]
+    roster = (
+        '<div class="chips">' + "".join(chips) + "</div>"
+        if chips else f'<div class="list-text">{_fmt(row.get(list_col.key))}</div>'
+    )
+    return (
+        '<article class="adaptive-item">'
+        '<div class="adaptive-head">'
+        f'<div class="adaptive-title">{html.escape(title)}</div>'
+        f'<div class="adaptive-facts">{"".join(facts)}</div>'
+        "</div>"
+        + roster
+        + "</article>"
+    )
+
+
+def _render_adaptive_group(spec: ReportSpec, group: GroupSpec, list_col: ColumnSpec) -> str:
+    rows = _sorted_rows(group, spec.rank_by)
+    cards = [_render_adaptive_row(row, spec.columns, list_col) for row in rows]
+    return '<div class="adaptive-groups">' + "".join(cards) + "</div>"
+
+
+def estimate_report_height(spec: ReportSpec) -> int:
+    """Estimate screenshot height from the selected layout and row density."""
+    height = 360
+    adaptive_col = _adaptive_list_column(spec)
+    for group in spec.groups:
+        height += 54
+        if adaptive_col:
+            rows = len(group.rows)
+            max_chips = max(
+                (len(_split_list_value(row.get(adaptive_col.key))) for row in group.rows),
+                default=0,
+            )
+            chip_rows = max(1, (max_chips + 5) // 6)
+            height += ((rows + 1) // 2) * (136 + chip_rows * 30)
+        else:
+            height += 64
+            height += (len(group.rows) + (1 if group.avg_label else 0)) * 56
+    return max(820, min(8000, height + 90))
+
+
 def _section_label(spec: ReportSpec, group: GroupSpec) -> str:
     if not group.label:
         return ""
@@ -285,7 +421,9 @@ def _section_label(spec: ReportSpec, group: GroupSpec) -> str:
     tag = html.escape(group.kind[:1].upper()) if group.kind else "•"
     # With data columns, show how many of the listed people actually have records;
     # for a plain roster (no columns) that distinction is meaningless, so omit it.
-    if spec.columns:
+    if _adaptive_list_column(spec):
+        count = f'· {len(group.rows)}건'
+    elif spec.columns:
         n = sum(
             1 for r in group.rows
             if any(_as_number(r.get(c.key)) is not None for c in spec.columns)
@@ -310,10 +448,14 @@ def render_report_html(spec: ReportSpec) -> str:
 
     sections: list[str] = []
     multi = len(spec.groups) > 1
+    adaptive_col = _adaptive_list_column(spec)
     for group in spec.groups:
         if multi or group.label:
             sections.append(_section_label(spec, group))
-        sections.append(_render_group(spec, group))
+        if adaptive_col:
+            sections.append(_render_adaptive_group(spec, group, adaptive_col))
+        else:
+            sections.append(_render_group(spec, group))
 
     note = f'<div class="note">{html.escape(spec.note)}</div>' if spec.note else "<div class='note'></div>"
     foot = f'<div class="foot">{note}<div class="src">{html.escape(spec.source)}</div></div>'
@@ -325,5 +467,6 @@ def render_report_html(spec: ReportSpec) -> str:
         f"<div class='top'><div class='headline'><div class='title'>{html.escape(spec.title)}</div>{subtitle}</div>{brand}</div>"
         f"<div class='body'>" + "".join(sections) + "</div>"
         + foot
-        + "</div></body></html>"
+        + "</div><script>document.documentElement.setAttribute('data-render-height',"
+        + "String(Math.ceil(document.body.getBoundingClientRect().height)));</script></body></html>"
     )

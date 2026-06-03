@@ -133,3 +133,32 @@ def test_group_average_excludes_dash_count():
     html = render_report_html(_spec(rows))
     assert "평균" in html
     assert "1명" in html  # only 가 counted
+
+
+def test_long_roster_column_uses_adaptive_group_layout():
+    cols = [
+        ColumnSpec("class_name", "반"),
+        ColumnSpec("teacher", "강사"),
+        ColumnSpec("count", "인원"),
+        ColumnSpec("roster", "명단"),
+    ]
+    rows = [
+        {
+            "class_name": "1반",
+            "teacher": "오철민",
+            "count": 9,
+            "roster": "백지민, 이지유, 박세영, 김시우, 최혜은, 강지연, 김태양, 유가은, 강지혁",
+        }
+    ]
+    spec = ReportSpec(title="반배치", columns=cols, groups=[GroupSpec(label="저녁반", rows=rows)])
+    html = render_report_html(spec)
+
+    assert 'class="adaptive-groups"' in html
+    assert "<table>" not in _body(html)
+    assert "<th" not in _body(html)
+    assert "이름" not in _body(html)
+    assert "구분" not in _body(html)
+    assert 'class="chip">백지민</span>' in html
+    assert 'class="chip">강지혁</span>' in html
+    assert "1반" in html
+    assert "오철민" in html

@@ -72,6 +72,7 @@ def _collect_missing_media_directives(
     history_media_paths: set[str],
 ) -> list[str]:
     directives: list[str] = []
+    known_media_paths = _response_media_paths(final_response)
     has_voice_directive = False
 
     for msg in _current_turn_messages(messages):
@@ -81,7 +82,10 @@ def _collect_missing_media_directives(
         if not content:
             continue
 
-        structured_directives = _structured_media_directives_from_tool_content(content)
+        structured_directives = _structured_media_directives_from_tool_content(
+            content,
+            known_media_paths=known_media_paths,
+        )
         directives.extend(
             directive
             for directive in structured_directives
@@ -103,7 +107,7 @@ def _collect_missing_media_directives(
             if directive:
                 directives.append(directive)
 
-    unique = _dedupe_preserving_order(directives)
+    unique = _dedupe_media_directives(directives, known_media_paths=known_media_paths)
     if has_voice_directive and any(item.startswith("MEDIA:") for item in unique):
         unique.insert(0, "[[audio_as_voice]]")
     return unique
@@ -124,21 +128,35 @@ def _strip_dangling_attachment_label(text: str) -> str:
     return re.sub(r"(?:\n\s*)+(?:첨부|이미지)\s*:\s*$", "", text).rstrip()
 
 
-def _structured_media_directives_from_tool_content(content: str) -> list[str]:
+def _structured_media_directives_from_tool_content(
+    content: str,
+    *,
+    known_media_paths: set[str],
+) -> list[str]:
     payload = _json_payload(content)
     if not isinstance(payload, dict):
         return []
     directives: list[str] = []
+    seen_paths = set(known_media_paths)
     for key in _MEDIA_TAG_KEYS:
         value = payload.get(key)
         if isinstance(value, str):
-            directives.extend(_media_tag_directives(value))
+            for directive in _media_tag_directives(value):
+                path = _media_path_from_directive(directive)
+                if path and _path_matches_any(path, seen_paths):
+                    continue
+                directives.append(directive)
+                if path:
+                    seen_paths.add(path)
     for key in _MEDIA_PATH_KEYS:
         value = payload.get(key)
         if isinstance(value, str):
-            directive = _safe_local_path_directive(value)
+            directive = _safe_local_path_directive(value, seen_paths)
             if directive:
                 directives.append(directive)
+                path = _media_path_from_directive(directive)
+                if path:
+                    seen_paths.add(path)
     return directives
 
 
@@ -158,8 +176,10 @@ def _media_tag_directives(value: str) -> list[str]:
     return directives
 
 
-def _safe_local_path_directive(value: str) -> str:
+def _safe_local_path_directive(value: str, known_media_paths: set[str] | None = None) -> str:
     path = _clean_path(value)
+    if known_media_paths and _path_matches_any(path, known_media_paths):
+        return ""
     if not _is_safe_generated_media_path(path):
         return ""
     delivery_path = _delivery_path_for_generated_media(path)
@@ -174,6 +194,46 @@ def _directive_matches_history(directive: str, history_media_paths: set[str]) ->
     if not directive.startswith("MEDIA:"):
         return False
     return directive.removeprefix("MEDIA:") in history_media_paths
+
+
+def _response_media_paths(response: str) -> set[str]:
+    paths = {_clean_path(path) for path in _media_paths_from_tool_content(response)}
+    paths.update(_local_media_paths_without_promotion(response))
+    return {path for path in paths if path}
+
+
+def _local_media_paths_without_promotion(content: str) -> set[str]:
+    paths: set[str] = set()
+    for match in _TOOL_LOCAL_MEDIA_RE.finditer(content):
+        path = _clean_path(match.group("path"))
+        if _is_safe_generated_media_path(path):
+            paths.add(path)
+    return paths
+
+
+def _media_path_from_directive(directive: str) -> str:
+    if not directive.startswith("MEDIA:"):
+        return ""
+    return _clean_path(directive.removeprefix("MEDIA:"))
+
+
+def _path_matches_any(path: str, candidates: set[str]) -> bool:
+    clean = _clean_path(path)
+    if not clean:
+        return False
+    if clean in candidates:
+        return True
+    try:
+        resolved = Path(clean).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    for candidate in candidates:
+        try:
+            if resolved == Path(candidate).resolve(strict=True):
+                return True
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return False
 
 
 def _media_paths_from_tool_content(content: str) -> list[str]:
@@ -265,12 +325,18 @@ def _image_ref_to_directive(image_ref: str, final_response: str) -> str:
     return ""
 
 
-def _dedupe_preserving_order(items: Iterable[str]) -> list[str]:
+def _dedupe_media_directives(items: Iterable[str], *, known_media_paths: set[str]) -> list[str]:
     seen: set[str] = set()
+    seen_media_paths = set(known_media_paths)
     unique: list[str] = []
     for item in items:
         if item in seen:
             continue
+        media_path = _media_path_from_directive(item)
+        if media_path:
+            if _path_matches_any(media_path, seen_media_paths):
+                continue
+            seen_media_paths.add(media_path)
         seen.add(item)
         unique.append(item)
     return unique
