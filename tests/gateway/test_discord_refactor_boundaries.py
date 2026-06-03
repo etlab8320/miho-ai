@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import ctypes.util
+import types
 from pathlib import Path
 
 
@@ -35,3 +38,24 @@ def test_discord_adapter_keeps_legacy_exports():
         "_apply_yaml_config",
     ):
         assert hasattr(adapter, name), name
+
+
+def test_discord_connect_handles_missing_opus_without_sys_name_error(monkeypatch):
+    from plugins.platforms.discord import lifecycle_mixin
+
+    class FakeOpus:
+        @staticmethod
+        def is_loaded():
+            return False
+
+    fake_discord = types.SimpleNamespace(opus=FakeOpus())
+    fake_config = types.SimpleNamespace(token=None)
+    fake_adapter = types.SimpleNamespace(config=fake_config, name="Discord")
+
+    monkeypatch.setattr(lifecycle_mixin, "DISCORD_AVAILABLE", True)
+    monkeypatch.setattr(lifecycle_mixin, "discord", fake_discord)
+    monkeypatch.setattr(ctypes.util, "find_library", lambda _name: None)
+
+    connected = asyncio.run(lifecycle_mixin.DiscordLifecycleMixin.connect(fake_adapter))
+
+    assert connected is False
