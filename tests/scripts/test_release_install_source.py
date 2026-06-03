@@ -62,3 +62,26 @@ def test_release_profile_includes_local_embeddings_and_prefetch():
         text = path.read_text(encoding="utf-8")
         assert "MIHO_SKIP_MODEL_PREFETCH" in text
         assert "intfloat/multilingual-e5-large" in text
+
+
+def test_bash_installer_repairs_platform_sdks_before_gateway_start():
+    text = (REPO_ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+
+    assert "install_platform_sdks()" in text
+    assert "python-telegram-bot[webhooks]==22.6" in text
+    assert "discord.py[voice]==2.7.1" in text
+    assert "slack-sdk==3.40.1" in text
+
+    main_body = text[text.index("main() {") :]
+    assert main_body.index("run_setup_wizard") < main_body.index("install_platform_sdks")
+    assert main_body.index("install_platform_sdks") < main_body.index("maybe_start_gateway")
+
+
+def test_windows_installer_platform_sdks_use_locked_specs():
+    text = (REPO_ROOT / "scripts" / "install.ps1").read_text(encoding="utf-8")
+
+    assert "python-telegram-bot[webhooks]==22.6" in text
+    assert "discord.py[voice]==2.7.1" in text
+    assert "slack-sdk==3.40.1" in text
+    assert "slack-bolt==1.27.0" in text
+    assert "qrcode==7.4.2" in text

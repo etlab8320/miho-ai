@@ -1692,6 +1692,87 @@ install_node_deps() {
 
 }
 
+env_value_is_configured() {
+    local env_file="$1"
+    local var_name="$2"
+    local value
+
+    value=$(grep "^${var_name}=" "$env_file" 2>/dev/null | tail -n 1 | cut -d'=' -f2- || true)
+    [ -n "$value" ] && [ "$value" != "your-token-here" ] && [ "$value" != "false" ]
+}
+
+install_platform_sdk_if_needed() {
+    local python_cmd="$1"
+    local env_file="$2"
+    local var_name="$3"
+    local import_name="$4"
+    local package_spec="$5"
+
+    if ! env_value_is_configured "$env_file" "$var_name"; then
+        return 0
+    fi
+
+    if "$python_cmd" -c "import ${import_name}" >/dev/null 2>&1; then
+        log_success "  ${import_name} OK"
+        return 0
+    fi
+
+    log_warn "  ${import_name} not importable (needed for ${var_name})"
+
+    if [ "$USE_VENV" = true ] && [ -n "${UV_CMD:-}" ]; then
+        log_info "  Installing ${package_spec} ..."
+        if "$UV_CMD" pip install --python "$python_cmd" "$package_spec" >/dev/null; then
+            log_success "  Installed ${import_name}"
+            return 0
+        fi
+    fi
+
+    if "$python_cmd" -m pip --version >/dev/null 2>&1 || "$python_cmd" -m ensurepip --upgrade >/dev/null 2>&1; then
+        log_info "  Installing ${package_spec} ..."
+        if "$python_cmd" -m pip install "$package_spec" >/dev/null; then
+            log_success "  Installed ${import_name}"
+            return 0
+        fi
+    fi
+
+    log_warn "  Failed to install ${package_spec}. Recover manually: ${python_cmd} -m pip install '${package_spec}'"
+}
+
+install_platform_sdks() {
+    local env_file="$MIHO_HOME/.env"
+    local python_cmd
+
+    if [ "$USE_VENV" = true ]; then
+        python_cmd="$INSTALL_DIR/venv/bin/python"
+        if [ ! -x "$python_cmd" ]; then
+            log_warn "Skipping platform-SDK verification: $python_cmd not found"
+            return 0
+        fi
+    else
+        python_cmd="${PYTHON_PATH:-python}"
+    fi
+
+    if [ ! -f "$env_file" ]; then
+        return 0
+    fi
+
+    if ! env_value_is_configured "$env_file" "TELEGRAM_BOT_TOKEN" \
+        && ! env_value_is_configured "$env_file" "DISCORD_BOT_TOKEN" \
+        && ! env_value_is_configured "$env_file" "SLACK_BOT_TOKEN" \
+        && ! env_value_is_configured "$env_file" "SLACK_APP_TOKEN" \
+        && ! env_value_is_configured "$env_file" "WHATSAPP_ENABLED"; then
+        return 0
+    fi
+
+    echo ""
+    log_info "Verifying platform SDKs for tokens found in $env_file ..."
+    install_platform_sdk_if_needed "$python_cmd" "$env_file" "TELEGRAM_BOT_TOKEN" "telegram" "python-telegram-bot[webhooks]==22.6"
+    install_platform_sdk_if_needed "$python_cmd" "$env_file" "DISCORD_BOT_TOKEN" "discord" "discord.py[voice]==2.7.1"
+    install_platform_sdk_if_needed "$python_cmd" "$env_file" "SLACK_BOT_TOKEN" "slack_sdk" "slack-sdk==3.40.1"
+    install_platform_sdk_if_needed "$python_cmd" "$env_file" "SLACK_APP_TOKEN" "slack_bolt" "slack-bolt==1.27.0"
+    install_platform_sdk_if_needed "$python_cmd" "$env_file" "WHATSAPP_ENABLED" "qrcode" "qrcode==7.4.2"
+}
+
 run_setup_wizard() {
     if [ "$RUN_SETUP" = false ]; then
         log_info "Skipping setup wizard (--skip-setup)"
@@ -2085,6 +2166,7 @@ main() {
     setup_path
     copy_config_templates
     run_setup_wizard
+    install_platform_sdks
     maybe_start_gateway
 
     print_success

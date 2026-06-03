@@ -1787,11 +1787,11 @@ function Install-PlatformSdks {
     # Map: env var set in .env -> (import name, pip spec matching [messaging] extra).
     # Specs mirror pyproject.toml to avoid version drift.
     $sdkMap = @(
-        @{ Var = "TELEGRAM_BOT_TOKEN"; Import = "telegram";  Spec = "python-telegram-bot[webhooks]>=22.6,<23" },
-        @{ Var = "DISCORD_BOT_TOKEN";  Import = "discord";   Spec = "discord.py[voice]>=2.7.1,<3" },
-        @{ Var = "SLACK_BOT_TOKEN";    Import = "slack_sdk"; Spec = "slack-sdk>=3.27.0,<4" },
-        @{ Var = "SLACK_APP_TOKEN";    Import = "slack_bolt";Spec = "slack-bolt>=1.18.0,<2" },
-        @{ Var = "WHATSAPP_ENABLED";   Import = "qrcode";    Spec = "qrcode>=7.0,<8" }
+        @{ Var = "TELEGRAM_BOT_TOKEN"; Import = "telegram";  Spec = "python-telegram-bot[webhooks]==22.6" },
+        @{ Var = "DISCORD_BOT_TOKEN";  Import = "discord";   Spec = "discord.py[voice]==2.7.1" },
+        @{ Var = "SLACK_BOT_TOKEN";    Import = "slack_sdk"; Spec = "slack-sdk==3.40.1" },
+        @{ Var = "SLACK_APP_TOKEN";    Import = "slack_bolt";Spec = "slack-bolt==1.27.0" },
+        @{ Var = "WHATSAPP_ENABLED";   Import = "qrcode";    Spec = "qrcode==7.4.2" }
     )
 
     # Which tokens are actually set (not placeholder)?

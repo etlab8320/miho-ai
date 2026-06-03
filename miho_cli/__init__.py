@@ -14,7 +14,7 @@ try:
 
     __version__ = _pkg_version("miho-agent")
 except Exception:  # pragma: no cover - source-tree fallback
-    __version__ = "1.0.39"
+    __version__ = "1.0.40"
 __release_date__ = "2026.6.4"
 
 

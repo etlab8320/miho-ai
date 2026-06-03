@@ -7034,7 +7034,7 @@ def _update_via_zip(args):
     pip_cmd = [sys.executable, "-m", "pip"]
     uv_bin = shutil.which("uv") or _ensure_uv_for_termux(pip_cmd)
     if uv_bin:
-        uv_env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
+        uv_env = {**os.environ, "VIRTUAL_ENV": str(_project_venv_dir_for_update())}
         if _is_termux_env(uv_env):
             uv_env.pop("PYTHONPATH", None)
             uv_env.pop("PYTHONHOME", None)
@@ -7626,6 +7626,12 @@ def _venv_scripts_dir() -> Path | None:
     return project_venv_scripts_dir(PROJECT_ROOT, windows=_is_windows())
 
 
+def _project_venv_dir_for_update() -> Path:
+    from miho_cli.runtime_venv import project_venv_dir
+
+    return project_venv_dir(PROJECT_ROOT) or PROJECT_ROOT / "venv"
+
+
 def _miho_exe_shims(scripts_dir: Path) -> list[Path]:
     """Entry-point shims that uv may try to rewrite during ``pip install -e .``.
 
@@ -8157,7 +8163,7 @@ def _reinstall_python_package() -> None:
     install_group = "all"
     uv_bin = shutil.which("uv")
     if uv_bin:
-        uv_env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
+        uv_env = {**os.environ, "VIRTUAL_ENV": str(_project_venv_dir_for_update())}
         if _is_termux_env(uv_env):
             uv_env.pop("PYTHONPATH", None)
             uv_env.pop("PYTHONHOME", None)
@@ -9326,7 +9332,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         install_group = "all"
 
         if uv_bin:
-            uv_env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
+            uv_env = {**os.environ, "VIRTUAL_ENV": str(_project_venv_dir_for_update())}
             if _is_termux_env(uv_env):
                 uv_env.pop("PYTHONPATH", None)
                 uv_env.pop("PYTHONHOME", None)
