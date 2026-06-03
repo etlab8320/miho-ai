@@ -61,6 +61,7 @@ from .response_synthesis import compact_payload, synthesize_or_fallback
 from .route_overrides import forced_tool_for_output_request, should_render_attendance_day_image
 from .routing_decision import reject_execute_reason
 from .route_plan import execute_route_plan
+from .student_record_fast_path import try_student_record_fast_path
 from .thread_context import (
     INHERITABLE_ENTITY_ARGS,
     MONTHLY_TEST_CONTEXT_TOOLS,
@@ -257,6 +258,11 @@ async def resolve_and_execute_academy_request(
     )
     if pending_route is not None:
         return pending_route
+    fast_record_response = await try_student_record_fast_path(
+        clean, handlers=handlers or TOOL_HANDLERS, tool_timeout=tool_timeout, today=today, context_key=context_key
+    )
+    if fast_record_response is not None:
+        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, fast_record_response, "student_record_fast_path")
     try:
         decision = await _resolve_decision_with_retry(
             clean,

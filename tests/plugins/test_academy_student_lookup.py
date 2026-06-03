@@ -1,4 +1,4 @@
-"""Tests for duplicate PACA student lookup across academy tools."""
+"""Tests for duplicate and resilient PACA student lookup across academy tools."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from datetime import date
 
 from plugins.academy_ops.student_attendance_tool import _student_attendance_range_tool_handler
 from plugins.academy_ops.student_card import AcademyStudentCardService
+from plugins.academy_ops.student_lookup import resolve_paca_student
 
 
 def _payload(raw: str) -> dict:
@@ -94,3 +95,20 @@ def test_student_card_lookup_resolves_school_with_duplicate_names() -> None:
     assert card.profile.paca_student_id == 9228
     assert card.profile.school == "서정고"
     assert card.profile.grade == "N수"
+
+
+def test_student_lookup_recovers_single_hangul_typo_with_suffix() -> None:
+    class Client:
+        def search_paca_students(self, query: str) -> list[dict]:
+            return []
+
+        def list_paca_students(self, *, status: str = "") -> list[dict]:
+            assert status == "active"
+            return [
+                {"id": 1, "name": "김동혁", "school": "일산고"},
+                {"id": 2, "name": "박동혁", "school": "강남고"},
+            ]
+
+    student = resolve_paca_student(Client(), "깅동혁학생")
+
+    assert student["name"] == "김동혁"

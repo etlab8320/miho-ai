@@ -6,6 +6,10 @@ import re
 from typing import Any, Protocol
 
 
+FUZZY_MATCH_THRESHOLD = 0.84
+FUZZY_MATCH_MARGIN = 0.04
+
+
 class StudentSearchClient(Protocol):
     def search_paca_students(self, query: str) -> list[dict[str, Any]]: ...
 
@@ -27,6 +31,8 @@ def resolve_paca_student(client: StudentSearchClient, query: str) -> dict[str, A
     candidates = _unique_students(client.search_paca_students(clean))
     if not candidates:
         candidates = _fallback_candidates(client, clean)
+    if not candidates:
+        candidates = _fuzzy_candidates(client, clean)
     return select_paca_student(clean, candidates)
 
 
@@ -56,6 +62,85 @@ def _fallback_candidates(client: StudentSearchClient, query: str) -> list[dict[s
             continue
         candidates.extend(client.search_paca_students(term))
     return _unique_students(candidates)
+
+
+def _fuzzy_candidates(client: StudentSearchClient, query: str) -> list[dict[str, Any]]:
+    rows = _active_students(client)
+    scored = sorted(
+        ((score, student) for student in rows if (score := _name_score(query, _field(student, "name"))) > 0),
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    if not scored or scored[0][0] < FUZZY_MATCH_THRESHOLD:
+        return []
+    best_score = scored[0][0]
+    return [student for score, student in scored if best_score - score <= FUZZY_MATCH_MARGIN]
+
+
+def _active_students(client: StudentSearchClient) -> list[dict[str, Any]]:
+    list_students = getattr(client, "list_paca_students", None)
+    if callable(list_students):
+        try:
+            return _unique_students(list_students(status="active"))
+        except TypeError:
+            return _unique_students(list_students())
+    return _unique_students(client.search_paca_students(""))
+
+
+def _name_score(query: str, name: str) -> float:
+    clean_query = _normalize(query)
+    clean_name = _normalize(name)
+    if not clean_query or not clean_name:
+        return 0.0
+    windows = _comparison_windows(clean_query, len(clean_name))
+    return max((_similarity(window, clean_name) for window in windows), default=0.0)
+
+
+def _comparison_windows(value: str, size: int) -> list[str]:
+    if size <= 0:
+        return []
+    windows = [value]
+    if len(value) >= size:
+        windows.extend(value[index : index + size] for index in range(len(value) - size + 1))
+    return windows
+
+
+def _similarity(left: str, right: str) -> float:
+    left_units = _hangul_units(left)
+    right_units = _hangul_units(right)
+    if not left_units or not right_units:
+        return 0.0
+    distance = _edit_distance(left_units, right_units)
+    return 1.0 - (distance / max(len(left_units), len(right_units)))
+
+
+def _hangul_units(value: str) -> list[str]:
+    units: list[str] = []
+    for char in value:
+        code = ord(char)
+        if 0xAC00 <= code <= 0xD7A3:
+            offset = code - 0xAC00
+            units.extend((str(offset // 588), str((offset % 588) // 28), str(offset % 28)))
+        else:
+            units.append(char)
+    return units
+
+
+def _edit_distance(left: list[str], right: list[str]) -> int:
+    previous = list(range(len(right) + 1))
+    for row_index, left_unit in enumerate(left, start=1):
+        current = [row_index]
+        for column_index, right_unit in enumerate(right, start=1):
+            cost = 0 if left_unit == right_unit else 1
+            current.append(
+                min(
+                    previous[column_index] + 1,
+                    current[column_index - 1] + 1,
+                    previous[column_index - 1] + cost,
+                )
+            )
+        previous = current
+    return previous[-1]
 
 
 def _term_matched_students(query: str, students: list[dict[str, Any]]) -> list[dict[str, Any]]:

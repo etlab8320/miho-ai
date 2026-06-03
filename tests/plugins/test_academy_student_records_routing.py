@@ -78,3 +78,82 @@ async def test_student_performance_record_routes_to_record_lookup_not_attendance
         }
     ]
     assert "제자리멀리뛰기 248cm" in route.response_text
+
+
+@pytest.mark.asyncio
+async def test_student_record_fast_path_handles_router_model_failure(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    def classify(text: str, group_key: str, *_: object, **__: object) -> str | None:
+        if group_key == "academy_student_record_fast_path":
+            return "record"
+        if group_key == "academy_output_format":
+            return "none"
+        return None
+
+    monkeypatch.setattr("plugins.academy_ops.student_record_fast_path.semantic_intents.classify", classify)
+
+    async def failing_resolver(_: list[dict[str, str]]) -> object:
+        raise RuntimeError("router model unavailable")
+
+    def record_handler(args: dict, **_: object) -> str:
+        calls.append(args)
+        return json.dumps(
+            {
+                "ok": True,
+                "operation": "student.record_lookup",
+                "student": {"name": "김동혁"},
+                "records": [{"event_name": "제자리멀리뛰기", "measured_at": "2026-05-30", "value": 250, "unit": "cm"}],
+                "message": "김동혁 최근 실기 기록\n- 2026-05-30: 제자리멀리뛰기 250cm",
+            },
+            ensure_ascii=False,
+        )
+
+    route = await resolve_and_execute_academy_request(
+        "김동혁 최근실기기록 보여줘",
+        resolver=failing_resolver,
+        handlers={"academy_student_record_lookup": record_handler},
+        today="2026-06-03",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.HANDLED
+    assert route.reason == "student_record_fast_path"
+    assert calls == [
+        {
+            "student_query": "김동혁 최근실기기록 보여줘",
+            "event_query": "",
+            "date": "",
+            "today": "2026-06-03",
+            "period_days": 30,
+        }
+    ]
+    assert "제자리멀리뛰기 250cm" in route.response_text
+
+
+@pytest.mark.asyncio
+async def test_student_record_fast_path_abstains_for_image_requests(monkeypatch) -> None:
+    def classify(text: str, group_key: str, *_: object, **__: object) -> str | None:
+        if group_key == "academy_student_record_fast_path":
+            return "record"
+        if group_key == "academy_output_format":
+            return "image"
+        return None
+
+    monkeypatch.setattr("plugins.academy_ops.student_record_fast_path.semantic_intents.classify", classify)
+
+    async def resolver(_: list[dict[str, str]]) -> object:
+        return _Response(json.dumps({"action": "allow", "domain": "academy_ops", "confidence": 0.2}))
+
+    def record_handler(args: dict, **_: object) -> str:
+        raise AssertionError(f"image request should not use text fast path: {args!r}")
+
+    route = await resolve_and_execute_academy_request(
+        "김동혁 종목별 최근기록 추세 이미지 부탁해",
+        resolver=resolver,
+        handlers={"academy_student_record_lookup": record_handler},
+        today="2026-06-03",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.ALLOW
