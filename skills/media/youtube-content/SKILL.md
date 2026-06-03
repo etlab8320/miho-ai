@@ -63,6 +63,13 @@ After fetching the transcript, format it based on what the user asks for:
 2. **Validate**: confirm the output is non-empty and in the expected language. If empty, retry without `--language` to get any available transcript. If still empty, tell the user the video likely has transcripts disabled.
 3. **Chunk if needed**: if the transcript exceeds ~50K characters, split into overlapping chunks (~40K with 2K overlap) and summarize each chunk before merging.
 4. **Transform** into the requested output format. If the user did not specify a format, default to a summary.
+   - If the user asks for an **image summary**, pair this skill with an HTML/PNG rendering workflow rather than pasting long text. A reliable Korean-first structure is:
+     1. one-line verdict,
+     2. 4-6 key points,
+     3. 3-part chapter flow with approximate timestamps,
+     4. critical reading (`사실/설명` vs `의견/홍보/과장`),
+     5. one actionable takeaway for the target reader.
+   - For short videos, this structure produces a compact Discord-ready infographic without losing the distinction between grounded content and promotional framing.
 5. **Verify**: re-read the transformed output to check for coherence, correct timestamps, and completeness before presenting.
 
 ## Error Handling
@@ -71,3 +78,26 @@ After fetching the transcript, format it based on what the user asks for:
 - **Private/unavailable video**: relay the error and ask the user to verify the URL.
 - **No matching language**: retry without `--language` to fetch any available transcript, then note the actual language to the user.
 - **Dependency missing**: run `pip install youtube-transcript-api` and retry.
+
+## Fallback for auto-captions missing from youtube-transcript-api
+
+Some videos return `No transcript found` from `youtube-transcript-api` even though YouTube exposes **automatic captions**. Before giving up:
+
+1. Probe subtitle availability with:
+   ```bash
+   yt-dlp --list-subs "URL"
+   ```
+2. If automatic captions exist (for example `ko` / `ko-orig` / `en`), download them directly:
+   ```bash
+   tmpdir=$(mktemp -d)
+   yt-dlp --skip-download --write-auto-sub --sub-lang ko --sub-format vtt \
+     -o "$tmpdir/%(id)s.%(ext)s" "URL"
+   ```
+3. Read the `.vtt` file, strip timing tags / inline markup, and dedupe the repeated rolling-caption lines before summarizing.
+4. If the user wants an image summary, this cleaned auto-caption text is usually good enough to drive a grounded infographic, but explicitly note that fine-grained numbers / names may need re-checking because auto-captions can be noisy.
+
+This fallback is especially useful for Korean YouTube videos where auto-captions are available through YouTube but not exposed cleanly through the transcript API.
+
+## References
+
+- `references/youtube-image-summary-pattern.md` — compact workflow for turning transcript + metadata into a Korean infographic image, including the reality-vs-promo framing pass and visual verification checklist.

@@ -282,6 +282,14 @@ Can't check all boxes? You skipped TDD. Start over.
 
 ## Miho Agent Integration
 
+### Full-Stack FastAPI + Next.js Features
+
+For small full-stack MVP features, follow `references/fastapi-nextjs-mvp-tdd.md`: backend `TestClient` API tests first, dashboard contract tests before summary changes, Playwright route smoke tests before creating frontend pages, then `pnpm lint` and `pnpm build`.
+
+### Standalone Browser MVPs
+
+For small independent HTML/CSS/JS apps that can live under `/Users/etlab/projects/<name>` without a backend, follow `references/vanilla-js-localstorage-mvp-tdd.md`: write `node:test` tests for pure store/domain functions first, then wire DOM/localStorage and verify with a static server.
+
 ### Running Tests
 
 Use the `terminal` tool to run tests at each step:

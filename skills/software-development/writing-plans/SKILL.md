@@ -138,6 +138,7 @@ Read and understand:
 - Design documents or user description
 - Acceptance criteria
 - Constraints
+- Project placement language: if the user says “새 프로젝트”, “프로젝트 폴더 안에 <name>”, or otherwise names a new project directory, treat it as a request to create a standalone project under `/Users/etlab/projects/<name>` rather than adding the feature to a nearby existing app. Check whether the directory exists first, create a project-local `CLAUDE.md`, and update `/Users/etlab/projects/CLAUDE.md` only after the project is actually created.
 
 ### Step 2: Explore the Codebase
 
