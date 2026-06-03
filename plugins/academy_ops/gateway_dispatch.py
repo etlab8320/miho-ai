@@ -24,6 +24,7 @@ from .context import (
 )
 from .fast_model_routing import route_bound_academy_session_to_fast_model
 from .formatting import format_binding_status, format_catalog, format_login_link
+from .guidance_copy import naturalize_guidance_response
 from . import login_preflight
 from .natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
 from .self_check import verdict_or_ok
@@ -116,11 +117,17 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
     )
     if login_preflight.is_academy_login_status_request(text) and has_login_context:
         if login_preflight.is_gateway_source_authorized(kwargs.get("gateway"), source):
-            return {"action": "respond", "text": _status_command()}
+            return {
+                "action": "respond",
+                "text": await _guidance_text(text, "login_status", _status_command()),
+            }
         return {"action": "allow"}
     if login_preflight.is_academy_login_request(text):
         if login_preflight.is_gateway_source_authorized(kwargs.get("gateway"), source):
-            return {"action": "respond", "text": _login_command()}
+            return {
+                "action": "respond",
+                "text": await _guidance_text(text, "login_link", _login_command()),
+            }
         return {"action": "allow"}
     context_key = academy_context_key(event)
     auth_error = binding_auth_error(binding)
@@ -129,8 +136,9 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
             if not login_preflight.is_gateway_source_authorized(kwargs.get("gateway"), source):
                 return {"action": "allow"}
             if "/academy login" in auth_error:
-                return {"action": "respond", "text": _login_command()}
-            return {"action": "respond", "text": auth_error}
+                fallback = _login_command()
+                return {"action": "respond", "text": await _guidance_text(text, "login_required", fallback)}
+            return {"action": "respond", "text": await _guidance_text(text, "auth_error", auth_error)}
         return {"action": "allow"}
     route = await resolve_and_execute_academy_request(
         text,
@@ -157,6 +165,10 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
     if _inject_prior_context(event, context_key):
         event.academy_self_check = True
     return {"action": "allow"}
+
+
+async def _guidance_text(user_text: str, intent: str, fallback: str) -> str:
+    return await naturalize_guidance_response(user_text=user_text, intent=intent, fallback=fallback)
 
 
 def _persist_handled_turn(session_store: Any, event: Any, question: str, answer: str) -> None:

@@ -27,6 +27,7 @@ def _force_keyword_routing(monkeypatch):
     VOYAGE_API_KEY happens to be set locally.
     """
     monkeypatch.setenv("MIHO_ACADEMY_SEMANTIC_ROUTING", "0")
+    monkeypatch.setenv("MIHO_ACADEMY_NATURAL_GUIDANCE_COPY", "0")
     from plugins.academy_ops import login_preflight, semantic_intents
 
     login_preflight._last_login.update(text=None, label=None, hit=False)

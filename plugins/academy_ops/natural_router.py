@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
-import json
 import logging
 from typing import Any, Awaitable, Callable, ClassVar
-from zoneinfo import ZoneInfo
 
 from .assignment_tool import _assignment_by_date_tool_handler
 from .brand_logo_tool import (
@@ -47,6 +44,15 @@ from .student_card_tool import _student_card_image_tool_handler
 from .student_context_tool import _student_context_tool_handler
 from .monthly_test_records_tool import _monthly_test_records_tool_handler
 from .natural_router_prompt import build_resolver_messages
+from .natural_router_payload import (
+    is_login_required_payload,
+    load_payload,
+    payload_message,
+    response_content,
+    today_kst,
+    tool_timeout_message,
+)
+from .guidance_copy import naturalize_guidance_response
 from .student_record_cohort_tool import _student_record_cohort_tool_handler
 from .student_records_tool import _student_record_lookup_tool_handler
 from .response_commentary import append_summary_comment_or_fallback
@@ -298,13 +304,13 @@ async def resolve_and_execute_academy_request(
             timeout=tool_timeout,
         )
     except TimeoutError:
-        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, _tool_timeout_message(), "tool_timeout")
+        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, tool_timeout_message(), "tool_timeout")
     except Exception as exc:
         logger.info("academy tool execution failed: %s", exc)
         return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, "학원 데이터를 조회하다가 오류가 났어.")
 
-    payload = _load_payload(raw_result)
-    if _is_login_required_payload(payload):
+    payload = load_payload(raw_result)
+    if is_login_required_payload(payload):
         remember_pending_request(
             context_key,
             tool_name=tool_name,
@@ -314,13 +320,19 @@ async def resolve_and_execute_academy_request(
         )
     remember_thread_context(context_key, tool_name=tool_name, args=args, payload=payload)
     response_focus = "" if force_default_response else str(decision.get("response_focus") or "").strip()
-    response = focused_response(payload, response_focus) or _payload_message(payload)
+    response = focused_response(payload, response_focus) or payload_message(payload)
     if decision.get("skip_synthesis"):
-        response = _payload_message(payload)
+        response = payload_message(payload)
     elif response_focus == "summary" and synthesize and payload.get("ok") and not payload.get("media_tag"):
         response = await append_summary_comment_or_fallback(clean, compact_payload(payload), response)
     elif not response_focus and synthesize and payload.get("ok") and not payload.get("media_tag"):
         response = await synthesize_or_fallback(clean, payload, response)
+    elif synthesize and payload.get("ok") is False:
+        response = await naturalize_guidance_response(
+            user_text=clean,
+            intent=f"{tool_name}.not_ok",
+            fallback=response,
+        )
     return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, response)
 
 
@@ -357,9 +369,9 @@ async def _resolve_decision(
     today: str | None,
     context_key: str | None,
 ) -> dict[str, Any]:
-    reference_day = today or _today()
+    reference_day = today or today_kst()
     response = await resolver(_resolver_messages(text, reference_day, get_thread_context(context_key)))
-    payload = _load_payload(_response_content(response))
+    payload = load_payload(response_content(response))
     return payload if isinstance(payload, dict) else {}
 
 
@@ -420,7 +432,7 @@ def _with_reference_today(tool_name: str, args: dict[str, Any], today: str | Non
     if str(args.get("today") or "").strip():
         return args
     resolved = dict(args)
-    resolved["today"] = today or _today()
+    resolved["today"] = today or today_kst()
     return resolved
 
 
@@ -444,57 +456,22 @@ async def _try_pending_request_retry(
     try:
         raw_result = await asyncio.wait_for(asyncio.to_thread(handler, args), timeout=tool_timeout)
     except TimeoutError:
-        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, _tool_timeout_message(), "pending_tool_timeout")
+        return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, tool_timeout_message(), "pending_tool_timeout")
     except Exception as exc:
         logger.info("academy pending request retry failed: %s", exc)
         return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, "학원 데이터를 다시 조회하다가 오류가 났어.")
     pop_pending_request(context_key)
-    payload = _load_payload(raw_result)
-    if _is_login_required_payload(payload):
+    payload = load_payload(raw_result)
+    if is_login_required_payload(payload):
         remember_pending_request(context_key, tool_name=tool_name, args=args, request_text=text, reason="auth_required")
     remember_thread_context(context_key, tool_name=tool_name, args=args, payload=payload)
-    response = _payload_message(payload)
+    response = payload_message(payload)
     if synthesize and payload.get("ok") and not payload.get("media_tag"):
         response = await synthesize_or_fallback(text, payload, response)
+    elif synthesize and payload.get("ok") is False:
+        response = await naturalize_guidance_response(
+            user_text=text,
+            intent=f"{tool_name}.not_ok",
+            fallback=response,
+        )
     return AcademyNaturalRoute(AcademyNaturalRoute.HANDLED, response, "pending_request_retry")
-
-
-def _response_content(response: Any) -> str:
-    try:
-        return str(response.choices[0].message.content or "")
-    except (AttributeError, IndexError, TypeError):
-        return str(response or "")
-
-
-def _load_payload(text: str) -> dict[str, Any]:
-    clean = text.strip()
-    if clean.startswith("```"):
-        lines = clean.splitlines()
-        if lines:
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        clean = "\n".join(lines).strip()
-    try:
-        payload = json.loads(clean)
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _payload_message(payload: dict[str, Any]) -> str:
-    return str(payload.get("message") or "조회 결과를 정리하지 못했어.")
-
-
-def _is_login_required_payload(payload: dict[str, Any]) -> bool:
-    if payload.get("ok") is not False:
-        return False
-    message = str(payload.get("message") or "")
-    return "/academy login" in message or "학원 계정 연결" in message
-
-
-def _today() -> str:
-    return datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
-
-def _tool_timeout_message() -> str:
-    return "PACA/Peak API 조회가 제한시간을 넘겨서 중단했어. 잠시 뒤 다시 시도해줘."
