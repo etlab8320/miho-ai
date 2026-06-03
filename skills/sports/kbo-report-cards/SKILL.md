@@ -31,21 +31,38 @@ Build source HTML first, render a PNG, verify it visually, then send:
 MEDIA:/absolute/path/to/verified-card.png
 ```
 
+Use only baseball facts and concise recap language in the card copy. Do not insert your own editorial/meta phrases into the visual text.
+
+### Resend vs rebuild pitfall
+
+If the user says an image did not arrive or explicitly asks to `다시 보내줘`, first check and resend the verified existing `MEDIA:` path. But if the user says `처음부터 다시`, `다시 만들어서`, `새로 만들어`, `이전 거 말고`, or corrects that they wanted a regenerated card, do **not** reuse the previous PNG. Re-fetch/verify the current game data, create a new HTML source and new PNG filename, run visual QA again, then send the newly generated `MEDIA:` path. Treat this as a workflow preference: the user expects action, not an old artifact replay.
+
 ## Data Grounding
 
 Verify current data before designing. Prefer:
 
 - KBO official schedule, GameCenter, box score, standings, and player pages.
-- Naver Sports KBO schedule/record/relay endpoints when they provide richer box-score, relay, or photo data.
+- Naver Sports KBO schedule/preview/record/relay endpoints when they provide richer pregame, box-score, relay, or photo data.
+- For pregame Hanwha cards, use the Naver `/preview` endpoint after schedule discovery; it can provide starters, standings, recent five-game flow, top-player stats, lineup candidates, and head-to-head in one call.
 - Team official announcements and reliable Korean sports news for lineup, injuries, and action photos.
 
-Useful endpoint notes are in `references/naver-kbo-data-sources.md`.
+Useful endpoint notes, including the `/preview` endpoint, are in `references/naver-kbo-data-sources.md`.
 
 Do not invent scores, player photos, starters, lineups, WPA, records, or article images.
 
 ## Image Types
 
 ### Prediction Card
+
+- 상단 첫 화면에 키 플레이어 또는 선발 사진 1~3장을 먼저 배치한다.
+- 사진은 기사컷/액션샷 우선, 증명사진 느낌은 피한다.
+- 근거 블록에는 순위/최근 5경기/선발 또는 라인업 후보의 기록 신호를 함께 보여준다.
+- HTML→PNG 렌더 후 브라우저 시각검증을 거쳐, 번호 오버레이나 디버그 표시가 없는 최종본만 전달한다.
+- 세로가 길어지면 하단을 비우기보다 사진/근거/결과 블록의 비율을 다시 맞춘다.
+
+> 세션별 레이아웃 메모는 `references/prediction-card-validation-checklist.md`와 `references/session-2026-05-30-layout-and-prediction-notes.md`에 축적한다.
+
+## Prediction Card
 
 Use for pre-game picks and `승부예측`.
 
@@ -58,11 +75,13 @@ Required content:
 - Team basic stats when available: AVG, runs, HR, ERA, WHIP.
 - Previous-game result and useful context when available.
 - 2-line Korean rationale.
-- Key players from recent form and matchup context, not season AVG alone.
+- Key players selected from record-based evidence, not season AVG alone.
+- A visible evidence block with the specific record signals that explain the pick: starter trend, recent 5-game flow, key lineup candidates, bullpen load, and any park/weather edge.
+- If possible, show 1-3 player photos for the key players or starter matchup; the photo block should be the visual anchor of the prediction card.
 
 ### Postgame Review Card
 
-Use for `경기 리뷰`, `경기끝`, `오늘 한화경기 리뷰`.
+Use for `경기 리뷰`, `경기끝`, `어제 경기 리뷰`, `오늘 한화경기 리뷰`, or any postgame card request.
 
 Required content:
 
@@ -70,8 +89,12 @@ Required content:
 - Inning score table plus R/H/E/B.
 - Turning points: 3-4 concrete bullets.
 - Starter line and bullpen usage.
-- 3-5 key players with photos and compact stat lines.
+- 1 main protagonist with photo first; add 1-2 secondary players only if the story needs them.
 - For Hanwha, separate `수확` and `숙제`; do not hide bullpen, defense, walk, or stranded-runner issues after a win.
+
+Pitfall: if the user says `리뷰 이미지` or similar, do **not** pivot to today's schedule or a preview. Use the most recent completed game that matches the conversation context; only ask a clarification if no finished game can be inferred.
+
+For official KBO game-center review cards, use the scoreboard and box-score endpoints plus player search/photo lookup documented in `references/kbo-review-endpoints.md`.
 
 ### Standings Card
 
@@ -134,9 +157,12 @@ For card construction:
 - Use strong team-color accents, not full dark backgrounds.
 - Keep scores, team names, and stat labels in separate containers.
 - Use fixed photo containers with `object-fit: cover`.
+- Let the amount of copy decide whether the photo block becomes vertical or horizontal. Do not force a single rigid photo size across all cards.
 - Avoid manual Pillow coordinate drawing for dense cards.
 
 Quality rules are in `references/kbo-card-quality.md`.
+Official review-data workflow and endpoint patterns are in `references/kbo-review-endpoints.md`.
+Session-specific layout/prediction preferences from the 2026-05-30 rebuild are condensed in `references/session-2026-05-30-layout-and-prediction-notes.md`.
 
 ## Final QA
 

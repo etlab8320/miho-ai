@@ -20,6 +20,26 @@ Useful fields from `result.games[]`:
 
 Hanwha team code is usually `HH`.
 
+## Game Preview / Pregame Data
+
+For pregame cards, the preview endpoint is often richer than daily schedule because it includes probable starters, standings snapshots, recent five-game flow, key players, and lineup candidates.
+
+```text
+https://api-gw.sports.naver.com/schedule/games/{gameId}/preview
+```
+
+Useful paths under `result.previewData`:
+
+- `gameInfo` — date/time, stadium, team codes/names.
+- `homeStarter` / `awayStarter` — `playerInfo`, season pitching stats, opponent stats, pitch mix.
+- `homeStandings` / `awayStandings` — rank, W-L-D, win rate, team ERA/AVG/HR.
+- `homeTeamPreviousGames` / `awayTeamPreviousGames` — last five games with result and score.
+- `homeTopPlayer` / `awayTopPlayer` — recent five-game batting stats, opponent stats, season stats, player code.
+- `homeTeamLineUp` / `awayTeamLineUp` — starter entry plus bullpen and batter candidates when full lineup is not yet confirmed.
+- `seasonVsResult` — season head-to-head W-L-D by team code.
+
+Pregame card pattern: query daily schedule to identify the Hanwha game ID, then query `/preview`; use `/record` for yesterday/recent box-score bullpen context only when needed. If `recordData` and `relayData` are null before the game, that is normal — do not treat it as failure.
+
 ## Game Record / Box Score
 
 ```text

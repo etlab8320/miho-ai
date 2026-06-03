@@ -48,10 +48,11 @@ Do not make a plain matplotlib chart, spreadsheet-looking figure, or low-density
    - Player photos are not stretched.
    - Score and teams are immediately readable.
    - No overlap between inning lines, footnotes, or bottom labels.
-8. Send the image as native media:
+8. For Champions League / soccer report cards, see `references/champions-league-report-cards.md` for the ESPN-style match-summary workflow and layout notes.
+9. Send the image as native media:
 
 ```text
-MEDIA:/absolute/path/to/report.png
+MEDIA:<path>
 ```
 
 ## Style direction
