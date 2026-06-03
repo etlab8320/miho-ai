@@ -45,12 +45,16 @@ async def test_routes_staff_schedule_and_roster_plan_without_body_agent() -> Non
 
     def staff_handler(args: dict, **_: object) -> str:
         calls.append(("academy_staff_schedule_day", args))
-        return json.dumps({"ok": True, "message": "2026-06-03 출근 예정 강사는 없어."}, ensure_ascii=False)
+        return json.dumps({"ok": True, "message": "2026-06-03 출근 예정 강사\n저녁반: 오철민, 정의솔"}, ensure_ascii=False)
 
     def assignment_handler(args: dict, **_: object) -> str:
         calls.append(("academy_assignment_by_date", args))
         return json.dumps(
-            {"ok": True, "message": "2026-06-03 반배치: 4개 반, 배정 38명, 미배정 1명"},
+            {
+                "ok": True,
+                "message": "2026-06-03 반배치: 4개 반, 배정 38명, 미배정 1명\n"
+                "저녁반\n- 1반 / 오철민: 백지민, 김유준",
+            },
             ensure_ascii=False,
         )
 
@@ -74,3 +78,5 @@ async def test_routes_staff_schedule_and_roster_plan_without_body_agent() -> Non
     assert "출근일정" in route.response_text
     assert "학생 반배치" in route.response_text
     assert "반배치: 4개 반" in route.response_text
+    assert "저녁반: 오철민, 정의솔" in route.response_text
+    assert "1반 / 오철민" in route.response_text

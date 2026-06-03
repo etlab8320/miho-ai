@@ -83,6 +83,40 @@ def test_staff_schedule_tool_excludes_owner_for_instructor_question_by_default()
     assert "정으뜸" not in result["message"]
 
 
+def test_staff_schedule_tool_includes_class_assigned_instructors() -> None:
+    class StaffScheduleClient:
+        def get_peak_assignments(self, day: date, *, time_slot: str = "") -> dict:
+            return {
+                "date": day.isoformat(),
+                "slots": {
+                    "evening": {
+                        "waitingInstructors": [{"id": 1, "name": "정으뜸", "isOwner": True}],
+                        "classes": [
+                            {
+                                "classNumber": 1,
+                                "instructors": [{"id": 2, "name": "오철민", "isOwner": False}],
+                            },
+                            {
+                                "classNumber": 2,
+                                "instructors": [{"id": 3, "name": "정의솔", "isOwner": False}],
+                            },
+                        ],
+                    }
+                },
+            }
+
+    result = _payload(
+        _staff_schedule_day_tool_handler(
+            {"date": "2026-06-03"},
+            client=StaffScheduleClient(),
+        )
+    )
+
+    assert [row["name"] for row in result["instructors"]] == ["오철민", "정의솔"]
+    assert "저녁반: 오철민, 정의솔" in result["message"]
+    assert "정으뜸" not in result["message"]
+
+
 def test_staff_schedule_tool_can_include_owner_when_request_says_so() -> None:
     class StaffScheduleClient:
         def get_peak_assignments(self, day: date, *, time_slot: str = "") -> dict:

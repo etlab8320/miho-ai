@@ -52,6 +52,7 @@ def _slot_instructors(body: Any, *, include_owner: bool) -> list[dict[str, Any]]
     if isinstance(body, dict):
         raw_rows.extend(_dict_rows(body.get("waitingInstructors")))
         for class_row in _dict_rows(body.get("classes")):
+            raw_rows.extend(_dict_rows(class_row.get("instructors")))
             instructor = class_row.get("instructor")
             if isinstance(instructor, dict):
                 raw_rows.append(instructor)
