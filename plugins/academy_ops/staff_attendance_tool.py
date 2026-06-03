@@ -12,6 +12,50 @@ from .response_guidance import academy_response_guidance
 from .staff_attendance import staff_attendance_for_day, staff_attendance_for_range
 
 
+def register_staff_attendance_tools(ctx: Any) -> None:
+    ctx.register_tool(
+        name="academy_staff_attendance_day",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "조회 날짜. LLM이 해석한 YYYY-MM-DD 형식.",
+                },
+            },
+            "required": ["date"],
+            "additionalProperties": False,
+        },
+        handler=_staff_attendance_day_tool_handler,
+        description=(
+            "Return PACA instructor attendance for one day from live instructor attendance records. "
+            "Use for teacher/staff/instructor work-attendance questions. "
+            "Do not call with empty arguments; resolve natural-language dates to YYYY-MM-DD first."
+        ),
+    )
+    ctx.register_tool(
+        name="academy_staff_attendance_range",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "staff_query": {"type": "string", "description": "조회할 강사 이름. 전체면 빈 문자열."},
+                "start_date": {"type": "string", "description": "조회 시작일. YYYY-MM-DD 형식."},
+                "end_date": {"type": "string", "description": "조회 종료일. YYYY-MM-DD 형식."},
+            },
+            "required": ["start_date", "end_date"],
+            "additionalProperties": False,
+        },
+        handler=_staff_attendance_range_tool_handler,
+        description=(
+            "Return PACA instructor attendance records for a date range, optionally filtered by instructor name. "
+            "Use for monthly/weekly staff attendance counts, worked days, or a specific instructor's attendance history. "
+            "For future scheduled work, use academy_staff_schedule_day instead."
+        ),
+    )
+
+
 def _staff_attendance_day_tool_handler(args: dict[str, Any] | None = None, **kwargs: Any) -> str:
     payload = args or {}
     target_day = _date_arg(payload.get("date"))
