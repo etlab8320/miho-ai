@@ -38,6 +38,11 @@ from miho_cli.setup import (
     prompt, prompt_choice, prompt_yes_no,
 )
 from miho_cli.colors import Colors, color
+from miho_cli.runtime_venv import (
+    detect_venv_dir as _shared_detect_venv_dir,
+    project_venv_dir,
+    venv_python_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1966,37 +1971,13 @@ def _detect_venv_dir() -> Path | None:
     directory names under PROJECT_ROOT.
     Returns ``None`` when no virtualenv can be found.
     """
-    # If we're running inside a virtualenv, sys.prefix points to it.
-    if sys.prefix != sys.base_prefix:
-        venv = Path(sys.prefix)
-        if venv.is_dir():
-            return venv
-
-    # uv and some other tools set VIRTUAL_ENV without changing sys.prefix.
-    # This catches `uv run` where sys.prefix == sys.base_prefix but the
-    # environment IS a venv.  (#8620)
-    _virtual_env = os.environ.get("VIRTUAL_ENV")
-    if _virtual_env:
-        venv = Path(_virtual_env)
-        if venv.is_dir():
-            return venv
-
-    # Fallback: check common virtualenv directory names under the project root.
-    for candidate in (".venv", "venv"):
-        venv = PROJECT_ROOT / candidate
-        if venv.is_dir():
-            return venv
-
-    return None
+    return _shared_detect_venv_dir(PROJECT_ROOT)
 
 
 def get_python_path() -> str:
     venv = _detect_venv_dir()
     if venv is not None:
-        if is_windows():
-            venv_python = venv / "Scripts" / "python.exe"
-        else:
-            venv_python = venv / "bin" / "python"
+        venv_python = venv_python_path(venv, windows=is_windows())
         if venv_python.exists():
             return str(venv_python)
     return sys.executable
@@ -2122,7 +2103,8 @@ def _build_service_path_dirs(project_root: Path | None = None) -> list[str]:
 
     candidates = []
 
-    venv_bin = project_root / "venv" / "bin"
+    detected_venv = project_venv_dir(project_root)
+    venv_bin = detected_venv / "bin" if detected_venv else project_root / "venv" / "bin"
     if _is_dir(venv_bin):
         candidates.append(str(venv_bin))
     elif sys.prefix != sys.base_prefix:

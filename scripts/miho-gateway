@@ -58,8 +58,12 @@ def get_launchd_plist_path() -> Path:
 
 def get_python_path() -> str:
     """Get the path to the Python interpreter."""
-    # Prefer the venv if it exists
-    venv_python = PROJECT_DIR / "venv" / "bin" / "python"
+    from miho_cli.runtime_venv import project_venv_dir, venv_python_path
+
+    venv = project_venv_dir(PROJECT_DIR)
+    if venv is None:
+        return sys.executable
+    venv_python = venv_python_path(venv, windows=is_windows())
     if venv_python.exists():
         return str(venv_python)
     return sys.executable

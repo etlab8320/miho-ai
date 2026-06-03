@@ -14,7 +14,7 @@ Install the Miho AI CLI wrapper from this checkout.
 Environment:
   MIHO_HOME       Miho data directory. Default: $HOME/.miho
   MIHO_BIN_DIR    CLI install directory. Default: $HOME/.local/bin
-  MIHO_SYNC_ARGS  uv sync args. Default: --extra dev
+  MIHO_SYNC_ARGS  uv sync args. Default: --extra all --extra dev
 
 Options:
   --skip-sync     Skip uv dependency sync, useful for tests.
@@ -46,7 +46,7 @@ if [[ "$SKIP_SYNC" != "1" ]]; then
   if [[ -n "${MIHO_SYNC_ARGS:-}" ]]; then
     read -r -a sync_args <<< "$MIHO_SYNC_ARGS"
   else
-    sync_args=(--extra dev)
+    sync_args=(--extra all --extra dev)
   fi
   (cd "$REPO_ROOT" && uv sync "${sync_args[@]}")
 fi

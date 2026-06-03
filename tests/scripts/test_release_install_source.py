@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tomllib
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -48,3 +49,16 @@ def test_windows_root_installer_is_public_short_url_entrypoint():
 
     assert "https://raw.githubusercontent.com/etlab8320/miho-ai/$ref/scripts/install.ps1" in text
     assert "raw.githubusercontent.com/etlab8320/miho-ai/main/install.ps1" in text
+
+
+def test_release_profile_includes_local_embeddings_and_prefetch():
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    optional = pyproject["project"]["optional-dependencies"]
+
+    assert "fastembed==0.8.0" in optional["local-embeddings"]
+    assert "miho-agent[local-embeddings]" in optional["all"]
+
+    for path in (REPO_ROOT / "scripts" / "install.sh", REPO_ROOT / "scripts" / "install.ps1"):
+        text = path.read_text(encoding="utf-8")
+        assert "MIHO_SKIP_MODEL_PREFETCH" in text
+        assert "intfloat/multilingual-e5-large" in text

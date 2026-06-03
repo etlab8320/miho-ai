@@ -38,3 +38,11 @@ def test_install_miho_creates_native_launcher(tmp_path):
     assert 'export MIHO_HOME="' in launcher_text
     assert "MIHO_DEFAULT_SKIN" not in launcher_text
     assert "exec uv run miho" in launcher_text
+
+
+def test_install_miho_default_sync_matches_release_profile():
+    repo_root = Path(__file__).resolve().parents[2]
+    text = (repo_root / "scripts" / "install-miho.sh").read_text(encoding="utf-8")
+
+    assert "Default: --extra all --extra dev" in text
+    assert "sync_args=(--extra all --extra dev)" in text
