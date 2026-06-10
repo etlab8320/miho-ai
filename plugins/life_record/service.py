@@ -5,13 +5,24 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 from .consensus import all_confirmed, reconcile
-from .pdf_reader import crop_id_photo, extract_pdf, render_page_images
+from .pdf_reader import (
+    create_text_pdf,
+    convert_mhtml_to_pdf,
+    crop_id_photo,
+    extract_mhtml_text,
+    extract_pdf,
+    is_mhtml_path,
+    is_supported_document_path,
+    preferred_document_suffix,
+    render_page_images,
+)
 from .repository import (
     confirm_rows,
     db_path,
@@ -52,24 +63,42 @@ async def ingest_life_record(
     runs: int = DEFAULT_RUNS,
     source_thread: str = "",
 ) -> dict[str, Any]:
-    """Ingest a 생기부 PDF. If it has a real text layer, structure that text (scores
-    are exact digital text → 100%); otherwise fall back to vision over page images
-    with a hi-res majority-vote tie-break. Then save → verify → promote."""
-    _validate_pdf_path(pdf_path)
+    """Ingest a 생기부 PDF or Chrome-saved MHTML/MHT document.
+
+    MHTML uses a source-text fast path first (Chrome-saved MHTML normally embeds
+    the full HTML text), then creates/normalizes a PDF only for review/storage.
+    PDF inputs keep the existing text-layer/vision/consensus path. Then save →
+    verify → promote.
+    """
+    _validate_document_path(pdf_path)
     bundle_dir.mkdir(parents=True, exist_ok=True)
-    extracted = extract_pdf(pdf_path)
+    source_document_path = pdf_path
+    stored_original_path = _store_original_document(bundle_dir, source_document_path) if is_mhtml_path(source_document_path) else None
+    mhtml_page_texts = extract_mhtml_text(source_document_path) if is_mhtml_path(source_document_path) else []
+    processing_pdf_path = _normalize_to_pdf(source_document_path, bundle_dir, page_texts=mhtml_page_texts)
+    extracted = extract_pdf(processing_pdf_path)
     # P2-6: cap how many pages we render/send so a huge or malformed PDF can't
     # blow up memory/time. Excess pages are skipped (and logged).
     render_pages: list[int] | None = None
     if extracted.page_count > MAX_PAGES:
         logger.warning("life_record: %s has %d pages (> cap %d) — processing only the first %d",
-                       pdf_path.name, extracted.page_count, MAX_PAGES, MAX_PAGES)
+                       processing_pdf_path.name, extracted.page_count, MAX_PAGES, MAX_PAGES)
         render_pages = list(range(MAX_PAGES))
-    page_pngs = render_page_images(pdf_path, zoom=RENDER_ZOOM, pages=render_pages)  # for the review gallery
+    page_pngs = render_page_images(processing_pdf_path, zoom=RENDER_ZOOM, pages=render_pages)  # for the review gallery
     _save_review_pages(bundle_dir, page_pngs)
 
     results: list[dict[str, Any]] = []
-    if has_text_layer(extracted.page_texts):
+    if has_text_layer(mhtml_page_texts):
+        page_count = len(mhtml_page_texts)
+        extraction_method = "codex_mhtml_source_text_v1"
+        text_source = mhtml_page_texts
+        for _ in range(max(1, runs)):
+            results.append(await extract_from_text(text_source, resolver=text_resolver))
+        consensus = reconcile(results)
+        while not all_confirmed(consensus) and len(results) < MAX_RUNS:
+            results.append(await extract_from_text(text_source, resolver=text_resolver))
+            consensus = reconcile(results)
+    elif has_text_layer(extracted.page_texts):
         # Text-layer PDF: numbers are exact digital text — no OCR drift. The
         # TEXT_PROMPT tells the LLM to reconstruct the (line-break-mangled) text,
         # which already hits 100% on real samples (기아림 57/57). (markdown via
@@ -92,7 +121,7 @@ async def ingest_life_record(
             results.append(await extract_life_record(images, resolver=resolver))
         consensus = reconcile(results)
         if not all_confirmed(consensus) and len(results) < MAX_RUNS:
-            hi_images = [to_data_url(png) for png in render_page_images(pdf_path, zoom=HIRES_ZOOM, pages=render_pages)]
+            hi_images = [to_data_url(png) for png in render_page_images(processing_pdf_path, zoom=HIRES_ZOOM, pages=render_pages)]
             while not all_confirmed(consensus) and len(results) < MAX_RUNS:
                 results.append(await extract_life_record(hi_images, resolver=resolver))
                 consensus = reconcile(results)
@@ -101,13 +130,13 @@ async def ingest_life_record(
     # Scanned PDF: the whole page is one image, so extract_pdf grabbed the full page
     # as the "photo". Crop it down to just the ID photo via vision. Text-layer PDFs
     # already embed a clean ID photo, so leave those.
-    if not has_text_layer(extracted.page_texts):
+    if not has_text_layer(mhtml_page_texts) and not has_text_layer(extracted.page_texts):
         try:
-            first_page = render_page_images(pdf_path, zoom=2.0, pages=[0])
+            first_page = render_page_images(processing_pdf_path, zoom=2.0, pages=[0])
             if first_page:
                 bbox = await locate_id_photo(to_data_url(first_page[0]), resolver=resolver)
                 if bbox:
-                    cropped = crop_id_photo(pdf_path, bbox)
+                    cropped = crop_id_photo(processing_pdf_path, bbox)
                     if cropped:
                         photo = cropped
         except Exception:
@@ -115,10 +144,16 @@ async def ingest_life_record(
     raw_text = json.dumps(consensus, ensure_ascii=False)
     result = save_import(
         bundle_dir=bundle_dir,
-        pdf_path=pdf_path,
+        pdf_path=processing_pdf_path,
         page_count=page_count,
         raw_text=raw_text,
-        metadata={"runs": len(results), "method": extraction_method},
+        metadata={
+            "runs": len(results),
+            "method": extraction_method,
+            "source_format": "mhtml" if is_mhtml_path(source_document_path) else "pdf",
+            "source_document_path": str(source_document_path),
+            "stored_original_path": str(stored_original_path) if stored_original_path else None,
+        },
         consensus=consensus,
         photo=photo,
         extraction_method=extraction_method,
@@ -150,6 +185,9 @@ async def ingest_life_record(
         "runs": len(results),
         "pending_grades": pending_grades,
         "photo_display_path": _copy_photo_for_display(result.get("photo_paths") or []),
+        "source_document_path": str(source_document_path),
+        "stored_original_path": str(stored_original_path) if stored_original_path else None,
+        "converted_pdf_path": str(processing_pdf_path) if is_mhtml_path(source_document_path) else None,
     }
 
 
@@ -210,9 +248,19 @@ def delete_life_record_bundle(bundle_dir: Path) -> dict[str, Any]:
 
 async def looks_like_life_record(pdf_path: Path, *, resolver: VisionResolver | None = None) -> bool:
     """Cheap gate: render only the first page and ask the model if it's a 생기부.
-    Lets the gateway auto-route any attached PDF without the user naming a tool —
-    and without misrouting non-생기부 PDFs (they return no)."""
-    images = [to_data_url(png) for png in render_page_images(pdf_path, zoom=2.0, pages=[0])]
+    Lets the gateway auto-route any attached PDF/MHTML without the user naming a
+    tool — and without misrouting non-생기부 documents (they return no)."""
+    _validate_document_path(pdf_path)
+    if is_mhtml_path(pdf_path):
+        source_page_texts = extract_mhtml_text(pdf_path)
+        source_text = "\n".join(source_page_texts)
+        if _looks_like_life_record_text(source_text):
+            return True
+        if source_text.strip():
+            return False
+    with tempfile.TemporaryDirectory(prefix="miho_life_record_gate_") as tmp:
+        gate_path = _normalize_to_pdf(pdf_path, Path(tmp))
+        images = [to_data_url(png) for png in render_page_images(gate_path, zoom=2.0, pages=[0])]
     if not images:
         return False
     from . import vision_extractor as _vx
@@ -229,13 +277,21 @@ def format_ingest_summary(result: dict[str, Any]) -> str:
     ident = result.get("identity") or {}
     counts = result.get("counts") or {}
     name = ident.get("name") or "학생"
-    lines = [f"📄 {name} 생기부를 정리해서 DB에 저장했어."]
+    verification = result.get("verification") or {}
+    verified = verification.get("status") == "pass" and not verification.get("human_review_required")
+    if verified:
+        lines = [f"📄 {name} 생기부를 검증 통과 상태로 스레드 DB에 저장했어."]
+    else:
+        lines = [f"📄 {name} 생기부 원본을 스레드 DB에 보관했어. 구조화 결과는 검수 필요 상태야."]
     if result.get("photo_display_path"):
         lines.append(f"MEDIA:{result['photo_display_path']}")
     lines.append(
         f"- 성적 {counts.get('subject_grade_rows', 0)} · 세특 {counts.get('special_note_rows', 0)} · "
         f"출결 {counts.get('attendance_rows', 0)} · 수상 {counts.get('award_rows', 0)}"
     )
+    if not verified:
+        failed = verification.get("failed_rounds", 0)
+        lines.append(f"- 검증 상태: {verification.get('status', 'needs_review')} · 실패 라운드 {failed}건")
     pending_grades = result.get("pending_grades") or []
     if pending_grades:
         lines.append(f"\n⚠️ 점수 검수 필요 {len(pending_grades)}건 (원본과 대조해 확정):")
@@ -249,6 +305,8 @@ def format_ingest_summary(result: dict[str, Any]) -> str:
     promoted = result.get("promoted")
     if result.get("consensus_complete") and promoted and promoted.get("ok"):
         lines.append("- 전 항목 합의 완료 → 중앙 학생DB에 저장됨 (이후 life_record_lookup으로 조회 가능)")
+    elif promoted and not promoted.get("ok"):
+        lines.append(f"- 중앙 학생DB 승격 보류: {promoted.get('reason') or '검수/신원 확인 필요'}")
     if result.get("review_path"):
         lines.append(f"- (PC 상세 검수표·원본 페이지 포함: {result['review_path']})")
     return "\n".join(lines)
@@ -291,8 +349,45 @@ def _safe_photo(pdf_path: Path) -> Any:
         return None
 
 
+def _normalize_to_pdf(document_path: Path, bundle_dir: Path, *, page_texts: list[str] | None = None) -> Path:
+    if is_mhtml_path(document_path):
+        converted_dir = bundle_dir / "converted"
+        texts = page_texts if page_texts is not None else extract_mhtml_text(document_path)
+        if has_text_layer(texts):
+            return create_text_pdf(texts, converted_dir / f"{document_path.stem}_source_text.pdf")
+        return convert_mhtml_to_pdf(document_path, converted_dir)
+    return document_path
+
+
+def _looks_like_life_record_text(text: str) -> bool:
+    compact = " ".join((text or "").split())
+    if not compact:
+        return False
+    markers = ("학교생활기록부", "생활기록부", "학생부", "교과학습발달상황", "창의적 체험활동", "출결상황")
+    return any(marker in compact for marker in markers)
+
+
+def _store_original_document(bundle_dir: Path, document_path: Path) -> Path:
+    source_dir = bundle_dir / "sources"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    suffix = preferred_document_suffix(document_path)
+    try:
+        from .utils import sha256_file
+
+        digest = sha256_file(document_path)[:16]
+    except Exception:
+        digest = "source"
+    stored = source_dir / f"{digest}_original{suffix}"
+    shutil.copy2(document_path, stored)
+    return stored
+
+
+def _validate_document_path(document_path: Path) -> None:
+    if not document_path.exists():
+        raise ValueError(f"생기부 파일 경로를 찾을 수 없어: {document_path}")
+    if not is_supported_document_path(document_path):
+        raise ValueError("생기부는 PDF/MHTML/MHT 또는 해당 형식으로 확인되는 캐시 파일이어야 해.")
+
+
 def _validate_pdf_path(pdf_path: Path) -> None:
-    if not pdf_path.exists():
-        raise ValueError(f"PDF 경로를 찾을 수 없어: {pdf_path}")
-    if pdf_path.suffix.lower() != ".pdf":
-        raise ValueError("생기부는 PDF 파일이어야 해.")
+    _validate_document_path(pdf_path)

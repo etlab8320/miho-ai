@@ -19,7 +19,9 @@ _ROW_TABLES = ("subject_grades", "subject_special_notes", "attendance_records", 
 def run_verification(db_path: Path, document_id: int, *, consensus: dict[str, Any] | None = None) -> dict[str, Any]:
     rounds = [
         _extraction_round(db_path, document_id),
+        _identity_round(db_path, document_id),
         _consensus_round(db_path, document_id),
+        _anomaly_round(db_path, document_id),
         _readiness_round(db_path, document_id),
     ]
     for item in rounds:
@@ -69,13 +71,61 @@ def _consensus_round(db_path: Path, document_id: int) -> dict[str, Any]:
         conn.close()
 
 
+def _identity_round(db_path: Path, document_id: int) -> dict[str, Any]:
+    conn = connect(db_path)
+    try:
+        doc = _document(conn, document_id)
+        name = str(doc["name"] or "").strip() if doc else ""
+        school = str(doc["school_name"] or "").strip() if doc else ""
+        birth = str(doc["birth_masked"] or "").strip() if doc else ""
+        checks = [
+            _check("student_name_identified", _is_real_name(name), f"name={name or '-'}"),
+            _check("school_identified", bool(school), f"school={school or '-'}"),
+            _check("identity_key_complete", bool(name and school and birth), f"birth_masked={'yes' if birth else 'no'}"),
+        ]
+        return _round("identity", checks)
+    finally:
+        conn.close()
+
+
+def _anomaly_round(db_path: Path, document_id: int) -> dict[str, Any]:
+    conn = connect(db_path)
+    try:
+        bad_subjects = _artifact_count(
+            conn,
+            document_id,
+            "subject_grades",
+            ("category", "subject", "raw_score", "rank_grade"),
+        )
+        bad_notes = _artifact_count(
+            conn,
+            document_id,
+            "subject_special_notes",
+            ("subject", "note_text"),
+        )
+        numeric_categories = int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM subject_grades WHERE student_document_id=? AND TRIM(IFNULL(category,'')) GLOB '[0-9]*'",
+                (document_id,),
+            ).fetchone()["n"]
+        )
+        checks = [
+            _check("no_grade_artifacts", bad_subjects == 0, f"artifact_rows={bad_subjects}"),
+            _check("no_note_artifacts", bad_notes == 0, f"artifact_rows={bad_notes}"),
+            _check("no_numeric_categories", numeric_categories == 0, f"rows={numeric_categories}"),
+        ]
+        return _round("artifact_scan", checks)
+    finally:
+        conn.close()
+
+
 def _readiness_round(db_path: Path, document_id: int) -> dict[str, Any]:
     conn = connect(db_path)
     try:
         pending = _pending_rows(conn, document_id)
         checks = [
             _check("thread_scoped_db", "life_records.sqlite3" in db_path.name, str(db_path)),
-            _check("review_status_tracked", True, f"needs_review_rows={pending}"),
+            _check("no_pending_review_rows", pending == 0, f"needs_review_rows={pending}"),
             _check("verification_history_written", True, "current run recorded"),
         ]
         return _round("human_review_gate", checks)
@@ -85,7 +135,7 @@ def _readiness_round(db_path: Path, document_id: int) -> dict[str, Any]:
 
 def _document(conn: sqlite3.Connection, document_id: int) -> dict[str, Any] | None:
     row = conn.execute(
-        "SELECT d.*, s.name, s.school_name FROM student_documents d JOIN students s ON s.id=d.student_id WHERE d.id=?",
+        "SELECT d.*, s.name, s.school_name, s.birth_masked FROM student_documents d JOIN students s ON s.id=d.student_id WHERE d.id=?",
         (document_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -105,6 +155,24 @@ def _pending_rows(conn: sqlite3.Connection, document_id: int) -> int:
 
 def _check(name: str, ok: bool, detail: str) -> dict[str, Any]:
     return {"check": name, "ok": bool(ok), "detail": detail}
+
+
+def _is_real_name(name: str) -> bool:
+    return bool(name and name != "미상" and not name.isdigit() and name not in {"성명", "담임성명"})
+
+
+def _artifact_count(conn: sqlite3.Connection, document_id: int, table: str, columns: tuple[str, ...]) -> int:
+    patterns = ("이수학점", "문서확인", "발급번호", "정부24", "upload", "transfer", "전송 용량", "세 부 능력")
+    clauses = []
+    params: list[Any] = [document_id]
+    for column in columns:
+        for pattern in patterns:
+            clauses.append(f"IFNULL({column}, '') LIKE ?")
+            params.append(f"%{pattern}%")
+    if not clauses:
+        return 0
+    sql = f"SELECT COUNT(*) AS n FROM {table} WHERE student_document_id=? AND ({' OR '.join(clauses)})"
+    return int(conn.execute(sql, params).fetchone()["n"])
 
 
 def _round(name: str, checks: list[dict[str, Any]]) -> dict[str, Any]:

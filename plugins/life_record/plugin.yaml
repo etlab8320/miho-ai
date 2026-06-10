@@ -1,6 +1,6 @@
 name: life_record
 version: 0.1.0
-description: "Thread-scoped Korean school life record PDF ingestion, verification, and search."
+description: "Thread-scoped Korean school life record PDF/MHTML ingestion, strict verification, and search."
 author: "ET Lab"
 kind: standalone
 commands:
@@ -11,3 +11,5 @@ tools:
   - life_record_search
   - life_record_summary
   - life_record_delete
+  - life_record_lookup
+  - life_record_confirm

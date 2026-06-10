@@ -27,8 +27,8 @@ def _life_record_command(raw_args: str = "") -> str:
         return _summary_tool_handler({})
     return (
         "생기부 도구\n"
-        "- PDF 업로드 후 `life_record_ingest_pdf`가 현재 Discord 스레드 전용 SQLite DB를 만듭니다.\n"
-        "- 원본 PDF와 학생 사진은 같은 스레드 폴더에만 보관합니다.\n"
+        "- PDF/MHTML 업로드 후 `life_record_ingest_pdf`가 현재 Discord 스레드 전용 SQLite DB를 만듭니다.\n"
+        "- 원본 파일과 학생 사진은 같은 스레드 폴더에만 보관합니다.\n"
         "- 장기기억/RAG에는 원문을 넣지 않습니다.\n"
         "- 검수 전 데이터는 needs_review로 다룹니다."
     )
@@ -64,12 +64,14 @@ def _block_life_record_handcoding(tool_name: Any = None, args: Any = None, **_: 
     return None
 
 
-def _pdf_attachment(event: Any) -> Path | None:
-    """Return the first attached PDF's local path, if any."""
+def _life_record_attachment(event: Any) -> Path | None:
+    """Return the first attached supported local document path, if any."""
+    from .pdf_reader import is_supported_document_path
+
     for url in getattr(event, "media_urls", None) or []:
-        text = str(url)
-        if text.lower().endswith(".pdf") and Path(text).exists():
-            return Path(text)
+        path = Path(str(url))
+        if is_supported_document_path(path):
+            return path
     return None
 
 
@@ -88,37 +90,70 @@ def _is_authorized_for_life_record(gateway: Any, source: Any) -> bool:
 
 
 async def _capture_gateway_context(event: Any = None, gateway: Any = None, **_: Any) -> dict[str, Any]:
-    """Capture thread context, and auto-route an attached 생기부 PDF straight into
-    life_record_ingest_pdf — no tool name or command needed. A PDF that isn't a
-    생기부 returns 'no' from the vision gate and passes through untouched.
+    """Capture thread context, and auto-route an attached 생기부 PDF/MHTML straight
+    into life_record_ingest_pdf — no tool name or command needed. A document that
+    isn't a 생기부 returns 'no' from the vision gate and passes through untouched.
 
     생기부 is PII, so auto-ingest only fires for an *authorized* sender; otherwise
-    the PDF passes through untouched (the gateway's normal auth/pairing flow runs)."""
+    the file passes through untouched (the gateway's normal auth/pairing flow runs)."""
     capture_gateway_context(event)
     try:
         urls = getattr(event, "media_urls", None) or []
-        pdf = _pdf_attachment(event)
-        if pdf is None:
+        document = _life_record_attachment(event)
+        if document is None:
             if urls:
-                logger.info("life_record pre-dispatch: %d attachment(s), no usable PDF: %s", len(urls), urls[:3])
+                logger.info("life_record pre-dispatch: %d attachment(s), no usable PDF/MHTML: %s", len(urls), urls[:3])
             return {"action": "allow"}
         # PII guard (P1-3): never auto-process a 생기부 from an unauthorized sender.
         if not _is_authorized_for_life_record(gateway, getattr(event, "source", None)):
             logger.info("life_record auto-route skipped: sender not authorized for 생기부 PII")
             return {"action": "allow"}
-        logger.info("life_record pre-dispatch: PDF detected (%s) — running 생기부 vision gate", pdf.name)
+        logger.info("life_record pre-dispatch: document detected (%s) — running 생기부 vision gate", document.name)
         from .service import format_ingest_summary, ingest_life_record, looks_like_life_record
 
-        is_lr = await looks_like_life_record(pdf)
+        is_lr = await looks_like_life_record(document)
         logger.info("life_record pre-dispatch: looks_like_life_record=%s", is_lr)
         if not is_lr:
             return {"action": "allow"}
-        result = await ingest_life_record(pdf, current_life_record_dir(), source_thread=THREAD_ID.get())
+        if _should_rewrite_to_life_record_tool(gateway, event):
+            return {"action": "rewrite", "text": _tool_request_text(event, document)}
+        result = await ingest_life_record(document, current_life_record_dir(), source_thread=THREAD_ID.get())
         logger.info("life_record pre-dispatch: auto-ingested document_id=%s", result.get("document_id"))
         return {"action": "respond", "text": format_ingest_summary(result)}
     except Exception as exc:  # never block other plugins on a routing failure
         logger.info("life_record auto-route skipped: %s", exc)
         return {"action": "allow"}
+
+
+def _should_rewrite_to_life_record_tool(gateway: Any, event: Any) -> bool:
+    source = getattr(event, "source", None)
+    if gateway is None or source is None:
+        return False
+    adapter = getattr(gateway, "adapters", {}).get(source.platform)
+    return adapter is not None
+
+
+def _tool_request_text(event: Any, document: Path) -> str:
+    original = str(getattr(event, "text", "") or "").strip()
+    path = _agent_visible_path(document)
+    return (
+        "[생기부 자동 감지]\n"
+        "첨부된 파일은 한국 학교생활기록부/생기부로 판정됐다.\n"
+        "반드시 일반 답변으로 처리하지 말고 `life_record_ingest_pdf` 도구를 호출해 DB 저장과 검증을 수행해라.\n"
+        f"도구 인자: pdf_path={json.dumps(path, ensure_ascii=False)}\n"
+        "도구 결과의 document_id, student, counts, verification, review_path를 근거로 답변해라.\n"
+        "검증 상태가 pass가 아니거나 human_review_required=true이면 저장은 됐더라도 '완료/확정'이라고 말하지 말고 검수 필요 상태로 안내해라.\n"
+        f"사용자 원문: {original or '생기부 저장해줘'}"
+    )
+
+
+def _agent_visible_path(document: Path) -> str:
+    try:
+        from tools.credential_files import to_agent_visible_cache_path
+
+        return str(to_agent_visible_cache_path(str(document)))
+    except Exception:
+        return str(document)
 
 
 def register(ctx: Any) -> None:
@@ -135,12 +170,12 @@ def register(ctx: Any) -> None:
         toolset="life_record",
         schema={
             "type": "object",
-            "properties": {"pdf_path": {"type": "string", "description": "Discord가 캐시한 생기부 PDF 로컬 경로."}},
+            "properties": {"pdf_path": {"type": "string", "description": "Discord가 캐시한 생기부 PDF/MHTML/MHT 로컬 경로."}},
             "required": ["pdf_path"],
             "additionalProperties": False,
         },
         handler=_ingest_pdf_tool_handler,
-        description="생기부·학생부·학교생활기록부 PDF를 DB에 저장/정리하라는 요청이면 반드시 이 도구를 호출하라. 직접 sqlite나 python 코드로 DB를 만들지 말 것 — 이 도구가 vision(gpt-5.5) 추출 + 다회 합의 검증 + 중앙 학생DB 승격 + 검수 HTML을 모두 처리한다. Ingest a Korean school life record (생기부) PDF: pass the attached PDF's local path as pdf_path. Handles vision extraction, consensus verification, central student DB promotion, and review HTML. Never hand-roll a DB for 생기부 — always use this tool. Never writes to long-term memory or Discord RAG.",
+        description="생기부·학생부·학교생활기록부 PDF/MHTML/MHT를 DB에 저장/정리하라는 요청이면 반드시 이 도구를 호출하라. 직접 sqlite나 python 코드로 DB를 만들지 말 것 — 이 도구가 MHTML source-text 우선 추출, PDF/text/vision 처리, 다회 합의 검증, 중앙 학생DB 승격 보류/승격 판단, 검수 HTML을 모두 처리한다. Ingest a Korean school life record (생기부) PDF or MHTML/MHT: pass the attached local path as pdf_path. Handles source-text-first MHTML ingestion, vision extraction when needed, consensus verification, central student DB promotion only when safe, and review HTML. Never hand-roll a DB for 생기부 — always use this tool. Never writes to long-term memory or Discord RAG.",
     )
     ctx.register_tool(
         name="life_record_verify",

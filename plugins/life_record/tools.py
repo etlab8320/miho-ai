@@ -61,6 +61,9 @@ def _ingest_pdf_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> st
             "document_id": result["document_id"],
             "student": result["identity"],
             "stored_pdf_path": result["stored_pdf_path"],
+            "source_document_path": result.get("source_document_path"),
+            "stored_original_path": result.get("stored_original_path"),
+            "converted_pdf_path": result.get("converted_pdf_path"),
             "photo_paths": result["photo_paths"],
             "review_path": result["review_path"],
             "counts": result["counts"],
@@ -68,6 +71,7 @@ def _ingest_pdf_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> st
             "consensus_complete": result["consensus_complete"],
             "promoted": result["promoted"],
             "runs": result["runs"],
+            "backup_path": result.get("backup_path"),
             "assistant_guidance": "합의되지 않은(needs_review) 항목은 확정 표현 금지. 전부 합의되면 중앙DB로 승격되어 학생 단위 조회가 가능해.",
         }
     )
