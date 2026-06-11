@@ -18,7 +18,16 @@ Template structure (practical_reco_shell.html):
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+
+def _first_number(value: Any) -> float | None:
+    match = re.search(r"-?\d+(?:\.\d+)?", str(value or ""))
+    try:
+        return float(match.group()) if match else None
+    except ValueError:
+        return None
 
 from .hakjong_report_contract import (
     BANNED_PDF_TEXT,
@@ -117,6 +126,16 @@ def _validate_structure(content: dict[str, Any], errors: list[str]) -> None:
                     errors.append(
                         f"content.comparison.rows[{i}].verdict는 '상향' 또는 '적정'이어야 한다 "
                         f"(현재값: {verdict!r})."
+                    )
+                # 도달성 코드 강제: 실기 만점 합산이 전년도 최종합에 못 닿는 학교는
+                # 어떤 verdict로도 리포트에 실을 수 없다 (2026-06-12 강원대 오추천 실사고).
+                max_total = _first_number(row.get("max_total"))
+                final_cut = _first_number(row.get("final_cut"))
+                if max_total is not None and final_cut is not None and max_total < final_cut:
+                    errors.append(
+                        f"content.comparison.rows[{i}] ({row.get('school')} {row.get('department')}): "
+                        f"실기만점 합산 {max_total:g}점이 전년도 최종합 {final_cut:g}점에 미달 — "
+                        "수학적으로 불가능한 학교라 추천 목록에 실을 수 없다. 이 학교를 빼고 다시 호출하라."
                     )
 
     # schools — length must equal comparison.rows length

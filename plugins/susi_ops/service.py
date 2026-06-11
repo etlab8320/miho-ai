@@ -308,7 +308,7 @@ def calculate_score(
             "average_grade": round(average_grade, 4),
         }
 
-    return {
+    result = {
         "university_id": university_id,
         "status": "calculated",
         "confidence": confidence,
@@ -323,6 +323,62 @@ def calculate_score(
         "attendance_seen": bool(attendance),
         "practical_records_seen": sorted(practical_records.keys()),
     }
+    vs_prev = _vs_prev_year(conn, university_id, record_score)
+    if vs_prev:
+        result["vs_prev_year"] = vs_prev
+    return result
+
+
+def _first_number(value: Any) -> float | None:
+    import re
+
+    match = re.search(r"-?\d+(?:\.\d+)?", str(value or ""))
+    try:
+        return float(match.group()) if match else None
+    except ValueError:
+        return None
+
+
+def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: float) -> dict[str, Any] | None:
+    """추측 금지 원칙의 코드판: (내신환산 + 실기만점)이 전년도 최종합 총점에
+    닿는지 판정해 숫자와 함께 돌려준다. 설명문 룰은 도구를 안 부르는 턴에는
+    보이지 않으므로(2026-06-12 강원대 상향 오추천 실사고), 판정을 데이터에 박는다."""
+    try:
+        row = conn.execute(
+            "SELECT c.admission_result_26_json, d.raw_json "
+            "FROM susi_calculation_rules c "
+            "LEFT JOIN db_university_rows d ON d.university_id = c.university_id "
+            "WHERE c.university_id = ?",
+            (university_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    if row is None:
+        return None
+    raw = _json_loads(row["raw_json"], {})
+    practical_max = _first_number(raw.get("실기만점"))
+    r26 = _json_loads(row["admission_result_26_json"], {}) or {}
+    if not isinstance(r26, dict):
+        return None
+    final_cut = _first_number((r26.get("final_pass_cutoff") or {}).get("total_score"))
+    first_cut = _first_number((r26.get("first_pass_cutoff") or {}).get("total_score"))
+    if practical_max is None or final_cut is None:
+        return None
+    max_total = round(record_score + practical_max, 2)
+    reachable = max_total >= final_cut
+    info: dict[str, Any] = {
+        "practical_max": practical_max,
+        "max_possible_total": max_total,
+        "prev_final_total": final_cut,
+        "prev_first_total": first_cut,
+        "reachable_at_full_practical": reachable,
+    }
+    if not reachable:
+        info["warning"] = (
+            f"실기 만점({practical_max:g})을 받아도 합산 {max_total:g}점이 전년도 최종합 "
+            f"{final_cut:g}점에 미달 — 이 학교는 상향으로도 추천 금지."
+        )
+    return info
 
 
 # ---------------------------------------------------------------------------
