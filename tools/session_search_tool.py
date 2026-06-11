@@ -86,12 +86,25 @@ def _resolve_to_parent(db, session_id: str) -> str:
     return cur
 
 
+# Past sessions can hold huge tool results as message content; returning them
+# whole turns one scroll/search call into an 80K+ char context bomb (실사고
+# 2026-06-12: compaction loop). Excerpts are enough for recall — the agent can
+# narrow the window if it needs more.
+_MAX_MESSAGE_CONTENT_CHARS = 1_500
+
+
 def _shape_message(m: Dict[str, Any], anchor_id: Optional[int] = None) -> Dict[str, Any]:
     """Slim a message row for the tool response. Keeps content even if empty."""
+    content = m.get("content")
+    if isinstance(content, str) and len(content) > _MAX_MESSAGE_CONTENT_CHARS:
+        content = (
+            content[:_MAX_MESSAGE_CONTENT_CHARS]
+            + f"\n…(이하 생략 — 원문 {len(content):,}자. 필요하면 window를 좁혀 다시 조회)"
+        )
     entry = {
         "id": m.get("id"),
         "role": m.get("role"),
-        "content": m.get("content"),
+        "content": content,
         "timestamp": m.get("timestamp"),
     }
     if m.get("tool_name"):
