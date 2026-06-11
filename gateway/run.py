@@ -6745,10 +6745,14 @@ class GatewayRunner:
             if _decision.action != "allow":
                 logger.info(
                     "pre_gateway_dispatch decision: action=%s route=%s reason=%s "
-                    "priority=%s candidates=%d platform=%s chat=%s",
+                    "intent=%s confidence=%.2f required_tool=%s priority=%s "
+                    "candidates=%d platform=%s chat=%s",
                     _decision.action,
                     _decision.route or "-",
                     _decision.reason or "-",
+                    _decision.intent or "-",
+                    _decision.confidence,
+                    _decision.required_tool or "-",
                     _decision.priority,
                     len(_decision.candidates),
                     source.platform.value if source.platform else "unknown",

@@ -58,6 +58,9 @@ async def _guard_pre_gateway_dispatch(event: Any = None, **_: Any) -> dict[str, 
             "text": _CLARIFY_TEXT,
             "route": "conversation_guard",
             "reason": "low_information",
+            "intent": "conversation.clarify",
+            "confidence": 0.5,
+            "evidence": ["low_information"],
             "priority": _ROUTE_PRIORITY,
         }
     return {"action": "allow"}

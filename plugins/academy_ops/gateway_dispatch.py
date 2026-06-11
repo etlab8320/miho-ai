@@ -181,6 +181,9 @@ def _route_response(text: str, reason: str) -> dict[str, object]:
         "text": text,
         "route": "academy_ops",
         "reason": reason,
+        "intent": f"academy.{reason}",
+        "confidence": 0.8,
+        "evidence": [reason],
         "priority": ACADEMY_ROUTE_PRIORITY,
     }
 

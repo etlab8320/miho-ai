@@ -134,6 +134,10 @@ async def _capture_gateway_context(event: Any = None, gateway: Any = None, **_: 
                 "text": _tool_request_text(event, document),
                 "route": "life_record",
                 "reason": "supported_document",
+                "intent": "life_record.ingest",
+                "confidence": 0.99,
+                "evidence": ["supported_attachment", document.suffix.lower()],
+                "required_tool": "life_record_ingest_pdf",
                 "priority": _ROUTE_PRIORITY,
             }
         result = await ingest_life_record(document, current_life_record_dir(), source_thread=THREAD_ID.get())
@@ -143,6 +147,10 @@ async def _capture_gateway_context(event: Any = None, gateway: Any = None, **_: 
             "text": format_ingest_summary(result),
             "route": "life_record",
             "reason": "supported_document_direct_ingest",
+            "intent": "life_record.ingest",
+            "confidence": 0.99,
+            "evidence": ["supported_attachment", document.suffix.lower()],
+            "required_tool": "life_record_ingest_pdf",
             "priority": _ROUTE_PRIORITY,
         }
     except Exception as exc:  # never block other plugins on a routing failure

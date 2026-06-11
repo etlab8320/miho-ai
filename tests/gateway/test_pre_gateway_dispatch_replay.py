@@ -26,4 +26,6 @@ def test_pre_gateway_dispatch_replay_cases(case: dict[str, Any]) -> None:
     assert decision.action == expected["action"]
     assert decision.route == expected["route"]
     assert decision.reason == expected["reason"]
+    assert decision.intent == expected["intent"]
+    assert decision.required_tool == expected["required_tool"]
     assert len(decision.candidates) == len(case["candidates"])

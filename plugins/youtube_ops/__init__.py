@@ -53,6 +53,10 @@ def _route_response(text: str, reason: str) -> dict[str, object]:
         "text": text,
         "route": "youtube_ops",
         "reason": reason,
+        "intent": "youtube.analyze",
+        "confidence": 0.9,
+        "evidence": [reason],
+        "required_tool": "youtube_analyze_video",
         "priority": YOUTUBE_ROUTE_PRIORITY,
     }
 

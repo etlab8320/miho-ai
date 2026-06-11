@@ -8,6 +8,9 @@
         "text": "방금 메시지는 의미를 정확히 잡기 어려워요. 원하는 작업을 한 문장으로 다시 말해 주세요.",
         "route": "conversation_guard",
         "reason": "low_information",
+        "intent": "conversation.clarify",
+        "confidence": 0.5,
+        "evidence": ["low_information"],
         "priority": -100
       },
       {
@@ -15,13 +18,19 @@
         "text": "life_record_ingest_pdf 도구로 첨부 생기부를 저장해.",
         "route": "life_record",
         "reason": "supported_document",
+        "intent": "life_record.ingest",
+        "confidence": 0.99,
+        "evidence": ["supported_attachment", ".mhtml"],
+        "required_tool": "life_record_ingest_pdf",
         "priority": 100
       }
     ],
     "expected": {
       "action": "rewrite",
       "route": "life_record",
-      "reason": "supported_document"
+      "reason": "supported_document",
+      "intent": "life_record.ingest",
+      "required_tool": "life_record_ingest_pdf"
     }
   },
   {
@@ -33,6 +42,7 @@
         "text": "질문을 다시 말해 주세요.",
         "route": "generic",
         "reason": "fallback",
+        "confidence": 0.2,
         "priority": 0
       },
       {
@@ -40,13 +50,18 @@
         "text": "학원 계정 연결 링크를 만들었어.",
         "route": "academy_ops",
         "reason": "login_reconnect",
+        "intent": "academy.login_reconnect",
+        "confidence": 0.8,
+        "evidence": ["login_reconnect"],
         "priority": 30
       }
     ],
     "expected": {
       "action": "respond",
       "route": "academy_ops",
-      "reason": "login_reconnect"
+      "reason": "login_reconnect",
+      "intent": "academy.login_reconnect",
+      "required_tool": ""
     }
   },
   {
@@ -58,6 +73,7 @@
         "text": "일반 답변",
         "route": "generic",
         "reason": "fallback",
+        "confidence": 0.2,
         "priority": 0
       },
       {
@@ -65,13 +81,18 @@
         "text": "유튜브 분석 결과",
         "route": "youtube_ops",
         "reason": "youtube_preflight",
+        "intent": "youtube.analyze",
+        "confidence": 0.9,
+        "required_tool": "youtube_analyze_video",
         "priority": 40
       }
     ],
     "expected": {
       "action": "respond",
       "route": "youtube_ops",
-      "reason": "youtube_preflight"
+      "reason": "youtube_preflight",
+      "intent": "youtube.analyze",
+      "required_tool": "youtube_analyze_video"
     }
   },
   {
@@ -90,7 +111,9 @@
     "expected": {
       "action": "allow",
       "route": "",
-      "reason": ""
+      "reason": "",
+      "intent": "",
+      "required_tool": ""
     }
   }
 ]
