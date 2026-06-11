@@ -327,6 +327,7 @@ def record_turn_and_build_prompt(
         "user_id": str(getattr(source, "user_id", "") or ""),
         "user_name": str(getattr(source, "user_name", "") or ""),
         "role": "user",
+        "source_kind": "user_message",
         "text": _compact_text(text),
     }
     active_kind = "miho-discord-thread-rag" if workspace.thread_dir else "miho-discord-channel-rag"
@@ -420,6 +421,7 @@ def record_assistant_turn(
         "user_id": "miho",
         "user_name": "Miho",
         "role": "assistant",
+        "source_kind": "assistant_inference",
         "text": _compact_text(text),
     }
     active_kind = "miho-discord-thread-rag" if workspace.thread_dir else "miho-discord-channel-rag"

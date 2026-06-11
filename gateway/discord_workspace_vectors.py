@@ -14,6 +14,7 @@ from typing import Any
 
 from utils import atomic_json_write
 from gateway.discord_workspace_paths import count_lines, path_lock
+from gateway.discord_workspace_vector_records import vector_payload, vector_record_text
 
 logger = logging.getLogger(__name__)
 
@@ -314,16 +315,6 @@ def _keyword_score(
     return (coverage * coverage_weight) + (precision * precision_weight)
 
 
-def _vector_record_text(record: dict[str, Any]) -> str:
-    parts = [
-        str(record.get("role") or ""),
-        str(record.get("user_name") or ""),
-        str(record.get("event_type") or ""),
-        str(record.get("text") or ""),
-    ]
-    return "\n".join(part for part in parts if part)
-
-
 def _dedupe_key(item: dict[str, Any]) -> str:
     role = str(item.get("role") or "")
     text = _SPACE_RE.sub("", str(item.get("text") or "")).strip().lower()
@@ -346,7 +337,7 @@ def stored_embedding_method(rag_dir: Path) -> str:
 
 def index_rag_record(rag_dir: Path, record: dict[str, Any]) -> dict[str, Any]:
     """Append a searchable vector record for one RAG message."""
-    text = _vector_record_text(record)
+    text = vector_record_text(record)
     vector, method = embed_text(text, input_type="document")
     vector_path = rag_dir / "vectors.jsonl"
     vector_path.parent.mkdir(parents=True, exist_ok=True)
@@ -369,21 +360,7 @@ def index_rag_record(rag_dir: Path, record: dict[str, Any]) -> dict[str, Any]:
         )
     with path_lock(vector_path):
         count = count_lines(vector_path)
-        payload = {
-            "id": record.get("message_id") or f"memory-{count + 1}",
-            "timestamp": record.get("timestamp") or "",
-            "date": record.get("date") or "",
-            "timezone": record.get("timezone") or "",
-            "role": record.get("role") or "",
-            "user_id": record.get("user_id") or "",
-            "user_name": record.get("user_name") or "",
-            "event_type": record.get("event_type") or "",
-            "thread_id": record.get("thread_id") or "",
-            "thread_name": record.get("thread_name") or "",
-            "text": record.get("text") or "",
-            "embedding_method": method,
-            "embedding": vector,
-        }
+        payload = vector_payload(record, fallback_id=f"memory-{count + 1}", method=method, vector=vector)
         with vector_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
     metadata = {
