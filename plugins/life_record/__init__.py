@@ -316,7 +316,12 @@ def register(ctx: Any) -> None:
         toolset="life_record",
         schema={"type": "object", "properties": {"document_id": {"type": "integer"}}, "additionalProperties": False},
         handler=_verify_tool_handler,
-        description="Run extraction, PDF-to-DB traceability, and human-review-gate checks for the current thread's life record DB.",
+        description=(
+            "사용자가 '검수 상태 확인', '추출이 맞는지 확인', '오류 있는지 봐줘'라고 하거나 "
+            "ingest 결과에 needs_review가 남았을 때 호출한다. ingest 직후 자동 호출하지 말 것 — "
+            "ingest 응답에 이미 검수 상태가 포함된다. "
+            "(Runs extraction, PDF-to-DB traceability, and human-review-gate checks for the current thread's life record DB.)"
+        ),
     )
     ctx.register_tool(
         name="life_record_search",
