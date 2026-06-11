@@ -8,16 +8,23 @@ from plugins.academy_ops.hakjong_report_tool import _hakjong_report_package_tool
 
 
 def _locked_html(student: str = "홍길동", university: str = "성균관대학교") -> str:
+    logo_src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+    analysis = (
+        "학생부의 세특, 진로활동, 행특을 대학 평가요소와 대조해 강점과 보완점을 분리하고 "
+        "지원 판단에 바로 반영할 수 있도록 구체적인 다음 행동까지 정리한다. "
+        "대학이 보는 전공적합성, 탐구 지속성, 학교생활 태도, 면접 방어 가능성을 한 문장씩 연결해 "
+        "학부모가 읽어도 근거와 결론이 함께 보이게 만든다."
+    )
     pages = []
     pages.append(
         f"""
         <section class="page cover">
-          <div class="brandline reportIdentity"><img class="logo"><span>학생·학부모 확인용</span></div>
+          <div class="brandline reportIdentity"><img class="logo" src="{logo_src}" alt="맥스체대입시 로고"><span>학생·학부모 확인용</span></div>
           <div class="coverCenter">
             <div class="heroCard">{student} 학생 {university} 스포츠과학과 성균인재</div>
             <div class="coverMetrics">최근결과 평균등급 학생 평균등급</div>
             <div class="sectionDeck">
-              <div class="card">지원 적합도</div><div class="card">핵심 강점</div>
+              <div class="card">지원 적합도 {analysis}</div><div class="card">핵심 강점 {analysis}</div>
             </div>
           </div>
           <div class="footer">맥스체대입시 일산교육원 학생부종합 지원전략 리포트</div>
@@ -28,10 +35,10 @@ def _locked_html(student: str = "홍길동", university: str = "성균관대학�
         pages.append(
             f"""
             <section class="page">
-              <div class="topbar"><img><span>0{index + 1}</span></div>
+              <div class="topbar"><img class="logo" src="{logo_src}" alt="맥스체대입시 로고"><span>0{index + 1}</span></div>
               <div class="sectionDeck">
-                <div class="card">{student} {university} 스포츠과학과 성균인재 지원 판단</div>
-                <div class="card">3학년 1학기 입력 전 과세특 세특 진로활동 행특 보완과 대학 학과 평가 요소 확인</div>
+                <div class="card">{student} {university} 스포츠과학과 성균인재 지원 판단 {analysis}</div>
+                <div class="card">3학년 1학기 입력 전 과세특 세특 진로활동 행특 보완과 대학 학과 평가 요소 확인 {analysis}</div>
               </div>
               <div class="footer">맥스체대입시 일산교육원 학생부종합 지원전략 리포트</div>
             </section>
@@ -308,6 +315,64 @@ def test_hakjong_report_package_rejects_wall_text_report(monkeypatch, tmp_path) 
     assert result["ok"] is False
     assert any("report card count" in error for error in result["errors"])
     assert any("overlong text" in error for error in result["errors"])
+
+
+def test_hakjong_report_package_rejects_shallow_report_body(monkeypatch, tmp_path) -> None:
+    _patch_pdf_tools(monkeypatch)
+    shallow = _locked_html().replace(
+        "학생부의 세특, 진로활동, 행특을 대학 평가요소와 대조해 강점과 보완점을 분리하고 "
+        "지원 판단에 바로 반영할 수 있도록 구체적인 다음 행동까지 정리한다. "
+        "대학이 보는 전공적합성, 탐구 지속성, 학교생활 태도, 면접 방어 가능성을 한 문장씩 연결해 "
+        "학부모가 읽어도 근거와 결론이 함께 보이게 만든다.",
+        "점검 필요",
+    )
+    html_path, pdf_path, page_images, contact_sheet = _write_report_files(tmp_path, shallow)
+
+    result = json.loads(
+        _hakjong_report_package_tool_handler(
+            {
+                "html_path": str(html_path),
+                "pdf_path": str(pdf_path),
+                "student_name": "홍길동",
+                "university_name": "성균관대학교",
+                "department_name": "스포츠과학과",
+                "track_name": "성균인재",
+                "student_stage": "grade3",
+                "evidence_tools": ["life_record_lookup", "qualitative_profile"],
+                "page_image_paths": page_images,
+                "contact_sheet_path": contact_sheet,
+            }
+        )
+    )
+
+    assert result["ok"] is False
+    assert any("substantive report copy" in error for error in result["errors"])
+
+
+def test_hakjong_report_package_rejects_missing_logo_source(monkeypatch, tmp_path) -> None:
+    _patch_pdf_tools(monkeypatch)
+    html = _locked_html().replace(' src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"', "")
+    html_path, pdf_path, page_images, contact_sheet = _write_report_files(tmp_path, html)
+
+    result = json.loads(
+        _hakjong_report_package_tool_handler(
+            {
+                "html_path": str(html_path),
+                "pdf_path": str(pdf_path),
+                "student_name": "홍길동",
+                "university_name": "성균관대학교",
+                "department_name": "스포츠과학과",
+                "track_name": "성균인재",
+                "student_stage": "grade3",
+                "evidence_tools": ["life_record_lookup", "qualitative_profile"],
+                "page_image_paths": page_images,
+                "contact_sheet_path": contact_sheet,
+            }
+        )
+    )
+
+    assert result["ok"] is False
+    assert any("logo image" in error for error in result["errors"])
 
 
 def test_hakjong_report_package_allows_grade1_consultation_context(monkeypatch, tmp_path) -> None:

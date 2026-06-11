@@ -75,6 +75,9 @@ BANNED_PDF_TEXT = (
 )
 
 MIN_REPORT_CARD_COUNT = 6
+MIN_VISIBLE_TEXT_CHARS = 1_600
+MIN_SUBSTANTIVE_SEGMENTS = 5
+MIN_SUBSTANTIVE_SEGMENT_CHARS = 55
 MAX_VISIBLE_TEXT_SEGMENT_CHARS = 230
 
 LIFE_RECORD_EVIDENCE_TOOLS = {
@@ -232,6 +235,16 @@ def _validate_html(
     if page_count != expected_pages:
         errors.append(f"html page section count {page_count} != expected {expected_pages}")
 
+    logo_tags = re.findall(r"<img\b[^>]*\blogo\b[^>]*>", html, flags=re.IGNORECASE)
+    checks["logo_image_count"] = len(logo_tags)
+    if not any(re.search(r'\bsrc=["\'][^"\']+["\']', tag, flags=re.IGNORECASE) for tag in logo_tags):
+        errors.append("logo image with non-empty src is required for the locked MAX report template")
+
+    footer_count = len(re.findall(r'class=["\'][^"\']*\bfooter\b', html))
+    checks["footer_count"] = footer_count
+    if footer_count < expected_pages:
+        errors.append(f"footer count {footer_count} < expected page count {expected_pages}")
+
     if "{{" in html or "}}" in html:
         errors.append("html still contains unresolved template placeholders")
 
@@ -260,6 +273,15 @@ def _validate_copy_quality(
     if long_segments:
         errors.append(
             "visible copy contains overlong text blocks; split wording into concise Korean report sections"
+        )
+
+    visible_chars = sum(len(segment) for segment in visible_text)
+    substantive_segments = sum(1 for segment in visible_text if len(segment) >= MIN_SUBSTANTIVE_SEGMENT_CHARS)
+    checks["visible_text_chars"] = visible_chars
+    checks["substantive_text_segments"] = substantive_segments
+    if visible_chars < MIN_VISIBLE_TEXT_CHARS or substantive_segments < MIN_SUBSTANTIVE_SEGMENTS:
+        errors.append(
+            "substantive report copy is too shallow; expand school-specific evaluation and student evidence analysis"
         )
 
     for banned in BANNED_PDF_TEXT:

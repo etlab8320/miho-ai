@@ -22,10 +22,18 @@ _REPORT_ARTIFACT_TOOLS = {
     "browser_snapshot",
     "browser_evaluate",
 }
+_READ_ONLY_EVIDENCE_TOOLS = {
+    "skill_view",
+    "academy_student_context",
+    "academy_student_summary",
+    "academy_student_record_lookup",
+    "academy_student_record_cohort_latest",
+}
 _STRICT_ROUTE_ALLOWED_TOOLS = {
     _PACKAGE_TOOL,
     _SEND_TOOL,
     *_REPORT_ARTIFACT_TOOLS,
+    *_READ_ONLY_EVIDENCE_TOOLS,
     "life_record_lookup",
     "life_record_search",
     "life_record_summary",

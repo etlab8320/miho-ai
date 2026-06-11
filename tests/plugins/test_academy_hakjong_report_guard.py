@@ -251,6 +251,46 @@ def test_hakjong_report_guard_allows_artifact_build_before_package() -> None:
     assert blocked and blocked["action"] == "block"
 
 
+def test_hakjong_report_guard_allows_read_only_evidence_tools_before_package() -> None:
+    from gateway.session_context import clear_session_vars, set_session_vars
+    from plugins.academy_ops.context import capture_gateway_context
+    from plugins.academy_ops.hakjong_report_guard import (
+        _block_after_hakjong_report_package,
+        _reset_hakjong_report_package_state,
+        mark_hakjong_report_required_route,
+    )
+
+    class Source:
+        chat_id = "thread-a"
+        parent_chat_id = "channel-a"
+        message_id = "msg-1"
+        thread_id = ""
+
+    class Event:
+        source = Source()
+        message_id = "msg-1"
+        text = "가은이 국민대 경희대 인하대 학종 리포트로 줘"
+
+    _reset_hakjong_report_package_state()
+    capture_gateway_context(Event())
+    mark_hakjong_report_required_route(Event(), required_tool="academy_hakjong_report_package")
+    tokens = set_session_vars(platform="discord", chat_id="thread-a", message_id="msg-1")
+    try:
+        for tool_name in (
+            "skill_view",
+            "academy_student_context",
+            "academy_student_summary",
+            "academy_student_record_lookup",
+            "academy_student_record_cohort_latest",
+        ):
+            assert _block_after_hakjong_report_package(tool_name=tool_name, args={}) is None
+        blocked = _block_after_hakjong_report_package(tool_name="jungsi_student_score_lookup", args={})
+    finally:
+        clear_session_vars(tokens)
+
+    assert blocked and blocked["action"] == "block"
+
+
 def test_hakjong_report_guard_required_route_is_current_message_only() -> None:
     from gateway.session_context import clear_session_vars, set_session_vars
     from plugins.academy_ops.context import capture_gateway_context
