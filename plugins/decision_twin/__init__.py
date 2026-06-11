@@ -71,7 +71,7 @@ async def _decision_twin_pre_gateway_dispatch(
         decision.action == "clarify"
         and should_skip_clarify_response(user_text=text, owner_context=owner_context, turn_context=turn_context)
     ):
-        logger.info("decision twin skipped clarify for complete score context: intent=%s", decision.intent)
+        logger.info("decision twin skipped clarify for actionable domain context: intent=%s", decision.intent)
         return {"action": "allow"}
     if decision.action == "clarify" and decision.confidence >= 0.75 and decision.user_message:
         return {

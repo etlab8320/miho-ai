@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .contracts import decision_tool_contracts
@@ -30,6 +31,44 @@ _MEDIA_DELIVERY_MARKERS = (
     "파일 보내",
     "pdf 보내",
     "리포트 파일",
+)
+_REPORT_MARKERS = (
+    "리포트",
+    "보고서",
+    "상담자료",
+    "pdf",
+    "html",
+)
+_ACTION_MARKERS = (
+    "줘",
+    "주세요",
+    "만들",
+    "뽑",
+    "보내",
+    "전달",
+    "정리",
+    "확인",
+    "검토",
+    "찾아",
+    "봐",
+)
+_LIFE_RECORD_LOOKUP_MARKERS = (
+    "요약",
+    "핵심",
+    "정리",
+    "조회",
+    "검색",
+    "찾아",
+    "확인",
+    "봐",
+)
+_THREAD_CONTEXT_MARKERS = (
+    "현재 스레드",
+    "직전 요청",
+    "이전 대화",
+    "이미 확인",
+    "db가 있다",
+    "db 있음",
 )
 _HAKJONG_NEGATION_MARKERS = (
     "학종말고",
@@ -129,10 +168,15 @@ def should_skip_clarify_response(
     owner_context: str = "",
     turn_context: dict[str, Any] | None = None,
 ) -> bool:
-    """Return True when clarification would block a complete score request."""
+    """Return True when clarification would block an actionable domain request."""
     current = str(user_text or "").casefold()
     context = _context_blob(user_text, owner_context, turn_context)
-    return _is_complete_score_recommendation_context(current) or (
+    return (
+        _is_complete_score_recommendation_context(current)
+        or _is_actionable_hakjong_report_context(current, context)
+        or _is_actionable_media_delivery_context(current, context)
+        or _is_actionable_life_record_lookup_context(current, context)
+    ) or (
         _contains_any(current, _SUSI_MARKERS)
         and _is_complete_score_recommendation_context(context)
     )
@@ -189,6 +233,40 @@ def _is_complete_score_recommendation_context(text: str) -> bool:
     has_recommendation = _contains_any(text, _RECOMMENDATION_MARKERS)
     has_count_or_bucket = "6개" in text or _contains_any(text, ("상향", "중립", "안전", "할만한"))
     return has_student_basis and has_score_basis and has_susi_scope and has_recommendation and has_count_or_bucket
+
+
+def _is_actionable_hakjong_report_context(current: str, context: str) -> bool:
+    has_report_domain = _contains_any(context, _HAKJONG_MARKERS) and _contains_any(context, _REPORT_MARKERS)
+    has_report_action = _contains_any(current, _ACTION_MARKERS)
+    has_target = _has_university_reference(context) or _contains_any(context, _THREAD_CONTEXT_MARKERS)
+    is_followup = _contains_any(context, _THREAD_CONTEXT_MARKERS) and _contains_any(context, _REPORT_MARKERS)
+    return has_report_domain and has_report_action and (has_target or is_followup)
+
+
+def _is_actionable_media_delivery_context(current: str, context: str) -> bool:
+    has_delivery_action = _is_media_delivery_context(current) or (
+        _contains_any(current, ("pdf", "파일", "리포트")) and _contains_any(current, ("다시", "보내", "줘"))
+    )
+    return has_delivery_action and _has_file_reference(context)
+
+
+def _is_actionable_life_record_lookup_context(current: str, context: str) -> bool:
+    has_life_record_domain = _contains_any(context, _LIFE_RECORD_MARKERS)
+    has_lookup_action = _contains_any(current, _LIFE_RECORD_LOOKUP_MARKERS)
+    has_student_context = _contains_any(context, _THREAD_CONTEXT_MARKERS) or _contains_any(context, ("학생", "성적"))
+    return has_life_record_domain and has_lookup_action and has_student_context
+
+
+def _has_university_reference(text: str) -> bool:
+    return bool(re.search(r"[가-힣A-Za-z0-9]{2,}(?:대학교|대)(?:\b|[\s,./·])", text))
+
+
+def _has_file_reference(text: str) -> bool:
+    if "media:" in text:
+        return True
+    if re.search(r"/[^\s]+[.](?:pdf|html|png|jpg|jpeg|zip)\b", text):
+        return True
+    return bool(re.search(r"\b[^\s]+[.](?:pdf|html|png|jpg|jpeg|zip)\b", text))
 
 
 def _context_blob(user_text: str, owner_context: str, turn_context: dict[str, Any] | None) -> str:
