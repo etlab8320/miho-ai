@@ -197,7 +197,7 @@ def _validate_html(
     missing = [
         name
         for name, pattern in REQUIRED_HTML_PATTERNS.items()
-        if not re.search(pattern, html)
+        if not _regex_search(pattern, html)
     ]
     if missing:
         errors.append("locked premium_hakjong_report template markers missing: " + ", ".join(missing))
@@ -205,7 +205,7 @@ def _validate_html(
     banned = [
         name
         for name, pattern in BANNED_HTML_PATTERNS.items()
-        if re.search(pattern, html, flags=re.IGNORECASE)
+        if _regex_search(pattern, html, flags=re.IGNORECASE)
     ]
     if banned:
         errors.append("non-locked or wrong template markers found: " + ", ".join(banned))
@@ -387,7 +387,7 @@ def _parse_pdfinfo(output: str) -> dict[str, Any]:
         if line.startswith("Pages:"):
             pages = _int_or_none(line.split(":", 1)[1].strip())
         elif line.startswith("Page size:"):
-            match = re.search(r"([\d.]+)\s+x\s+([\d.]+)\s+pts", line)
+            match = _regex_search(r"([\d.]+)\s+x\s+([\d.]+)\s+pts", line)
             if match:
                 width = float(match.group(1))
                 height = float(match.group(2))
@@ -425,6 +425,10 @@ def _expected_terms(
         ("department_name", department_name.strip()),
         ("track_name", track_name.strip()),
     ]
+
+
+def _regex_search(pattern: str, text: str, *, flags: int = 0) -> re.Match[str] | None:
+    return re.compile(pattern, flags).search(text)
 
 
 def _visible_text(html: str) -> list[str]:

@@ -47,6 +47,9 @@ def test_workspace_prompt_applies_context_and_rag_budget():
     assert "without asking the user to do it manually" in prompt
     assert "do not restate unrelated retrieved context" in prompt
     assert "do not expose internal workflow" in prompt
+    assert "Miho Decision Twin" in prompt
+    assert "current user text, thread memory, and owner profile" in prompt
+    assert "dedicated tool or plugin contract fits" in prompt
     assert "previous_calendar_date=2026-05-28" in prompt
     assert "after_midnight_window=true" in prompt
     assert "life" + "_log_date" not in prompt

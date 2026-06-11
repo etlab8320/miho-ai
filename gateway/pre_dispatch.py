@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from gateway.decision_twin import (
+    DecisionTwinProfile,
+    choose_decision_twin_candidate,
+)
+
 
 _DECISIVE_ACTIONS = {"skip", "respond", "rewrite"}
 
@@ -34,15 +39,25 @@ class PreDispatchDecision:
     evidence: tuple[str, ...] = field(default_factory=tuple)
     required_tool: str = ""
     priority: int = 0
+    decision_twin: str = "allow"
+    memory_evidence: tuple[str, ...] = field(default_factory=tuple)
+    policy_violations: tuple[str, ...] = field(default_factory=tuple)
     candidates: tuple[PreDispatchCandidate, ...] = field(default_factory=tuple)
 
 
-def resolve_pre_gateway_dispatch(results: list[Any]) -> PreDispatchDecision:
+def resolve_pre_gateway_dispatch(
+    results: list[Any],
+    *,
+    decision_twin_profile: DecisionTwinProfile | None = None,
+) -> PreDispatchDecision:
     candidates = tuple(_candidate_from_result(result, index) for index, result in enumerate(results))
     decisive = [candidate for candidate in candidates if candidate.action in _DECISIVE_ACTIONS]
     if not decisive:
         return PreDispatchDecision(candidates=candidates)
-    chosen = max(decisive, key=lambda candidate: (candidate.priority, candidate.confidence, -candidate.order))
+    choice = choose_decision_twin_candidate(decisive, decision_twin_profile)
+    if choice is None:
+        return PreDispatchDecision(candidates=candidates)
+    chosen = choice.candidate
     return PreDispatchDecision(
         action=chosen.action,
         text=chosen.text,
@@ -53,6 +68,9 @@ def resolve_pre_gateway_dispatch(results: list[Any]) -> PreDispatchDecision:
         evidence=chosen.evidence,
         required_tool=chosen.required_tool,
         priority=chosen.priority,
+        decision_twin=choice.state,
+        memory_evidence=choice.memory_evidence,
+        policy_violations=choice.policy_violations,
         candidates=candidates,
     )
 

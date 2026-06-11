@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from gateway.decision_twin import DecisionTwinProfile
 from gateway.pre_dispatch import resolve_pre_gateway_dispatch
 
 
@@ -64,3 +65,59 @@ def test_pre_gateway_dispatch_ignores_allow_for_final_decision() -> None:
     assert decision.action == "rewrite"
     assert decision.text == "tool request"
     assert decision.reason == "document"
+
+
+def test_pre_gateway_dispatch_decision_twin_prefers_required_tool_candidate() -> None:
+    decision = resolve_pre_gateway_dispatch([
+        {
+            "action": "respond",
+            "text": "일반 답변",
+            "route": "generic",
+            "reason": "fallback",
+            "priority": 999,
+            "confidence": 0.99,
+        },
+        {
+            "action": "rewrite",
+            "text": "life_record_ingest_pdf 도구로 첨부 파일을 저장해.",
+            "route": "life_record",
+            "reason": "supported_document",
+            "intent": "life_record.ingest",
+            "confidence": 0.81,
+            "required_tool": "life_record_ingest_pdf",
+            "evidence": ["supported_attachment"],
+            "priority": 10,
+        },
+    ])
+
+    assert decision.action == "rewrite"
+    assert decision.route == "life_record"
+    assert decision.required_tool == "life_record_ingest_pdf"
+    assert decision.decision_twin == "required_tool_first"
+    assert "required_tool:life_record_ingest_pdf" in decision.memory_evidence
+
+
+def test_pre_gateway_dispatch_decision_twin_can_be_disabled_for_compatibility() -> None:
+    profile = DecisionTwinProfile(prefer_required_tool_candidates=False)
+
+    decision = resolve_pre_gateway_dispatch([
+        {
+            "action": "respond",
+            "text": "일반 답변",
+            "route": "generic",
+            "priority": 999,
+            "confidence": 0.99,
+        },
+        {
+            "action": "rewrite",
+            "text": "life_record_ingest_pdf 도구로 첨부 파일을 저장해.",
+            "route": "life_record",
+            "intent": "life_record.ingest",
+            "confidence": 0.81,
+            "required_tool": "life_record_ingest_pdf",
+            "priority": 10,
+        },
+    ], decision_twin_profile=profile)
+
+    assert decision.route == "generic"
+    assert decision.decision_twin == "legacy_rank"
