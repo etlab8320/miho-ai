@@ -308,10 +308,24 @@ def test_confirm_promotes_needs_review_rows(monkeypatch, tmp_path) -> None:
     ingest = json.loads(_ingest_pdf_tool_handler({"pdf_path": str(pdf)}))
     # disagreement on raw_score -> not fully confirmed
     assert ingest["counts"]["needs_review_rows"] >= 1
+    event = _event("thread-a")
+    event.text = "원본 대조했고 검수 확정해줘"
+    capture_gateway_context(event)
     confirmed = json.loads(_confirm_tool_handler({"confirm": True}))
     assert confirmed["ok"] is True
     assert confirmed["confirmed_rows"] >= 1
     assert confirmed["promoted"]["ok"] is True
+
+
+def test_confirm_blocks_without_explicit_human_review_request(monkeypatch, tmp_path) -> None:
+    from plugins.life_record.tools import _confirm_tool_handler
+
+    result = _ingest(monkeypatch, tmp_path, "thread-a", SAMPLE_1)
+    assert result["ok"] is True
+    blocked = json.loads(_confirm_tool_handler({"confirm": True}))
+
+    assert blocked["ok"] is False
+    assert "명시 요청" in blocked["message"]
 
 
 def test_confirm_requires_flag(monkeypatch, tmp_path) -> None:

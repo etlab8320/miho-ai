@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .context import THREAD_ID, current_life_record_dir
+from .context import THREAD_ID, current_life_record_dir, user_requested_life_record_confirm
 from .service import (
     confirm_and_promote,
     delete_life_record_bundle,
@@ -64,6 +64,7 @@ def _ingest_pdf_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> st
             "source_document_path": result.get("source_document_path"),
             "stored_original_path": result.get("stored_original_path"),
             "converted_pdf_path": result.get("converted_pdf_path"),
+            "mhtml_table_count": result.get("mhtml_table_count"),
             "photo_paths": result["photo_paths"],
             "review_path": result["review_path"],
             "counts": result["counts"],
@@ -115,6 +116,12 @@ def _confirm_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     payload = args or {}
     if payload.get("confirm") is not True:
         return _json({"ok": False, "message": "검수 확정은 confirm=true가 필요해.", "privacy": PRIVACY_POLICY})
+    if not user_requested_life_record_confirm():
+        return _json({
+            "ok": False,
+            "message": "원본을 사람이 확인했다는 명시 요청이 없어서 확정/중앙DB 승격을 막았어. 원본 대조 후 '검수 확정해줘'라고 다시 요청해줘.",
+            "privacy": PRIVACY_POLICY,
+        })
     document_id = payload.get("document_id")
     result = confirm_and_promote(
         current_life_record_dir(),

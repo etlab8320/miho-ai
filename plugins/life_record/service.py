@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,6 +13,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from .consensus import all_confirmed, reconcile
+from .mhtml_tables import extract_neis_mhtml_tables
+from .mhtml_source import empty_extraction, extract_from_mhtml_source
 from .pdf_reader import (
     create_text_pdf,
     convert_mhtml_to_pdf,
@@ -39,6 +42,7 @@ from .verifier import run_verification
 from .vision_extractor import (
     VisionResolver,
     default_codex_resolver,
+    extract_from_mhtml_text,
     extract_from_text,
     extract_life_record,
     has_text_layer,
@@ -75,29 +79,41 @@ async def ingest_life_record(
     source_document_path = pdf_path
     stored_original_path = _store_original_document(bundle_dir, source_document_path) if is_mhtml_path(source_document_path) else None
     mhtml_page_texts = extract_mhtml_text(source_document_path) if is_mhtml_path(source_document_path) else []
-    processing_pdf_path = _normalize_to_pdf(source_document_path, bundle_dir, page_texts=mhtml_page_texts)
-    extracted = extract_pdf(processing_pdf_path)
-    # P2-6: cap how many pages we render/send so a huge or malformed PDF can't
-    # blow up memory/time. Excess pages are skipped (and logged).
+    mhtml_tables = _extract_mhtml_tables(source_document_path) if is_mhtml_path(source_document_path) else None
+    processing_pdf_path = source_document_path if mhtml_tables else _normalize_to_pdf(source_document_path, bundle_dir, page_texts=mhtml_page_texts)
+    extracted = extract_pdf(processing_pdf_path) if not mhtml_tables else None
     render_pages: list[int] | None = None
-    if extracted.page_count > MAX_PAGES:
+    if extracted and extracted.page_count > MAX_PAGES:
         logger.warning("life_record: %s has %d pages (> cap %d) — processing only the first %d",
                        processing_pdf_path.name, extracted.page_count, MAX_PAGES, MAX_PAGES)
         render_pages = list(range(MAX_PAGES))
-    page_pngs = render_page_images(processing_pdf_path, zoom=RENDER_ZOOM, pages=render_pages)  # for the review gallery
+    page_pngs = [] if mhtml_tables else render_page_images(processing_pdf_path, zoom=RENDER_ZOOM, pages=render_pages)
     _save_review_pages(bundle_dir, page_pngs)
 
     results: list[dict[str, Any]] = []
-    if has_text_layer(mhtml_page_texts):
-        page_count = len(mhtml_page_texts)
-        extraction_method = "codex_mhtml_source_text_v1"
-        text_source = mhtml_page_texts
-        for _ in range(max(1, runs)):
-            results.append(await extract_from_text(text_source, resolver=text_resolver))
+    document_raw_text: str | None = None
+    sections: list[dict[str, Any]] = []
+    if mhtml_tables:
+        page_count = mhtml_tables.table_count
+        extraction_method = "neisplus_mhtml_table_v1"
+        results = [mhtml_tables.extraction, mhtml_tables.extraction]
         consensus = reconcile(results)
-        while not all_confirmed(consensus) and len(results) < MAX_RUNS:
-            results.append(await extract_from_text(text_source, resolver=text_resolver))
-            consensus = reconcile(results)
+        document_raw_text = mhtml_tables.raw_text
+        sections = mhtml_tables.sections
+    elif has_text_layer(mhtml_page_texts):
+        page_count = len(mhtml_page_texts)
+        extraction_method = "neis_mhtml_source_text_v2"
+        text_source = mhtml_page_texts
+        results.append(extract_from_mhtml_source(text_source))
+        if _mhtml_model_pass_enabled() or text_resolver is not None:
+            try:
+                results.append(await extract_from_mhtml_text(text_source, resolver=text_resolver))
+            except Exception as exc:
+                logger.warning("life_record: mhtml text model pass failed; storing deterministic review copy: %s", exc)
+                results.append(empty_extraction())
+        else:
+            results.append(empty_extraction())
+        consensus = reconcile(results)
     elif has_text_layer(extracted.page_texts):
         # Text-layer PDF: numbers are exact digital text — no OCR drift. The
         # TEXT_PROMPT tells the LLM to reconstruct the (line-break-mangled) text,
@@ -126,11 +142,11 @@ async def ingest_life_record(
                 results.append(await extract_life_record(hi_images, resolver=resolver))
                 consensus = reconcile(results)
 
-    photo = extracted.photo
+    photo = extracted.photo if extracted else None
     # Scanned PDF: the whole page is one image, so extract_pdf grabbed the full page
     # as the "photo". Crop it down to just the ID photo via vision. Text-layer PDFs
     # already embed a clean ID photo, so leave those.
-    if not has_text_layer(mhtml_page_texts) and not has_text_layer(extracted.page_texts):
+    if extracted and not has_text_layer(mhtml_page_texts) and not has_text_layer(extracted.page_texts):
         try:
             first_page = render_page_images(processing_pdf_path, zoom=2.0, pages=[0])
             if first_page:
@@ -141,23 +157,32 @@ async def ingest_life_record(
                         photo = cropped
         except Exception:
             pass
-    raw_text = json.dumps(consensus, ensure_ascii=False)
+    raw_text = document_raw_text or json.dumps(consensus, ensure_ascii=False)
+    metadata = {
+        "runs": len(results),
+        "method": extraction_method,
+        "source_format": "mhtml" if is_mhtml_path(source_document_path) else "pdf",
+        "source_document_path": str(source_document_path),
+        "stored_original_path": str(stored_original_path) if stored_original_path else None,
+    }
+    if mhtml_tables:
+        metadata["mhtml_table_count"] = mhtml_tables.table_count
+    elif is_mhtml_path(source_document_path):
+        metadata["processing_pdf_path"] = str(processing_pdf_path)
     result = save_import(
         bundle_dir=bundle_dir,
         pdf_path=processing_pdf_path,
         page_count=page_count,
         raw_text=raw_text,
-        metadata={
-            "runs": len(results),
-            "method": extraction_method,
-            "source_format": "mhtml" if is_mhtml_path(source_document_path) else "pdf",
-            "source_document_path": str(source_document_path),
-            "stored_original_path": str(stored_original_path) if stored_original_path else None,
-        },
+        metadata=metadata,
         consensus=consensus,
         photo=photo,
         extraction_method=extraction_method,
         source_thread=source_thread,
+        document_path=source_document_path if is_mhtml_path(source_document_path) else None,
+        stored_document_path=stored_original_path,
+        document_type="life_record_mhtml" if is_mhtml_path(source_document_path) else "school_life_record",
+        sections=sections,
     )
     document_id = int(result["document_id"])
     verification = run_verification(Path(result["db_path"]), document_id, consensus=consensus)
@@ -187,7 +212,8 @@ async def ingest_life_record(
         "photo_display_path": _copy_photo_for_display(result.get("photo_paths") or []),
         "source_document_path": str(source_document_path),
         "stored_original_path": str(stored_original_path) if stored_original_path else None,
-        "converted_pdf_path": str(processing_pdf_path) if is_mhtml_path(source_document_path) else None,
+        "converted_pdf_path": None if mhtml_tables else (str(processing_pdf_path) if is_mhtml_path(source_document_path) else None),
+        "mhtml_table_count": mhtml_tables.table_count if mhtml_tables else None,
     }
 
 
@@ -367,6 +393,22 @@ def _looks_like_life_record_text(text: str) -> bool:
     return any(marker in compact for marker in markers)
 
 
+def _extract_mhtml_tables(document_path: Path) -> Any | None:
+    try:
+        parsed = extract_neis_mhtml_tables(document_path)
+    except (OSError, UnicodeError, ValueError) as exc:
+        logger.warning("life_record: mhtml table extraction failed: %s", exc)
+        return None
+    identity = parsed.extraction.get("identity") or {}
+    if not identity.get("name") or not parsed.extraction.get("grades"):
+        return None
+    return parsed
+
+
+def _mhtml_model_pass_enabled() -> bool:
+    return os.getenv("MIHO_LIFE_RECORD_MHTML_MODEL_PASS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _store_original_document(bundle_dir: Path, document_path: Path) -> Path:
     source_dir = bundle_dir / "sources"
     source_dir.mkdir(parents=True, exist_ok=True)
@@ -378,6 +420,8 @@ def _store_original_document(bundle_dir: Path, document_path: Path) -> Path:
     except Exception:
         digest = "source"
     stored = source_dir / f"{digest}_original{suffix}"
+    if document_path.resolve() == stored.resolve():
+        return stored
     shutil.copy2(document_path, stored)
     return stored
 

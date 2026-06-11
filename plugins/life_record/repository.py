@@ -16,8 +16,16 @@ from typing import Any
 from miho_constants import get_miho_home
 
 from .consensus import CONFIRMED
+from .repository_files import replace_photo, store_source_document
+from .repository_rows import (
+    clear_central_student_rows,
+    delete_central_duplicate_students,
+    delete_superseded_mhtml_documents,
+    replace_attendance,
+    replace_sections,
+)
 from .schema import CENTRAL_SCHEMA, SCHEMA
-from .utils import backup_database, now_iso, safe_name, sha256_file
+from .utils import backup_database, now_iso, sha256_file
 
 
 def db_path(bundle_dir: Path) -> Path:
@@ -89,22 +97,29 @@ def save_import(
     photo: Any = None,
     extraction_method: str = "codex_vision_gpt5.5_v1",
     source_thread: str = "",
+    document_path: Path | None = None,
+    stored_document_path: Path | None = None,
+    document_type: str = "school_life_record",
+    sections: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     path = db_path(bundle_dir)
     backup_path = backup_database(path, "before_import")
-    pdf_hash = sha256_file(pdf_path)
-    stored_pdf = _store_pdf(bundle_dir, pdf_path, pdf_hash)
+    source_path = document_path or pdf_path
+    document_hash = sha256_file(source_path)
+    stored_document = stored_document_path or store_source_document(bundle_dir, source_path, document_hash)
     identity = identity_from_consensus(consensus)
     now = now_iso()
     conn = connect(path)
     try:
         student_id = _upsert_student(conn, identity, now)
-        document_id = _upsert_document(conn, student_id, identity, page_count, raw_text, metadata, pdf_path, stored_pdf, pdf_hash, extraction_method, _doc_confidence(consensus), now)
-        photo_paths = _replace_photo(conn, bundle_dir, student_id, document_id, identity, photo, now)
+        document_id = _upsert_document(conn, student_id, identity, page_count, raw_text, metadata, source_path, stored_document, document_hash, extraction_method, _doc_confidence(consensus), now, document_type)
+        photo_paths = replace_photo(conn, bundle_dir, student_id, document_id, identity, photo, now)
         _replace_grades(conn, document_id, consensus.get("grades") or [], now)
         _replace_notes(conn, document_id, consensus.get("notes") or [], now)
-        _replace_attendance(conn, document_id, consensus.get("attendance") or [], now)
+        replace_attendance(conn, document_id, consensus.get("attendance") or [], now)
         _replace_awards(conn, document_id, consensus.get("awards") or [], now)
+        replace_sections(conn, document_id, sections or [], now)
+        removed_documents = delete_superseded_mhtml_documents(conn, student_id, document_id) if document_type == "life_record_mhtml" else 0
         summary = {
             "student": identity["name"],
             "pages": page_count,
@@ -112,6 +127,8 @@ def save_import(
             "special_note_rows": len(consensus.get("notes") or []),
             "attendance_rows": len(consensus.get("attendance") or []),
             "award_rows": len(consensus.get("awards") or []),
+            "section_rows": len(sections or []),
+            "superseded_documents": removed_documents,
             "photos": len(photo_paths),
             "backup_path": backup_path,
         }
@@ -125,7 +142,7 @@ def save_import(
             "db_path": str(path),
             "student_id": student_id,
             "document_id": document_id,
-            "stored_pdf_path": str(stored_pdf),
+            "stored_pdf_path": str(stored_document),
             "photo_paths": photo_paths,
             "source_thread": source_thread,
         }
@@ -137,14 +154,6 @@ def _doc_confidence(consensus: dict[str, Any]) -> float:
     ident = consensus.get("identity") or {}
     confs = [info.get("confidence", 0.0) for info in ident.values() if info.get("value")]
     return round(sum(confs) / len(confs), 2) if confs else 0.5
-
-
-def _store_pdf(bundle_dir: Path, pdf_path: Path, pdf_hash: str) -> Path:
-    source_dir = bundle_dir / "sources"
-    source_dir.mkdir(parents=True, exist_ok=True)
-    stored = source_dir / f"{pdf_hash[:16]}_original.pdf"
-    shutil.copy2(pdf_path, stored)
-    return stored
 
 
 def _upsert_student(conn: sqlite3.Connection, identity: dict[str, str], now: str) -> int:
@@ -163,7 +172,7 @@ def _upsert_student(conn: sqlite3.Connection, identity: dict[str, str], now: str
     return int(row["id"])
 
 
-def _upsert_document(conn, student_id, identity, page_count, raw_text, metadata, pdf_path, stored_pdf, pdf_hash, method, confidence, now) -> int:
+def _upsert_document(conn, student_id, identity, page_count, raw_text, metadata, pdf_path, stored_pdf, pdf_hash, method, confidence, now, document_type) -> int:
     # P2-5: re-ingesting the same PDF (same sha256) must refresh the document
     # header too, not just the rows. INSERT OR IGNORE left raw_text / metadata /
     # method / confidence stale. UPSERT on the unique file_sha256 keeps created_at
@@ -175,26 +184,10 @@ def _upsert_document(conn, student_id, identity, page_count, raw_text, metadata,
         "student_id=excluded.student_id, source_pdf_path=excluded.source_pdf_path, stored_pdf_path=excluded.stored_pdf_path, "
         "page_count=excluded.page_count, issuer_school=excluded.issuer_school, raw_text=excluded.raw_text, "
         "metadata_json=excluded.metadata_json, extraction_method=excluded.extraction_method, extraction_confidence=excluded.extraction_confidence",
-        (student_id, "school_life_record", str(pdf_path), str(stored_pdf), pdf_hash, page_count, None, identity["school_name"], None, None, raw_text, json.dumps(metadata, ensure_ascii=False), method, confidence, now),
+        (student_id, document_type, str(pdf_path), str(stored_pdf), pdf_hash, page_count, None, identity["school_name"], None, None, raw_text, json.dumps(metadata, ensure_ascii=False), method, confidence, now),
     )
     row = conn.execute("SELECT id FROM student_documents WHERE file_sha256=?", (pdf_hash,)).fetchone()
     return int(row["id"])
-
-
-def _replace_photo(conn, bundle_dir, student_id, document_id, identity, photo, now) -> list[str]:
-    conn.execute("DELETE FROM student_photos WHERE document_id=?", (document_id,))
-    if not photo:
-        return []
-    photo_dir = bundle_dir / "photos"
-    photo_dir.mkdir(parents=True, exist_ok=True)
-    path = photo_dir / f"{safe_name(identity['name'])}_profile_p{photo.source_page}.{photo.ext}"
-    path.write_bytes(photo.image_bytes)
-    conn.execute(
-        "INSERT INTO student_photos(student_id, document_id, image_path, source_page, width, height, image_sha256, is_primary, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-        (student_id, document_id, str(path), photo.source_page, photo.width, photo.height, photo.sha256, 1, now),
-    )
-    conn.execute("UPDATE students SET profile_photo_path=?, updated_at=? WHERE id=?", (str(path), now, student_id))
-    return [str(path)]
 
 
 def _replace_grades(conn, document_id, rows, now) -> None:
@@ -219,19 +212,6 @@ def _replace_notes(conn, document_id, rows, now) -> None:
         conn.execute(
             "INSERT OR REPLACE INTO subject_special_notes(student_document_id, grade, semester, subject, note_text, source_page_start, source_page_end, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (document_id, _int(row.get("grade")), _int(row.get("semester")), subject, note, None, None, _row_conf(row), _row_status(row), now),
-        )
-
-
-def _replace_attendance(conn, document_id, rows, now) -> None:
-    conn.execute("DELETE FROM attendance_records WHERE student_document_id=?", (document_id,))
-    for row in rows:
-        grade = _int(row.get("grade"))
-        if grade is None:
-            continue
-        note_parts = [p for p in [f"결석:{row.get('absence')}" if row.get("absence") else "", f"지각:{row.get('late')}" if row.get("late") else "", f"조퇴:{row.get('early_leave')}" if row.get("early_leave") else "", str(row.get("special_note") or "")] if p]
-        conn.execute(
-            "INSERT OR REPLACE INTO attendance_records(student_document_id, grade, school_days, special_note, confidence, review_status, created_at) VALUES(?,?,?,?,?,?,?)",
-            (document_id, grade, _int(row.get("school_days")), " ".join(note_parts), _row_conf(row), _row_status(row), now),
         )
 
 
@@ -386,6 +366,9 @@ def promote_to_central(bundle_path: Path, document_id: int, *, source_thread: st
         ).fetchone()
         student_id = int(srow["id"])
         central.execute("UPDATE students SET updated_at=?, profile_photo_path=COALESCE(?, profile_photo_path) WHERE id=?", (now, doc["profile_photo_path"], student_id))
+        if doc["document_type"] == "life_record_mhtml":
+            delete_central_duplicate_students(central, student_id, doc["name"], doc["birth_masked"], source_thread)
+            clear_central_student_rows(central, student_id)
         for g in grades:
             central.execute(
                 "INSERT OR REPLACE INTO central_grades(student_id, grade, semester, category, subject, credits, raw_score, achievement, students_count, rank_grade, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",

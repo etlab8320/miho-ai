@@ -204,13 +204,24 @@ async def locate_id_photo(image_data_url: str, *, resolver: "VisionResolver | No
 
 TextResolver = Callable[[str], Awaitable[str]]
 
+TEXT_LLM_MAX_TOKENS = 16000
+TEXT_LLM_TIMEOUT_SECONDS = 180
+TEXT_LLM_ATTEMPTS = 3
+MHTML_TEXT_LLM_TIMEOUT_SECONDS = 240
 
-async def default_text_resolver(prompt: str) -> str:
+
+async def default_text_resolver(
+    prompt: str,
+    *,
+    attempts: int = TEXT_LLM_ATTEMPTS,
+    timeout: int = TEXT_LLM_TIMEOUT_SECONDS,
+    max_tokens: int = TEXT_LLM_MAX_TOKENS,
+) -> str:
     from agent.auxiliary_client import async_call_llm
     from plugins.academy_ops.codex_model_policy import codex_provider
 
     last_exc: Exception | None = None
-    for attempt in range(3):
+    for attempt in range(max(1, attempts)):
         try:
             response = await async_call_llm(
                 task="life_record_text",
@@ -218,15 +229,18 @@ async def default_text_resolver(prompt: str) -> str:
                 model=VISION_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
-                max_tokens=16000,
-                timeout=180,
+                max_tokens=max_tokens,
+                timeout=timeout,
             )
             return _response_text(response)
         except Exception as exc:
             last_exc = exc
-            if attempt < 2:
+            if attempt < max(1, attempts) - 1:
                 await asyncio.sleep(2)
     raise last_exc or RuntimeError("text resolver failed after retries")
+
+
+_ORIGINAL_DEFAULT_TEXT_RESOLVER = default_text_resolver
 
 
 async def extract_from_text(page_texts: list[str], *, resolver: TextResolver | None = None) -> dict[str, Any]:
@@ -235,6 +249,24 @@ async def extract_from_text(page_texts: list[str], *, resolver: TextResolver | N
     joined = "\n\n".join(f"[p{i + 1}]\n{t}" for i, t in enumerate(page_texts) if (t or "").strip())
     resolve = resolver or default_text_resolver
     raw = await resolve(TEXT_PROMPT + "\n\n=== 생기부 원문 ===\n" + joined)
+    parsed = parse_extraction_json(raw)
+    return _enrich_from_neis_text(parsed, joined)
+
+
+async def extract_from_mhtml_text(page_texts: list[str], *, resolver: TextResolver | None = None) -> dict[str, Any]:
+    """One bounded model pass for text-rich NEIS MHTML.
+
+    MHTML already has exact source text, so repeated long model retries only add
+    latency. Accuracy comes from reconciling this single model pass with the
+    deterministic source extractor in the service layer.
+    """
+    joined = "\n\n".join(f"[p{i + 1}]\n{t}" for i, t in enumerate(page_texts) if (t or "").strip())
+    prompt = TEXT_PROMPT + "\n\n=== 생기부 원문 ===\n" + joined
+    if resolver is None and default_text_resolver is _ORIGINAL_DEFAULT_TEXT_RESOLVER:
+        raw = await default_text_resolver(prompt, attempts=1, timeout=MHTML_TEXT_LLM_TIMEOUT_SECONDS)
+    else:
+        resolve = resolver or default_text_resolver
+        raw = await resolve(prompt)
     parsed = parse_extraction_json(raw)
     return _enrich_from_neis_text(parsed, joined)
 

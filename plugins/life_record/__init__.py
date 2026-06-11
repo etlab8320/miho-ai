@@ -232,5 +232,5 @@ def register(ctx: Any) -> None:
             "additionalProperties": False,
         },
         handler=_confirm_tool_handler,
-        description="Human-confirm the current thread document's remaining needs_review rows, then promote the confirmed life record into the central student DB. Requires confirm=true.",
+        description="Human-confirm the current thread document's remaining needs_review rows, then promote the confirmed life record into the central student DB. Only call when the user's current message explicitly says they checked the original/review and wants confirmation (for example: '검수 확정해줘'). Never call after an ingest just because rows need review.",
     )
