@@ -38,6 +38,7 @@ _LIFE_RECORD_TOOLS = {
     "life_record_ingest_pdf", "life_record_verify", "life_record_search",
     "life_record_summary", "life_record_delete", "life_record_lookup", "life_record_confirm",
 }
+_ROUTE_PRIORITY = 100
 # Unique fingerprints of the life-record DB — if a general-purpose tool's args
 # contain these, the model is hand-rolling/poking the 생기부 DB directly.
 _DB_MARKERS = (
@@ -128,10 +129,22 @@ async def _capture_gateway_context(event: Any = None, gateway: Any = None, **_: 
         if not is_lr:
             return {"action": "allow"}
         if _should_rewrite_to_life_record_tool(gateway, event):
-            return {"action": "rewrite", "text": _tool_request_text(event, document)}
+            return {
+                "action": "rewrite",
+                "text": _tool_request_text(event, document),
+                "route": "life_record",
+                "reason": "supported_document",
+                "priority": _ROUTE_PRIORITY,
+            }
         result = await ingest_life_record(document, current_life_record_dir(), source_thread=THREAD_ID.get())
         logger.info("life_record pre-dispatch: auto-ingested document_id=%s", result.get("document_id"))
-        return {"action": "respond", "text": format_ingest_summary(result)}
+        return {
+            "action": "respond",
+            "text": format_ingest_summary(result),
+            "route": "life_record",
+            "reason": "supported_document_direct_ingest",
+            "priority": _ROUTE_PRIORITY,
+        }
     except Exception as exc:  # never block other plugins on a routing failure
         logger.info("life_record auto-route skipped: %s", exc)
         return {"action": "allow"}

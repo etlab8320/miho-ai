@@ -6739,29 +6739,28 @@ class GatewayRunner:
                 logger.warning("pre_gateway_dispatch invocation failed: %s", _hook_exc)
                 _hook_results = []
 
-            for _result in _hook_results:
-                if not isinstance(_result, dict):
-                    continue
-                _action = _result.get("action")
-                if _action == "skip":
-                    logger.info(
-                        "pre_gateway_dispatch skip: reason=%s platform=%s chat=%s",
-                        _result.get("reason"),
-                        source.platform.value if source.platform else "unknown",
-                        source.chat_id or "unknown",
-                    )
-                    return None
-                if _action == "respond":
-                    _response_text = _result.get("text")
-                    return _response_text if isinstance(_response_text, str) else None
-                if _action == "rewrite":
-                    _new_text = _result.get("text")
-                    if isinstance(_new_text, str):
-                        event = dataclasses.replace(event, text=_new_text)
-                        source = event.source
-                    break
-                if _action == "allow":
-                    continue
+            from gateway.pre_dispatch import resolve_pre_gateway_dispatch
+
+            _decision = resolve_pre_gateway_dispatch(_hook_results)
+            if _decision.action != "allow":
+                logger.info(
+                    "pre_gateway_dispatch decision: action=%s route=%s reason=%s "
+                    "priority=%s candidates=%d platform=%s chat=%s",
+                    _decision.action,
+                    _decision.route or "-",
+                    _decision.reason or "-",
+                    _decision.priority,
+                    len(_decision.candidates),
+                    source.platform.value if source.platform else "unknown",
+                    source.chat_id or "unknown",
+                )
+            if _decision.action == "skip":
+                return None
+            if _decision.action == "respond":
+                return _decision.text
+            if _decision.action == "rewrite" and isinstance(_decision.text, str):
+                event = dataclasses.replace(event, text=_decision.text)
+                source = event.source
 
         if is_internal:
             pass

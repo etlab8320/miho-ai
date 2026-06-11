@@ -25,6 +25,7 @@ _ACKNOWLEDGEMENTS = {
 }
 _COMMAND_PREFIXES = ("/", "!", ".")
 _CLARIFY_TEXT = "방금 메시지는 의미를 정확히 잡기 어려워요. 원하는 작업을 한 문장으로 다시 말해 주세요."
+_ROUTE_PRIORITY = -100
 
 
 def _normalized_text(value: Any) -> str:
@@ -49,10 +50,16 @@ def is_low_information_message(text: str) -> bool:
     return bool(_JAMO_OR_NOISE_RE.fullmatch(normalized))
 
 
-async def _guard_pre_gateway_dispatch(event: Any = None, **_: Any) -> dict[str, str]:
+async def _guard_pre_gateway_dispatch(event: Any = None, **_: Any) -> dict[str, object]:
     text = _normalized_text(getattr(event, "text", ""))
     if is_low_information_message(text):
-        return {"action": "respond", "text": _CLARIFY_TEXT}
+        return {
+            "action": "respond",
+            "text": _CLARIFY_TEXT,
+            "route": "conversation_guard",
+            "reason": "low_information",
+            "priority": _ROUTE_PRIORITY,
+        }
     return {"action": "allow"}
 
 

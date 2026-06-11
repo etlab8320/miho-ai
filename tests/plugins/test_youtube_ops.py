@@ -482,7 +482,10 @@ async def test_youtube_pre_gateway_dispatch_responds_with_tool_result(monkeypatc
 
     result = await youtube_ops._youtube_pre_gateway_dispatch(event=event)
 
-    assert result == {"action": "respond", "text": "빠른 유튜브 요약\nMEDIA:/tmp/card.png"}
+    assert result["action"] == "respond"
+    assert result["text"] == "빠른 유튜브 요약\nMEDIA:/tmp/card.png"
+    assert result["route"] == "youtube_ops"
+    assert result["reason"] == "youtube_preflight"
     assert seen["render_card"] is True
     assert seen["force_refresh"] is False
 

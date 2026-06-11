@@ -32,6 +32,7 @@ from .thread_context import academy_context_key, format_context_note, get_thread
 
 
 logger = logging.getLogger(__name__)
+ACADEMY_ROUTE_PRIORITY = 30
 
 
 def _academy_command(raw_args: str = "") -> str:
@@ -101,7 +102,7 @@ def _capture_gateway_context(event: Any = None, **kwargs: Any) -> dict[str, str]
     return {"action": "allow"}
 
 
-async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dict[str, str]:
+async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dict[str, object]:
     _capture_gateway_context(event, **kwargs)
     source = getattr(event, "source", None)
     platform_raw = getattr(source, "platform", "")
@@ -120,6 +121,9 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
             return {
                 "action": "respond",
                 "text": await _guidance_text(text, "login_status", _status_command()),
+                "route": "academy_ops",
+                "reason": "login_status",
+                "priority": ACADEMY_ROUTE_PRIORITY,
             }
         return {"action": "allow"}
     if login_preflight.is_academy_login_request(text):
@@ -127,6 +131,9 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
             return {
                 "action": "respond",
                 "text": await _guidance_text(text, "login_link", _login_command()),
+                "route": "academy_ops",
+                "reason": "login_link",
+                "priority": ACADEMY_ROUTE_PRIORITY,
             }
         return {"action": "allow"}
     context_key = academy_context_key(event)
@@ -137,8 +144,9 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
                 return {"action": "allow"}
             if "/academy login" in auth_error:
                 fallback = _login_command()
-                return {"action": "respond", "text": await _guidance_text(text, "login_required", fallback)}
-            return {"action": "respond", "text": await _guidance_text(text, "auth_error", auth_error)}
+                return _route_response(await _guidance_text(text, "login_required", fallback), "login_required")
+            fallback = _login_command()
+            return _route_response(await _guidance_text(text, "login_required", fallback), "login_reconnect")
         return {"action": "allow"}
     route = await resolve_and_execute_academy_request(
         text,
@@ -152,7 +160,7 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
             verdict = "ok"
         if verdict != "retry":
             _persist_handled_turn(kwargs.get("session_store"), event, text, answer)
-            return {"action": "respond", "text": answer}
+            return _route_response(answer, route.reason or "natural_router")
         _inject_prior_context(event, context_key)
         hint = (
             "방금 자동 응답이 질문에 맞지 않았어. 질문 의도를 다시 정확히 파악해서 "
@@ -165,6 +173,16 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
     if _inject_prior_context(event, context_key):
         event.academy_self_check = True
     return {"action": "allow"}
+
+
+def _route_response(text: str, reason: str) -> dict[str, object]:
+    return {
+        "action": "respond",
+        "text": text,
+        "route": "academy_ops",
+        "reason": reason,
+        "priority": ACADEMY_ROUTE_PRIORITY,
+    }
 
 
 async def _guidance_text(user_text: str, intent: str, fallback: str) -> str:

@@ -167,7 +167,7 @@ async def test_expired_binding_academy_domain_request_returns_login_before_tools
 
 
 @pytest.mark.asyncio
-async def test_academy_mismatch_binding_returns_admin_contact_without_login_link(
+async def test_academy_mismatch_binding_returns_reconnect_login_link(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -207,8 +207,13 @@ async def test_academy_mismatch_binding_returns_admin_contact_without_login_link
 
     result = await _academy_pre_gateway_dispatch(event, gateway=gateway)
 
-    assert result == {"action": "respond", "text": "학원 계정 정보를 확인하지 못했어. 관리자에게 문의해줘."}
-    assert load_pending_logins() == {}
+    assert result["action"] == "respond"
+    assert "https://academy-login.etlab.kr" in result["text"]
+    assert "/academy/login?state=" in result["text"]
+    assert "관리자에게 문의" not in result["text"]
+    assert result["route"] == "academy_ops"
+    assert result["reason"] == "login_reconnect"
+    assert load_pending_logins()
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ from .tools import _youtube_analyze_tool_handler, set_llm
 
 logger = logging.getLogger(__name__)
 YOUTUBE_PRE_GATEWAY_TIMEOUT_SECONDS = 180
+YOUTUBE_ROUTE_PRIORITY = 40
 
 
 def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, str]:
@@ -21,7 +22,7 @@ def _capture_gateway_context(event: Any = None, **_: Any) -> dict[str, str]:
     return {"action": "allow"}
 
 
-async def _youtube_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dict[str, str]:
+async def _youtube_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dict[str, object]:
     capture_gateway_context(event)
     text = str(getattr(event, "text", "") or "")
     decision = youtube_preflight_decision(text)
@@ -33,17 +34,27 @@ async def _youtube_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
             timeout=YOUTUBE_PRE_GATEWAY_TIMEOUT_SECONDS,
         )
     except TimeoutError:
-        return {"action": "respond", "text": "유튜브 분석이 오래 걸리고 있어. 잠시 후 다시 보내줘."}
+        return _route_response("유튜브 분석이 오래 걸리고 있어. 잠시 후 다시 보내줘.", "timeout")
     except Exception as exc:
         logger.warning("YouTube pre-gateway analysis failed: %s", exc)
-        return {"action": "respond", "text": "유튜브 분석 중 문제가 생겼어. 잠시 후 다시 시도해줘."}
+        return _route_response("유튜브 분석 중 문제가 생겼어. 잠시 후 다시 시도해줘.", "tool_error")
 
     response = _response_text(raw_result)
     # Record this HANDLED turn so the body agent sees it next turn — without it,
     # a follow-up ("그 영상에서 아까 그 부분") loses the analysis context, same
     # bug we fixed in academy_ops. Best-effort; never break the reply.
     _persist_handled_turn(kwargs.get("session_store"), event, text, response)
-    return {"action": "respond", "text": response}
+    return _route_response(response, "youtube_preflight")
+
+
+def _route_response(text: str, reason: str) -> dict[str, object]:
+    return {
+        "action": "respond",
+        "text": text,
+        "route": "youtube_ops",
+        "reason": reason,
+        "priority": YOUTUBE_ROUTE_PRIORITY,
+    }
 
 
 def _persist_handled_turn(session_store: Any, event: Any, question: str, answer: str) -> None:
