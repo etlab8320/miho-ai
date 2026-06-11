@@ -208,8 +208,10 @@ def test_calculate_score_unverified_rule_refused() -> None:
 
     conn = sqlite3.connect(str(db_path()))
     conn.row_factory = sqlite3.Row
+    # verified 계열(official_verified 등)은 이제 계산 허용 — 진짜 비계산 라벨만 거부 대상
     row = conn.execute(
-        "SELECT university_id FROM susi_calculation_rules WHERE confidence != 'verified' LIMIT 1"
+        "SELECT university_id FROM susi_calculation_rules "
+        "WHERE confidence NOT LIKE '%verified%' OR confidence LIKE '%non_calc%' LIMIT 1"
     ).fetchone()
     conn.close()
 
