@@ -11,7 +11,6 @@
     data:
       student: {name, avg_grade, basis_label}        # basis_label 예: "생기부 내신 기준"
       title_lines: [".."]                            # 표지 h1, 1~2줄
-      badge: {line1, line2}                          # 예: "상향 2" / "적정 4"
       cover: {pills[], key_judgment{headline, body}, metrics[{label,value}]x3}
       comparison: {note, rows[{school, department, track, converted, max_total,
                                first_cut, final_cut, verdict(상향|적정)}]}
@@ -84,14 +83,6 @@
     .identityCard .label { font-size: 10.5px; color: var(--max-muted); font-weight: 700; }
     .identityCard .name { font-size: 27px; font-weight: 900; letter-spacing: -0.01em; }
     .identityCard .target { font-size: 13.5px; font-weight: 800; }
-    .stamp {
-      position: absolute; top: 8mm; right: 8mm;
-      border: 2.5px solid #1d4ed8; color: #1d4ed8; border-radius: 50%;
-      width: 34mm; height: 21mm;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 900; line-height: 1.3;
-      transform: rotate(-8deg); background: rgba(255,255,255,0.78); text-align: center;
-    }
     .pillrow { display: flex; flex-wrap: wrap; gap: 2.2mm; }
     .pill {
       display: inline-flex; align-items: center; border: 1px solid #bfdbfe;
@@ -198,7 +189,6 @@
       <div class="label">{{ data.student.name }} 학생을 위한 수시 실기전형 추천 리포트</div>
       <div class="name">{{ data.student.name }} 학생</div>
       <div class="target">{{ data.student.basis_label }}{% if data.student.avg_grade %} · 평균등급 {{ data.student.avg_grade }}{% endif %}</div>
-      <div class="stamp">{{ data.badge.line1 }}<br/>{{ data.badge.line2 }}</div>
       <div class="pillrow">
         {% for pill in data.cover.pills %}<span class="pill">{{ pill }}</span>{% endfor %}
       </div>
@@ -244,8 +234,7 @@
 
     <div class="legend">
       <b>판정 기준</b> · <span class="verdict fit">적정</span> 내신환산이 전년도 최종합격선 부근 이상 ·
-      <span class="verdict up">상향</span> 현재 환산으로는 부족하지만 실기 만점 합산이 전년도 최종합격선에 도달 가능한 학교.
-      실기를 만점 받아도 전년도 결과에 닿지 않는 학교는 이 리포트에 싣지 않습니다.
+      <span class="verdict up">상향</span> 실기에서 상위 득점하면 전년도 최종합격선에 도달할 수 있는 학교.
       {% if data.comparison.note %}<br/>{{ data.comparison.note }}{% endif %}
     </div>
 

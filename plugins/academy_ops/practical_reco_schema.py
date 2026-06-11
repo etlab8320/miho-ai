@@ -75,14 +75,7 @@ def _validate_structure(content: dict[str, Any], errors: list[str]) -> None:
     if not isinstance(title_lines, list) or not title_lines:
         errors.append("content.title_lines는 1개 이상의 문자열 목록이어야 한다.")
 
-    # badge
-    badge = content.get("badge")
-    if not isinstance(badge, dict):
-        errors.append("content.badge 필드가 없거나 dict가 아니다.")
-    else:
-        for key in ("line1", "line2"):
-            if not _nonempty_str(badge.get(key)):
-                errors.append(f"content.badge.{key}가 비어 있다.")
+    # badge(도장)는 사장님 피드백(2026-06-12)으로 템플릿에서 제거됨 — 검증하지 않는다.
 
     # cover
     cover = content.get("cover")
