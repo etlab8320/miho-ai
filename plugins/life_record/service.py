@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 from .consensus import all_confirmed, reconcile
 from .mhtml_tables import extract_neis_mhtml_tables
 from .mhtml_source import empty_extraction, extract_from_mhtml_source
+from .pdf_text_source import extract_from_pdf_text, has_core_pdf_text_data
 from .pdf_reader import (
     create_text_pdf,
     convert_mhtml_to_pdf,
@@ -116,18 +117,29 @@ async def ingest_life_record(
         consensus = reconcile(results)
     elif has_text_layer(extracted.page_texts):
         # Text-layer PDF: numbers are exact digital text — no OCR drift. The
-        # TEXT_PROMPT tells the LLM to reconstruct the (line-break-mangled) text,
-        # which already hits 100% on real samples (기아림 57/57). (markdown via
-        # pymupdf4llm was dropped — it needs PyMuPDF 1.27 but miho ships 1.26.)
+        # default path must not wait on the auxiliary LLM. Use a deterministic
+        # parser first; a bounded model pass is opt-in for manual repair work.
         page_count = len(extracted.page_texts)
-        extraction_method = "codex_text_layer_v1"
+        extraction_method = "neis_pdf_text_layer_v1"
         text_source = extracted.page_texts
-        for _ in range(max(1, runs)):
-            results.append(await extract_from_text(text_source, resolver=text_resolver))
+        document_raw_text = "\n\n".join(text_source)
+        deterministic = extract_from_pdf_text(text_source)
+        results.append(deterministic)
+        if _pdf_model_pass_enabled() or text_resolver is not None:
+            try:
+                model_result = await extract_from_text(text_source, resolver=text_resolver)
+                if has_core_pdf_text_data(deterministic):
+                    results.append(model_result)
+                else:
+                    results = [model_result, model_result.copy()]
+            except Exception as exc:
+                logger.warning("life_record: pdf text model pass failed; storing deterministic review copy: %s", exc)
+                results.append(empty_extraction())
+        elif has_core_pdf_text_data(deterministic):
+            results.append(deterministic)
+        else:
+            results.append(empty_extraction())
         consensus = reconcile(results)
-        while not all_confirmed(consensus) and len(results) < MAX_RUNS:
-            results.append(await extract_from_text(text_source, resolver=text_resolver))
-            consensus = reconcile(results)
     else:
         # Scanned PDF (no text): vision over images, hi-res tie-break majority vote.
         images = [to_data_url(png) for png in page_pngs]
@@ -407,6 +419,10 @@ def _extract_mhtml_tables(document_path: Path) -> Any | None:
 
 def _mhtml_model_pass_enabled() -> bool:
     return os.getenv("MIHO_LIFE_RECORD_MHTML_MODEL_PASS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _pdf_model_pass_enabled() -> bool:
+    return os.getenv("MIHO_LIFE_RECORD_TEXT_MODEL_PASS", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _store_original_document(bundle_dir: Path, document_path: Path) -> Path:

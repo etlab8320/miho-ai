@@ -365,6 +365,7 @@ def test_text_layer_pdf_uses_text_extraction_not_vision(monkeypatch, tmp_path) -
     import plugins.life_record.vision_extractor as vision_module
     from plugins.life_record.tools import _ingest_pdf_tool_handler
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
+    monkeypatch.setenv("MIHO_LIFE_RECORD_TEXT_MODEL_PASS", "1")
     monkeypatch.setattr(
         service_module, "extract_pdf",
         lambda _p: SimpleNamespace(page_texts=["학교생활기록부 " * 80], raw_text="x", page_count=1, metadata={}, photo=None),
