@@ -181,7 +181,8 @@
     <div class="footer"><span>{{ left_text }}</span><span>{{ right_text }}</span></div>
 {%- endmacro %}
 {%- macro verdict_pill(v) %}<span class="verdict {{ 'up' if v == '상향' else 'fit' }}">{{ v }}</span>{%- endmacro %}
-{%- set school_pages = data.schools | batch(3) | list %}
+{#- 카드 3장은 A4 한 장을 넘쳐 푸터가 밀린다 — 페이지당 2장 고정 -#}
+{%- set school_pages = data.schools | batch(2) | list %}
 <body class="maxReport">
 
   {#- ───────── 표지 ───────── #}

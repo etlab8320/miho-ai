@@ -11,6 +11,7 @@ from .brand_logo_tool import register_brand_logo_tools
 from .commentary_config import plan_commentary_aux_defaults
 from .consultation_notes_tool import register_consultation_note_tool
 from .hakjong_report_tool import register_hakjong_report_tool
+from .practical_reco_tool import register_practical_reco_tool
 from .gateway_dispatch import (
     _academy_command,
     _academy_pre_gateway_dispatch,
@@ -166,6 +167,7 @@ def register(ctx: Any) -> None:
     register_consultation_note_tool(ctx)
     register_brand_logo_tools(ctx)
     register_hakjong_report_tool(ctx)
+    register_practical_reco_tool(ctx)
     ctx.register_tool(
         name="academy_student_attendance_calendar_image",
         toolset="academy_ops",

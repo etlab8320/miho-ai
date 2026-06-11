@@ -45,6 +45,18 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         "purpose": "유튜브 URL/영상 ID를 transcript 기반으로 분석하고 필요하면 이미지 카드를 만든다.",
         "requires": ["youtube url or video id"],
     },
+    "academy_practical_reco_package": {
+        "domain": "academy_ops",
+        "purpose": (
+            "수시 실기전형 추천 결과를 고정 템플릿 PDF로 만든다. "
+            "환산점수·전년도 수치는 susi27_score_calculate/susi27_rule_lookup 산출값만 사용. "
+            "상향은 (내신환산+실기만점) ≥ 전년도 최종합 학교만 — 만점으로도 못 닿는 학교는 절대 싣지 않는다. "
+            "톤은 선생님이 학생·학부모에게 설명하듯 자연스럽게. "
+            "검증 통과한 PDF만 ~/.miho/media_cache/susi_student_record/validated 로 승격하고 "
+            "media_tag를 반환한다."
+        ),
+        "requires": ["student_name", "content"],
+    },
     "academy_hakjong_report_package": {
         "domain": "academy_ops",
         "purpose": (

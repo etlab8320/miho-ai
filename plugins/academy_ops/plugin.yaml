@@ -20,6 +20,7 @@ tools:
   - academy_set_brand_logo
   - academy_reset_brand_logo
   - academy_hakjong_report_package
+  - academy_practical_reco_package
   - academy_student_attendance_calendar_image
   - academy_attendance_day
   - academy_staff_attendance_day
