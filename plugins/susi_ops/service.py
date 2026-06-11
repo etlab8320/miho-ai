@@ -236,6 +236,20 @@ def _score_from_grade_table(avg_grade: float, grade_points: dict[str, Any]) -> f
     return points[lower] + (points[upper] - points[lower]) * ratio
 
 
+
+# confidence 라벨은 검증 파이프라인이 진화하며 15종으로 늘었다 (verified,
+# official_verified, official_pdf_codex_verified, ...). "verified"를 포함하되
+# 계산 불가 표식(non_calc/non_auto/absent/not_in_guide)이 붙은 건 제외한다.
+_NON_CALC_MARKERS = ("non_calc", "non_auto", "absent", "not_in_guide")
+
+
+def _is_calculable_confidence(confidence: str | None) -> bool:
+    text = str(confidence or "").lower()
+    if "verified" not in text:
+        return False
+    return not any(marker in text for marker in _NON_CALC_MARKERS)
+
+
 def calculate_score(
     university_id: str,
     grades: list[dict[str, Any]],
@@ -258,7 +272,7 @@ def calculate_score(
     confidence = row["confidence"] or "unverified"
     score_logic = _json_loads(row["score_logic_json"], None)
 
-    if confidence != "verified" or not isinstance(score_logic, dict):
+    if not _is_calculable_confidence(confidence) or not isinstance(score_logic, dict):
         return {
             "university_id": university_id,
             "status": "unverified_rule",
@@ -495,16 +509,94 @@ def _student_grades_from_central(student_query: str) -> tuple[str | None, list[d
         if student is None:
             return None, []
         rows = conn.execute(
-            "SELECT category, subject, credits, rank_grade FROM central_grades WHERE student_id = ?",
+            "SELECT grade, semester, category, subject, credits, rank_grade, achievement FROM central_grades WHERE student_id = ?",
             (student["id"],),
         ).fetchall()
         grades = [
-            {"교과": r["category"], "과목": r["subject"], "이수단위": r["credits"], "등급": r["rank_grade"]}
+            {
+                "교과": r["category"], "과목": r["subject"], "이수단위": r["credits"],
+                "등급": r["rank_grade"], "학년": r["grade"], "학기": r["semester"],
+                "성취도": r["achievement"],
+            }
             for r in rows
         ]
         return student["name"], grades
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 대학별 공식 사이드카 (susi27_university_formula_plugins)
+# ---------------------------------------------------------------------------
+# 등급표(weighted_grade_table)가 아닌 학교(예: 순천향 T×3+U×0.3-0.3)는 파이프라인
+# 워크스페이스의 대학별 공식 플러그인이 진실이다. staging DB 옆에 살아 있으므로
+# 거기서 lazy-load 한다. 공식이 없는 학교는 계산하지 않는다 (추측 금지).
+
+_FORMULA_MODULE: Any = None
+_FORMULA_LOAD_FAILED = False
+
+
+def _formula_module() -> Any:
+    global _FORMULA_MODULE, _FORMULA_LOAD_FAILED
+    if _FORMULA_MODULE is not None or _FORMULA_LOAD_FAILED:
+        return _FORMULA_MODULE
+    import importlib.util
+    import sys
+
+    formula_dir = db_path().parent
+    entry = formula_dir / "susi27_university_formula_plugins.py"
+    if not entry.exists():
+        _FORMULA_LOAD_FAILED = True
+        return None
+    try:
+        if str(formula_dir) not in sys.path:
+            sys.path.insert(0, str(formula_dir))
+        spec = importlib.util.spec_from_file_location("susi27_university_formula_plugins", entry)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault("susi27_university_formula_plugins", module)
+        spec.loader.exec_module(module)
+        _FORMULA_MODULE = module
+    except Exception:
+        _FORMULA_LOAD_FAILED = True
+        return None
+    return _FORMULA_MODULE
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+def _formula_calculate(university: str, merged_row: dict[str, Any], grades: list[dict[str, Any]]) -> dict[str, Any] | None:
+    module = _formula_module()
+    if module is None:
+        return None
+    fn = (getattr(module, "REGISTRY", None) or {}).get(university)
+    if fn is None:
+        return None
+    transcript = [
+        module.SubjectRecord(
+            grade=_int_or_none(g.get("학년")) or 0,
+            semester=_int_or_none(g.get("학기")) or 0,
+            category=str(g.get("교과") or ""),
+            subject=str(g.get("과목") or ""),
+            credit=float(_first_number(g.get("이수단위")) or 1.0),
+            rank_grade=_int_or_none(g.get("등급")),
+            achievement=(str(g.get("성취도")) if g.get("성취도") else None),
+        )
+        for g in grades
+        if isinstance(g, dict)
+    ]
+    try:
+        result = fn(merged_row, transcript, {})
+    except Exception:
+        return None
+    data = result.to_dict() if hasattr(result, "to_dict") else None
+    if not isinstance(data, dict) or data.get("record_score") is None:
+        return None
+    return data
 
 
 def recommend_candidates(
@@ -522,7 +614,7 @@ def recommend_candidates(
         }
 
     conn = _connect()
-    conds = ["c.confidence = 'verified'", "c.admission_result_26_json IS NOT NULL", "c.admission_result_26_json != ''"]
+    conds = ["c.confidence LIKE '%verified%'", "c.admission_result_26_json IS NOT NULL", "c.admission_result_26_json != ''"]
     params: list[Any] = []
     for term, col in ((university, "c.university"), (department, "c.department"), (admission_track, "c.admission_track")):
         clean = _safe_like_term(term)
@@ -543,8 +635,20 @@ def recommend_candidates(
     for row in rule_rows:
         calc = calculate_score(row["university_id"], grades, {}, {})
         if calc.get("status") != "calculated":
-            skipped["calc_failed"] += 1
-            continue
+            raw_for_formula = _json_loads(row["raw_json"], {})
+            formula = _formula_calculate(row["university"], dict(raw_for_formula), grades)
+            if formula is None:
+                skipped["calc_failed"] += 1
+                continue
+            conn_calc = _connect()
+            calc = {
+                "status": "calculated",
+                "student_record_score": round(float(formula["record_score"]), 4),
+                "formula_key": formula.get("formula_key"),
+            }
+            vs_f = _vs_prev_year(conn_calc, row["university_id"], float(formula["record_score"]))
+            if vs_f:
+                calc["vs_prev_year"] = vs_f
         vs = calc.get("vs_prev_year") or {}
         if not vs:
             skipped["calc_failed"] += 1
