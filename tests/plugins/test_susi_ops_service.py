@@ -169,10 +169,17 @@ def test_lookup_roundtrip_returns_dict_with_rows() -> None:
     row = result["rows"][0]
     assert row["university"].startswith("가천대")
     assert "university_id" in row
-    assert "queue_status" in row
     assert "confidence" in row
-    assert "db_snapshot" in row
-    assert "score_logic" in row
+    # 요약 모드(기본): 엔진 내부 룰은 컨텍스트에 싣지 않는다
+    assert "score_logic" not in row
+    assert "admission_meta" in row
+    assert "admission_result_26" in row
+
+    detailed = lookup_rules(university="가천대", limit=1, detail=True)
+    drow = detailed["rows"][0]
+    assert "score_logic" in drow
+    assert "queue_status" in drow
+    assert "db_snapshot" in drow
 
 
 @_skip_no_db

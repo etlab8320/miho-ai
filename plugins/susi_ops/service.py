@@ -50,7 +50,12 @@ def lookup_rules(
     department: str | None = None,
     admission_track: str | None = None,
     limit: int = 20,
+    detail: bool = False,
 ) -> dict[str, Any]:
+    # 기본은 요약 모드: 추천/리포트에 필요한 필드만 반환한다. score_logic 같은
+    # 엔진 내부 룰 JSON(행당 수천 자)은 calculate_score가 university_id로 DB에서
+    # 직접 읽으므로 에이전트 컨텍스트에 실을 필요가 없다 — 20행 풀 반환이
+    # 컨텍스트 폭발(압축 루프)을 일으킨 실사고(2026-06-12) 재발 방지.
     conn = _connect()
     sql = """
     SELECT r.university_id, r.university, r.department, r.admission_track, r.track_normalized,
@@ -84,35 +89,42 @@ def lookup_rules(
     result = []
     for row in rows:
         raw = _json_loads(row["raw_json"], {})
-        result.append(
-            {
-                "university_id": row["university_id"],
-                "university": row["university"],
-                "department": row["department"],
-                "admission_track": row["admission_track"],
-                "track_normalized": row["track_normalized"],
-                "source_status": row["source_status"],
-                "queue_status": row["status"],
-                "confidence": row["confidence"] or "unverified",
-                "reason": row["reason"],
-                "text_path": row["text_path"],
-                "db_snapshot": {
-                    "quota": raw.get("정원"),
-                    "student_record_subjects": raw.get("내신교과"),
-                    "attendance": raw.get("내신출결"),
-                    "practical_id": raw.get("실기ID"),
-                    "practical_max": raw.get("실기만점"),
-                    "max_expected_cut": raw.get("27맥스예상컷"),
-                },
-                "score_logic": _json_loads(row["score_logic_json"], None),
-                "attendance_logic": _json_loads(row["attendance_logic_json"], None),
-                "practical_events": _json_loads(row["practical_events_json"], None),
-                "admission_meta": _json_loads(row["admission_meta_json"], None),
-                "eligibility": _json_loads(row["eligibility_json"], None),
-                "school_info": _json_loads(row["school_info_json"], None),
-                "admission_result_26": _json_loads(row["admission_result_26_json"], None),
-            }
-        )
+        item = {
+            "university_id": row["university_id"],
+            "university": row["university"],
+            "department": row["department"],
+            "admission_track": row["admission_track"],
+            "track_normalized": row["track_normalized"],
+            "confidence": row["confidence"] or "unverified",
+            "quota": raw.get("정원"),
+            "practical_max": raw.get("실기만점"),
+            "max_expected_cut": raw.get("27맥스예상컷"),
+            "admission_meta": _json_loads(row["admission_meta_json"], None),
+            "admission_result_26": _json_loads(row["admission_result_26_json"], None),
+            "practical_events": _json_loads(row["practical_events_json"], None),
+        }
+        if detail:
+            item.update(
+                {
+                    "source_status": row["source_status"],
+                    "queue_status": row["status"],
+                    "reason": row["reason"],
+                    "text_path": row["text_path"],
+                    "db_snapshot": {
+                        "quota": raw.get("정원"),
+                        "student_record_subjects": raw.get("내신교과"),
+                        "attendance": raw.get("내신출결"),
+                        "practical_id": raw.get("실기ID"),
+                        "practical_max": raw.get("실기만점"),
+                        "max_expected_cut": raw.get("27맥스예상컷"),
+                    },
+                    "score_logic": _json_loads(row["score_logic_json"], None),
+                    "attendance_logic": _json_loads(row["attendance_logic_json"], None),
+                    "eligibility": _json_loads(row["eligibility_json"], None),
+                    "school_info": _json_loads(row["school_info_json"], None),
+                }
+            )
+        result.append(item)
 
     return {"db_path": str(db_path()), "count": len(result), "rows": result}
 

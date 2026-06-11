@@ -12,7 +12,8 @@ def _lookup_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
         university=args.get("university"),
         department=args.get("department"),
         admission_track=args.get("admission_track"),
-        limit=int(args.get("limit") or 20),
+        limit=int(args.get("limit") or 8),
+        detail=bool(args.get("detail")),
     )
 
 
@@ -35,20 +36,25 @@ def register(ctx: Any) -> None:
                 "university": {"type": "string", "description": "대학명 일부 또는 전체."},
                 "department": {"type": "string", "description": "학과/모집단위명 일부."},
                 "admission_track": {"type": "string", "description": "전형명 일부. 예: 일반, 농어촌, 사배자."},
-                "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
+                "limit": {"type": "integer", "default": 8, "minimum": 1, "maximum": 100},
+                "detail": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "true면 엔진 내부 룰(score_logic 등) 포함 전체 반환. 평소엔 쓰지 말 것 — 환산 계산은 susi27_score_calculate가 DB에서 직접 룰을 읽는다.",
+                },
             },
             "additionalProperties": False,
         },
         handler=_lookup_handler,
         description=(
             "학교별 수시 패키지 조회 — 학종 리포트와 실기/수시 추천 체인의 룰 조회 단계에서 사용한다. "
-            "반환 rows에는 전형 구조(admission_meta: 단계별 반영비율·모집인원·수능최저·전년도 cut_data), "
-            "전년도 결과(admission_result_26), 지원자격(eligibility), 모집단위 매칭(school_info), "
-            "교과 반영식(score_logic), 출결 반영(attendance_logic), 실기 종목(practical_events), "
-            "맥스 예상컷(db_snapshot.max_expected_cut)이 포함된다. "
+            "반환 rows(요약)에는 전형 구조(admission_meta: 단계별 반영비율·모집인원·수능최저·전년도 cut_data), "
+            "전년도 결과(admission_result_26), 실기 종목(practical_events), 모집정원(quota), "
+            "맥스 예상컷(max_expected_cut), university_id가 포함된다. "
             "학종 리포트 체인: 이 도구로 해당 학교가 무엇을 중요하게 보는지 확인한 뒤 내용을 작성해 "
             "academy_hakjong_report_package로 넘긴다. "
-            "실기/수시 추천 체인: 이 도구의 score_logic을 susi27_score_calculate에 넘겨 환산하고 "
+            "실기/수시 추천 체인: 여기서 받은 university_id로 susi27_score_calculate를 호출해 환산하고 "
+            "(반영식은 계산 도구가 DB에서 직접 읽음 — detail 조회 불필요) "
             "admission_result_26·cut_data와 비교해 상향/적정을 판단한다. "
             "실기전형 추천은 환산점수 숫자+실기 종목+전년도 결과로만 판단 — 등급 나열로 대체하지 말고, "
             "생기부 세특/서사/학종 언어는 넣지 말 것 (학종 리포트 전용). "
