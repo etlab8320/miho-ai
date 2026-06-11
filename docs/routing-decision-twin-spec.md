@@ -23,6 +23,8 @@ ET needs Miho to infer the current job from the user text, thread context, owner
 - A decisive candidate with `required_tool` cannot lose to a generic response solely because the generic candidate has a higher priority.
 - When no domain plugin has produced a candidate yet, the LLM decision twin can return a structured `required_tool` route and rewrite the turn for the body agent.
 - Every currently registered Miho tool has a decision-twin contract generated from registry metadata or an explicit domain override.
+- Core-domain tool contracts are not generic fallbacks; protected tools such as life-record, hakjong report packaging, media delivery, and jungsi login describe their domain boundaries.
+- If the LLM judge proposes an impossible cross-domain swap, such as a hakjong/life-record request routed to `jungsi_login`, the gateway fails open to normal dispatch instead of rewriting the user turn.
 - Unauthorized or unauthenticated gateway senders do not trigger owner-memory recall or the LLM judge.
 - The decision object records the decision-twin policy state and memory evidence.
 - Discord workspace prompts tell Miho to infer intent from current text, thread memory, and owner profile before answering.
@@ -59,10 +61,14 @@ No frontend surface change. Discord-visible errors remain Korean plain-language 
 - [x] T4: Add LLM-backed decision twin plugin.
   - Files: `plugins/decision_twin/`, `tests/plugins/test_decision_twin_plugin.py`
   - Acceptance: authorized turns can be rewritten from LLM JSON; unauthorized turns skip the judge.
-- [ ] T5: Run wider regression checks and commit.
+- [x] T5: Run wider regression checks and commit.
   - Files: test/lint only.
   - Acceptance: focused routing/RAG tests and lint pass.
+- [x] T6: Add core-domain contract quality and cross-domain guard tests.
+  - Files: `plugins/decision_twin/`, `tests/plugins/test_decision_twin_plugin.py`
+  - Acceptance: hakjong/life-record context cannot be rewritten to `jungsi_login`.
 
 ## Risks
 - LLM judge failures must fail open to normal dispatch so the gateway does not block messages during provider outages.
 - Tool metadata quality matters; weak plugin evidence should be improved in the plugin rather than patched with central keyword rules.
+- Negative domain guards must only block impossible tool swaps after the LLM decision, not choose a route from isolated keywords.

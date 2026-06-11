@@ -121,6 +121,50 @@ def test_decision_contracts_cover_every_registered_tool() -> None:
     assert contracts["academy_student_card_image"]["domain"] == "academy_ops"
 
 
+def test_core_domain_contracts_are_not_generic_fallbacks() -> None:
+    contracts = decision_tool_contracts()
+    core_tools = (
+        "life_record_ingest_pdf",
+        "life_record_summary",
+        "life_record_lookup",
+        "academy_hakjong_report_package",
+        "academy_render_image",
+        "academy_report_image",
+        "send_message",
+        "jungsi_login",
+    )
+
+    for tool_name in core_tools:
+        contract = contracts[tool_name]
+        purpose = contract["purpose"]
+        assert len(purpose) >= 35
+        assert not purpose.startswith("Registered Miho tool")
+        assert contract["domain"]
+
+
+@pytest.mark.asyncio
+async def test_decision_twin_blocks_jungsi_login_for_hakjong_context() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "route",
+            "route": "jungsi",
+            "intent": "hakjong.report.login",
+            "required_tool": "jungsi_login",
+            "confidence": 0.98,
+            "evidence": ["학종 리포트 요청을 로그인 문제로 오판했다"],
+            "tool_instruction": "정시엔진 로그인 링크를 발급한다",
+        }
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event("말이 좀 긴데 결국 학종 리포트 파일을 제대로 보내달라는 거야"),
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+        owner_context_builder=lambda _text: "학종 리포트는 생기부/수시 근거와 premium_hakjong_report 계약을 사용한다.",
+    )
+
+    assert result == {"action": "allow"}
+
+
 def test_parse_decision_payload_accepts_json_string() -> None:
     decision = parse_decision_payload(
         '{"action":"route","route":"academy_ops","required_tool":"academy_student_card_image",'

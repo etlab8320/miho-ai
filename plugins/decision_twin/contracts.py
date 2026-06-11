@@ -22,7 +22,10 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "life_record_lookup": {
         "domain": "life_record",
-        "purpose": "학생 생기부 DB에서 학년/학기/영역별 원문 근거를 조회한다.",
+        "purpose": (
+            "학생 생기부 DB에서 학년/학기/영역별 원문 근거를 조회한다. "
+            "학종/수시 리포트 근거 확인에는 정시엔진이 아니라 이 생기부 조회 계열을 우선한다."
+        ),
         "requires": ["student or current thread context"],
     },
     "life_record_search": {
@@ -47,13 +50,35 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "academy_render_image": {
         "domain": "academy_ops",
-        "purpose": "학원 데이터/리포트/표를 Discord 전달용 PNG로 렌더링한다.",
+        "purpose": (
+            "학원 데이터/리포트/표를 Discord 전달용 PNG로 렌더링한다. "
+            "전용 이미지 도구가 정확히 맞지 않을 때만 HTML 기반으로 사용한다."
+        ),
         "requires": ["safe html body"],
     },
     "academy_report_image": {
         "domain": "academy_ops",
-        "purpose": "고정된 표 형식의 학원 리포트를 PNG로 렌더링한다.",
+        "purpose": (
+            "고정된 표 형식의 학원 리포트를 PNG로 렌더링한다. "
+            "열과 행이 명확한 표/기록표/명단형 자료에만 사용한다."
+        ),
         "requires": ["columns", "rows"],
+    },
+    "jungsi_login": {
+        "domain": "jungsi_excel_importer",
+        "purpose": (
+            "정시엔진 전용 로그인 링크를 발급한다. "
+            "학종/생기부/수시 리포트 요청에는 사용하지 않는다."
+        ),
+        "requires": ["authorized Discord user needing jungsi-engine account connection"],
+    },
+    "send_message": {
+        "domain": "messaging",
+        "purpose": (
+            "Discord 등 현재 플랫폼 채널에 최종 텍스트 응답을 전송한다. "
+            "파일 전달이나 도메인 분석 도구를 대체하지 않는다."
+        ),
+        "requires": ["target channel and response text"],
     },
     "media_delivery_contract": {
         "domain": "gateway_media",

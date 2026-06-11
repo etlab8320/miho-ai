@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from .domain_guard import has_domain_conflict
 from .router import (
     DECISION_TWIN_TASK,
     DecisionResolver,
@@ -43,6 +44,13 @@ async def _decision_twin_pre_gateway_dispatch(
         logger.info("decision twin resolver skipped: %s", exc)
         return {"action": "allow"}
     decision = parse_decision_payload(raw)
+    if has_domain_conflict(decision, user_text=text, owner_context=owner_context, turn_context=_turn_context(event)):
+        logger.info(
+            "decision twin blocked domain conflict: tool=%s intent=%s",
+            decision.required_tool,
+            decision.intent,
+        )
+        return {"action": "allow"}
     if should_route_decision(decision):
         return {
             "action": "rewrite",
