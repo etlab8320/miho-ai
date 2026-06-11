@@ -66,6 +66,21 @@ _RECOMMENDATION_MARKERS = (
     "중립",
     "안전",
 )
+_SCORE_CALCULATION_MARKERS = (
+    "계산",
+    "환산",
+    "검증",
+    "맞아",
+    "높게",
+    "반영식",
+)
+_JUNGSI_SCORE_TOOLS = (
+    "jungsi_student_score_lookup",
+    "jungsi_student_university_score",
+    "jungsi_cutoff_lookup",
+    "jungsi_rule_summary",
+    "jungsi_university_search",
+)
 _LIFE_RECORD_DOMAIN = "life_record"
 _JUNGSI_DOMAIN = "jungsi_excel_importer"
 _JUNGSI_PREFIX = "jungsi_"
@@ -90,6 +105,8 @@ def has_domain_conflict(
     domain = _tool_domain(tool)
     context = _context_blob(user_text, owner_context, turn_context)
     if _is_jungsi_tool(tool, domain):
+        if _is_jungsi_score_tool(tool) and _is_score_calculation_context(context):
+            return False
         return (
             _contains_any(context, _HAKJONG_MARKERS)
             or _contains_any(context, _LIFE_RECORD_MARKERS)
@@ -118,8 +135,21 @@ def _is_life_record_tool(tool: str, domain: str) -> bool:
     return domain == _LIFE_RECORD_DOMAIN or tool.startswith(_LIFE_RECORD_PREFIX)
 
 
+def _is_jungsi_score_tool(tool: str) -> bool:
+    return tool in _JUNGSI_SCORE_TOOLS
+
+
 def _is_media_delivery_context(text: str) -> bool:
     return _contains_any(text, _MEDIA_DELIVERY_MARKERS)
+
+
+def _is_score_calculation_context(text: str) -> bool:
+    has_score = _contains_any(text, _SUSI_SCORE_MARKERS) or "점수" in text
+    has_calculation = (
+        _contains_any(text, _SCORE_CALCULATION_MARKERS)
+        or _contains_any(text, _SUSI_CUTOFF_MARKERS)
+    )
+    return has_score and has_calculation
 
 
 def _is_susi_score_recommendation_context(text: str) -> bool:

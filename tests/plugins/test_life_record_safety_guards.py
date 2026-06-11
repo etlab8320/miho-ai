@@ -52,6 +52,26 @@ def test_pre_tool_call_blocks_jungsi_tools_in_life_record_context() -> None:
     assert "life_record_lookup" in blocked["message"]
 
 
+def test_pre_tool_call_allows_score_calculation_in_susi_score_context() -> None:
+    from plugins.life_record import _block_life_record_handcoding
+    from plugins.life_record.context import capture_gateway_context
+
+    capture_gateway_context(
+        _event("종환이 점수로 내신환산이랑 작년 합격자 점수 보고 6개만 상향 중립 안전으로 뽑아줘")
+    )
+
+    assert _block_life_record_handcoding(tool_name="jungsi_student_university_score", args={}) is None
+
+
+def test_pre_tool_call_allows_score_calculation_in_explicit_susi_context() -> None:
+    from plugins.life_record import _block_life_record_handcoding
+    from plugins.life_record.context import capture_gateway_context
+
+    capture_gateway_context(_event("수시 교과 점수로 강원대 환산점수랑 전년도 컷 다시 계산해줘"))
+
+    assert _block_life_record_handcoding(tool_name="jungsi_student_university_score", args={}) is None
+
+
 def test_pre_tool_call_enforces_life_record_required_tool_turn() -> None:
     from plugins.life_record import _block_life_record_handcoding
     from plugins.life_record.context import capture_gateway_context

@@ -110,6 +110,14 @@ def route_result_text(user_text: str, decision: LlmRouteDecision) -> str:
 
 
 def _route_execution_contract(required_tool: str) -> str:
+    if required_tool == "jungsi_student_university_score":
+        return (
+            "점수계산 실행 계약: 이 요청은 로그인 안내가 아니라 학생 점수와 대학 반영식으로 "
+            "환산점수, 전년도 컷/합격자 점수, MaxLive 비교를 계산·검증하는 작업이다. "
+            "가능한 경우 학생명과 대학/학과 후보를 인자로 넣어 `jungsi_student_university_score`를 "
+            "실행해라. 점수 없이 학교 추천을 확정하지 마라. 로그인 상태가 실제로 부족할 때만 "
+            "로그인 필요를 짧게 안내하고, 로그인 링크로 대체하지 마라.\n"
+        )
     if required_tool == "media_delivery_contract":
         return (
             "파일 전달 실행 계약: 이미 생성된 전달 대상 파일은 반드시 `MEDIA:<absolute_path>` "

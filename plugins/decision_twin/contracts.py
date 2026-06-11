@@ -77,6 +77,15 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "requires": ["authorized Discord user needing jungsi-engine account connection"],
     },
+    "jungsi_student_university_score": {
+        "domain": "jungsi_excel_importer",
+        "purpose": (
+            "학생 성적과 대학/학과 반영식으로 환산점수, 전년도 컷/합격자 점수, MaxLive 비교를 "
+            "계산·검증한다. 수시 교과/실기 상담에서 '내신환산', '환산점수', '작년 합격자 점수', "
+            "'상향/중립/안전'을 점수로 판단할 때 로그인 링크가 아니라 이 계산 도구를 우선한다."
+        ),
+        "requires": ["student_query", "university or department candidates"],
+    },
     "send_message": {
         "domain": "messaging",
         "purpose": (

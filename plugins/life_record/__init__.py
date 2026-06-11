@@ -63,9 +63,35 @@ _LIFE_RECORD_CONTEXT_MARKERS = (
 _HAKJONG_CONTEXT_MARKERS = (
     "학종",
     "학생부종합",
-    "수시",
     "hakjong",
 )
+_SUSI_CONTEXT_MARKERS = (
+    "수시",
+    "교과",
+    "실기",
+    "내신",
+)
+_SCORE_CONTEXT_MARKERS = (
+    "점수",
+    "환산",
+    "내신환산",
+    "전년도",
+    "작년 합격자",
+    "컷",
+    "입결",
+    "계산",
+    "반영식",
+    "상향",
+    "중립",
+    "안전",
+)
+_JUNGSI_SCORE_TOOLS = {
+    "jungsi_student_score_lookup",
+    "jungsi_student_university_score",
+    "jungsi_cutoff_lookup",
+    "jungsi_rule_summary",
+    "jungsi_university_search",
+}
 _LIFE_RECORD_REQUIRED_MARKERS = (
     "`life_record_",
     "required_tool=life_record_",
@@ -85,6 +111,8 @@ def _block_life_record_handcoding(tool_name: Any = None, args: Any = None, **_: 
     context = _active_context_text(args)
     if _is_strict_life_record_turn(context) and name not in _LIFE_RECORD_ALLOWED_TOOLS:
         return _block_life_record_tool_contract()
+    if name in _JUNGSI_SCORE_TOOLS and _is_susi_score_context(context):
+        return None
     if name.startswith(_JUNGSI_PREFIX) and _is_life_record_or_hakjong_context(context):
         return _block_jungsi_for_life_record_context()
     if name in _LIFE_RECORD_TOOLS:
@@ -121,6 +149,12 @@ def _is_strict_life_record_turn(context: str) -> bool:
 def _is_life_record_or_hakjong_context(context: str) -> bool:
     markers = _LIFE_RECORD_CONTEXT_MARKERS + _HAKJONG_CONTEXT_MARKERS
     return any(marker.casefold() in context for marker in markers)
+
+
+def _is_susi_score_context(context: str) -> bool:
+    has_susi = any(marker.casefold() in context for marker in _SUSI_CONTEXT_MARKERS)
+    has_score = any(marker.casefold() in context for marker in _SCORE_CONTEXT_MARKERS)
+    return has_susi and has_score
 
 
 def _block_life_record_tool_contract() -> dict[str, str]:

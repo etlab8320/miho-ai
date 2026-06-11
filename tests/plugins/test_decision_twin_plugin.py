@@ -307,6 +307,76 @@ async def test_decision_twin_blocks_life_record_lock_for_susi_score_recommendati
     assert result == {"action": "allow"}
 
 
+@pytest.mark.asyncio
+async def test_decision_twin_allows_score_tool_for_susi_score_context() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "route",
+            "route": "jungsi",
+            "intent": "학생 점수로 대학별 환산점수와 전년도 컷을 비교",
+            "required_tool": "jungsi_student_university_score",
+            "confidence": 0.9,
+            "evidence": ["환산점수와 작년 합격자 점수를 요청했다"],
+            "tool_instruction": "학생 점수와 대학별 반영식으로 환산점수/컷을 계산한다",
+        }
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event("종환이 점수로 내신환산이랑 작년 합격자 점수 보고 6개만 상향 중립 안전으로 뽑아줘"),
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+        owner_context_builder=lambda _text: "수시 실기/교과 추천은 학생 환산점수와 전년도 컷을 대조해야 한다.",
+    )
+
+    assert result["action"] == "rewrite"
+    assert result["required_tool"] == "jungsi_student_university_score"
+
+
+@pytest.mark.asyncio
+async def test_decision_twin_allows_score_tool_with_life_record_thread_memory() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "route",
+            "route": "jungsi",
+            "intent": "수시 점수 추천 후보의 환산점수 검증",
+            "required_tool": "jungsi_student_university_score",
+            "confidence": 0.9,
+            "evidence": ["환산점수가 맞는지 물었다"],
+            "tool_instruction": "학생 점수와 대학 반영식으로 환산점수를 검증한다",
+        }
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event("강원대 강릉캠퍼스 점수 환산점수 저거 맞아? 꽤 높게 나오네?"),
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+        owner_context_builder=lambda _text: (
+            "이 스레드는 생기부와 학종 상담 이력이 있지만, "
+            "수시 점수 추천은 학생 환산점수와 전년도 컷을 대조해야 한다."
+        ),
+    )
+
+    assert result["action"] == "rewrite"
+    assert result["required_tool"] == "jungsi_student_university_score"
+
+
+def test_score_route_text_requires_calculation_not_login() -> None:
+    decision = parse_decision_payload(
+        {
+            "action": "route",
+            "route": "jungsi",
+            "required_tool": "jungsi_student_university_score",
+            "intent": "대학별 환산점수 계산",
+            "confidence": 0.9,
+            "tool_instruction": "백석대 순천향대 관동대 환산점수를 계산한다",
+        }
+    )
+
+    text = route_result_text("백석대 순천향대 관동대 꺼 로 내신환산점수 계산해줘봐", decision)
+
+    assert "환산점수" in text
+    assert "전년도" in text
+    assert "로그인 링크로 대체하지 마라" in text
+
+
 def test_parse_decision_payload_accepts_json_string() -> None:
     decision = parse_decision_payload(
         '{"action":"route","route":"academy_ops","required_tool":"academy_student_card_image",'
