@@ -1,0 +1,347 @@
+{#-
+  hakjong_report_shell.html — 학종 프리미엄 리포트 고정 껍데기 (Jinja2)
+  기준 디자인: 사장님 확정본 an_sihyun_kookmin_frontier_report.pdf (2026-06-11)
+
+  "정확성은 코드, 판단은 LLM": LLM은 content JSON(아래 구조)만 작성하고,
+  이 템플릿이 표지/topbar/footer/브랜딩/4페이지 골격을 항상 동일하게 보장한다.
+  리포트 1부 = (학생, 대학, 전형) 1조합. 여러 학교 추천이면 학교 수만큼 생성.
+
+  context 변수:
+    font_css   : report_font_css() 결과 (Pretendard @font-face)
+    logo_src   : academy_brand_logo_src() 결과 (MAX 워드마크)
+    brand_text : "맥스체대입시 일산교육원"
+    report_date: "2026-06-11" (KST)
+    data       : 검증 통과한 content JSON —
+      student: {name}
+      university: {name, department, college, track}      # track=전형명
+      badge: {grade, action}                              # "평가등급 C" / "보완 후 검토"
+      title_lines: [".."]                                 # 표지 h1, 1~2줄
+      cover: {pills[], key_judgment{headline, body}, metrics[{label,value}]x3}
+      track_section: {heading, info_cards[{label,value,sub}]x3,
+                      rows[{label,official,judgment}],
+                      strong_points{title,bullets[]}, caution_points{title,bullets[]},
+                      footnote}
+      diagnosis_section: {heading,
+                      strength{headline,body}, risk{headline,body},
+                      rows[{area,record,interpretation,check}],
+                      gauges[{label,level,note,tone,percent}]x3,   # tone: orange|blue|red
+                      footnote}
+      strategy_section: {heading, actions[{title,body}]x4,
+                      interview_rows[{question,point}],
+                      final_judgment{body},
+                      checklist{title,bullets[],tags[]},
+                      footnote}
+-#}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>학생부종합 지원전략 리포트</title>
+  <style>
+    {{ font_css }}
+    @page { size: A4; margin: 0; }
+    :root {
+      --max-ink: #111827;
+      --max-soft: #334155;
+      --max-muted: #64748b;
+      --max-paper: #ffffff;
+      --max-accent: #1d4ed8;
+      --max-accent-soft: #eff6ff;
+      --max-warm: #c2410c;
+      --max-warm-soft: #fff7ed;
+      --max-green: #15803d;
+      --max-green-soft: #f0fdf4;
+      --max-red: #b91c1c;
+      --max-red-soft: #fef2f2;
+      --max-line: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--max-paper); color: var(--max-ink); }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      line-height: 1.55;
+      overflow-wrap: anywhere; word-break: keep-all;
+    }
+    .page {
+      width: 210mm; min-height: 297mm;
+      padding: 14mm 16mm 12mm;
+      page-break-after: always; break-after: page;
+      display: flex; flex-direction: column; gap: 6mm;
+    }
+    .page:last-child { page-break-after: auto; break-after: auto; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--max-line); padding-bottom: 4mm;
+    }
+    .logo { height: 11mm; object-fit: contain; }
+    .topbar .right { font-size: 10.5px; color: var(--max-muted); font-weight: 700; }
+    .kicker { font-size: 11.5px; font-weight: 800; color: var(--max-accent); letter-spacing: 0.02em; }
+    h1 { margin: 1.5mm 0 0; font-size: 30px; line-height: 1.22; letter-spacing: -0.02em; font-weight: 900; }
+    h2 { margin: 0; font-size: 21px; line-height: 1.25; letter-spacing: -0.01em; font-weight: 900; }
+    p { margin: 0; font-size: 11.3px; color: var(--max-soft); }
+    .small { font-size: 10.3px; color: var(--max-muted); }
+    .footer {
+      margin-top: auto; border-top: 1px solid var(--max-line); padding-top: 3.5mm;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 9.8px; color: var(--max-muted);
+    }
+    /* ── 표지 ── */
+    .identityCard {
+      border: 1px solid #dbeafe; border-radius: 18px; padding: 8mm;
+      background: linear-gradient(135deg, #f6faff 0%, #ffffff 60%, #f8fafc 100%);
+      display: flex; flex-direction: column; gap: 3mm;
+      position: relative;
+    }
+    .identityCard .label { font-size: 10.5px; color: var(--max-muted); font-weight: 700; }
+    .identityCard .name { font-size: 27px; font-weight: 900; letter-spacing: -0.01em; }
+    .identityCard .target { font-size: 13.5px; font-weight: 800; color: var(--max-ink); }
+    .stamp {
+      position: absolute; top: 8mm; right: 8mm;
+      border: 2.5px solid #ea580c; color: #ea580c; border-radius: 50%;
+      width: 34mm; height: 21mm;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 900; line-height: 1.3;
+      transform: rotate(-8deg); background: rgba(255,255,255,0.75);
+      text-align: center;
+    }
+    .pillrow { display: flex; flex-wrap: wrap; gap: 2.2mm; }
+    .pill {
+      display: inline-flex; align-items: center; border: 1px solid #bfdbfe;
+      border-radius: 999px; padding: 1.6mm 3.4mm; font-size: 10px; font-weight: 800;
+      color: var(--max-accent); background: var(--max-accent-soft);
+    }
+    .keyJudgment {
+      border-left: 4px solid #f97316; background: var(--max-warm-soft);
+      border-radius: 0 14px 14px 0; padding: 5mm 6mm;
+      display: flex; flex-direction: column; gap: 2mm;
+    }
+    .keyJudgment .headline { font-size: 13.5px; font-weight: 900; color: #9a3412; }
+    .metricsRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+    .metricCard {
+      border: 1px solid var(--max-line); border-radius: 14px; padding: 4.5mm 5mm;
+      background: #ffffff;
+    }
+    .metricCard .t { font-size: 10px; color: var(--max-muted); font-weight: 700; margin-bottom: 1.2mm; }
+    .metricCard .v { font-size: 17px; font-weight: 900; letter-spacing: -0.01em; }
+    /* ── 공용 ── */
+    .infoCards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+    .infoCard {
+      border: 1px solid #dbeafe; border-radius: 14px; padding: 4.5mm 5mm;
+      background: linear-gradient(160deg, #f8fbff, #ffffff);
+    }
+    .infoCard .t { font-size: 10px; color: var(--max-muted); font-weight: 700; margin-bottom: 1mm; }
+    .infoCard .v { font-size: 16px; font-weight: 900; }
+    .infoCard .s { font-size: 10px; color: var(--max-muted); margin-top: 0.8mm; }
+    .table {
+      width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10.8px;
+      border: 1px solid var(--max-line); border-radius: 12px; overflow: hidden;
+    }
+    .table th, .table td {
+      border-bottom: 1px solid #eef2f7; padding: 3mm 3.2mm;
+      vertical-align: top; text-align: left;
+    }
+    .table tr:last-child th, .table tr:last-child td { border-bottom: none; }
+    .table th { background: #f8fafc; font-weight: 800; color: var(--max-ink); white-space: nowrap; }
+    .table td.head { font-weight: 800; color: var(--max-ink); white-space: nowrap; }
+    .boxGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+    .pointBox { border: 1px solid var(--max-line); border-radius: 14px; padding: 5mm; background: #ffffff; }
+    .pointBox.amber { border-color: #fed7aa; background: var(--max-warm-soft); }
+    .pointBox.green { border-color: #bbf7d0; background: var(--max-green-soft); }
+    .pointBox.red { border-color: #fecaca; background: var(--max-red-soft); }
+    .pointBox .title { font-size: 12.5px; font-weight: 900; margin-bottom: 2mm; }
+    .pointBox .subhead { font-size: 13px; font-weight: 900; line-height: 1.4; padding-bottom: 2.5mm; margin-bottom: 2.5mm; border-bottom: 1px solid rgba(100,116,139,0.25); }
+    .pointBox ul { margin: 0; padding-left: 15px; }
+    .pointBox li { font-size: 10.8px; color: var(--max-soft); margin: 1.4mm 0; }
+    .pointBox .lbl { font-size: 10px; font-weight: 800; margin-bottom: 1.5mm; }
+    .pointBox.green .lbl { color: var(--max-green); }
+    .pointBox.red .lbl { color: var(--max-red); }
+    /* ── 게이지 ── */
+    .gaugeRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+    .gaugeCard { border: 1px solid var(--max-line); border-radius: 14px; padding: 4.5mm 5mm; background: #fff; }
+    .gaugeCard .t { font-size: 10px; color: var(--max-muted); font-weight: 700; margin-bottom: 2mm; }
+    .gaugeCard .barwrap { display: flex; align-items: center; gap: 3mm; }
+    .gaugeCard .bar { flex: 1; height: 3mm; border-radius: 999px; background: #e8edf4; overflow: hidden; }
+    .gaugeCard .fill { height: 100%; border-radius: 999px; }
+    .gaugeCard .fill.orange { background: #f97316; }
+    .gaugeCard .fill.blue { background: #2563eb; }
+    .gaugeCard .fill.red { background: #ef4444; }
+    .gaugeCard .lv { font-size: 13px; font-weight: 900; white-space: nowrap; }
+    .gaugeCard .note { font-size: 10px; color: var(--max-muted); margin-top: 1.5mm; }
+    /* ── 전략 ── */
+    .actionGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+    .actionCard {
+      border: 1px solid #dbeafe; border-radius: 14px; padding: 5mm;
+      background: linear-gradient(160deg, #f8fbff, #ffffff);
+    }
+    .actionCard .title { font-size: 12.5px; font-weight: 900; margin-bottom: 1.8mm; }
+    .finalBox {
+      border: 2px solid var(--max-ink); border-radius: 18px; padding: 6mm 7mm;
+      display: flex; flex-direction: column; gap: 2mm;
+    }
+    .finalBox .title { font-size: 13px; font-weight: 900; }
+    .finalBox .body { font-size: 12.3px; font-weight: 800; line-height: 1.6; color: var(--max-ink); }
+    .checkBox { border: 1px solid var(--max-line); border-radius: 14px; padding: 5mm; background: #fbfcfe; }
+    .checkBox .title { font-size: 12px; font-weight: 900; margin-bottom: 2mm; }
+    .checkBox ul { margin: 0 0 2.5mm; padding-left: 15px; }
+    .checkBox li { font-size: 10.8px; color: var(--max-soft); margin: 1.3mm 0; }
+    .tagrow { display: flex; flex-wrap: wrap; gap: 2mm; }
+    .tag {
+      border: 1px solid #cbd5e1; background: #f1f5f9; padding: 1.4mm 3mm;
+      border-radius: 999px; font-size: 9.6px; font-weight: 800; color: var(--max-soft);
+    }
+  </style>
+</head>
+{%- macro topbar(right_label) %}
+    <div class="topbar">
+      <img class="logo" src="{{ logo_src }}" alt="MAX" />
+      <div class="right">{{ right_label }}</div>
+    </div>
+{%- endmacro %}
+{%- macro footer(left_text, right_text) %}
+    <div class="footer"><span>{{ left_text }}</span><span>{{ right_text }}</span></div>
+{%- endmacro %}
+<body class="maxReport">
+
+  {#- ───────── 표지 ───────── #}
+  <section class="page">
+    {{ topbar(brand_text) }}
+
+    <div>
+      <div class="kicker">학생부종합 맞춤 분석</div>
+      <h1>{% for line in data.title_lines %}{{ line }}{% if not loop.last %}<br/>{% endif %}{% endfor %}</h1>
+    </div>
+
+    <div class="identityCard">
+      <div class="label">{{ data.student.name }} 학생을 위한 학생부종합전형 리포트</div>
+      <div class="name">{{ data.student.name }} 학생</div>
+      <div class="target">{{ data.university.name }} {{ data.university.department }} · {{ data.university.track }}</div>
+      <div class="stamp">{{ data.badge.grade }}<br/>{{ data.badge.action }}</div>
+      <div class="pillrow">
+        {% for pill in data.cover.pills %}<span class="pill">{{ pill }}</span>{% endfor %}
+      </div>
+    </div>
+
+    <div class="keyJudgment">
+      <div class="headline">핵심 판단: {{ data.cover.key_judgment.headline }}</div>
+      <p>{{ data.cover.key_judgment.body }}</p>
+    </div>
+
+    <div class="metricsRow">
+      {% for m in data.cover.metrics %}
+      <div class="metricCard"><div class="t">{{ m.label }}</div><div class="v">{{ m.value }}</div></div>
+      {% endfor %}
+    </div>
+
+    {{ footer(brand_text, "학생·학부모 확인용 · " ~ report_date) }}
+  </section>
+
+  {#- ───────── 01 · 전형 핵심 ───────── #}
+  <section class="page">
+    {{ topbar("01 · 전형 핵심") }}
+    <h2>{{ data.track_section.heading }}</h2>
+
+    <div class="infoCards">
+      {% for c in data.track_section.info_cards %}
+      <div class="infoCard"><div class="t">{{ c.label }}</div><div class="v">{{ c.value }}</div>{% if c.sub %}<div class="s">{{ c.sub }}</div>{% endif %}</div>
+      {% endfor %}
+    </div>
+
+    <table class="table">
+      <tr><th style="width:16%">구분</th><th style="width:42%">공식 전형 내용</th><th>지원 판단</th></tr>
+      {% for row in data.track_section.rows %}
+      <tr><td class="head">{{ row.label }}</td><td>{{ row.official }}</td><td>{{ row.judgment }}</td></tr>
+      {% endfor %}
+    </table>
+
+    <div class="boxGrid">
+      <div class="pointBox">
+        <div class="title">{{ data.track_section.strong_points.title }}</div>
+        <ul>{% for b in data.track_section.strong_points.bullets %}<li>{{ b }}</li>{% endfor %}</ul>
+      </div>
+      <div class="pointBox amber">
+        <div class="title">{{ data.track_section.caution_points.title }}</div>
+        <ul>{% for b in data.track_section.caution_points.bullets %}<li>{{ b }}</li>{% endfor %}</ul>
+      </div>
+    </div>
+
+    {{ footer(data.track_section.footnote, "1") }}
+  </section>
+
+  {#- ───────── 02 · 학생부 객관 진단 ───────── #}
+  <section class="page">
+    {{ topbar("02 · 학생부 객관 진단") }}
+    <h2>{{ data.diagnosis_section.heading }}</h2>
+
+    <div class="boxGrid">
+      <div class="pointBox green">
+        <div class="lbl">강점 신호</div>
+        <div class="subhead">{{ data.diagnosis_section.strength.headline }}</div>
+        <p>{{ data.diagnosis_section.strength.body }}</p>
+      </div>
+      <div class="pointBox red">
+        <div class="lbl">리스크 신호</div>
+        <div class="subhead">{{ data.diagnosis_section.risk.headline }}</div>
+        <p>{{ data.diagnosis_section.risk.body }}</p>
+      </div>
+    </div>
+
+    <table class="table">
+      <tr><th style="width:12%">영역</th><th style="width:28%">확인된 기록</th><th style="width:28%">{{ data.university.name }}식 해석</th><th>확인할 내용</th></tr>
+      {% for row in data.diagnosis_section.rows %}
+      <tr><td class="head">{{ row.area }}</td><td>{{ row.record }}</td><td>{{ row.interpretation }}</td><td>{{ row.check }}</td></tr>
+      {% endfor %}
+    </table>
+
+    <div class="gaugeRow">
+      {% for g in data.diagnosis_section.gauges %}
+      <div class="gaugeCard">
+        <div class="t">{{ g.label }}</div>
+        <div class="barwrap">
+          <div class="bar"><div class="fill {{ g.tone }}" style="width: {{ g.percent }}%;"></div></div>
+          <div class="lv">{{ g.level }}</div>
+        </div>
+        <div class="note">{{ g.note }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {{ footer(data.diagnosis_section.footnote, "2") }}
+  </section>
+
+  {#- ───────── 03 · 보완 전략 ───────── #}
+  <section class="page">
+    {{ topbar("03 · 보완 전략") }}
+    <h2>{{ data.strategy_section.heading }}</h2>
+
+    <div class="actionGrid">
+      {% for a in data.strategy_section.actions %}
+      <div class="actionCard"><div class="title">{{ loop.index }}. {{ a.title }}</div><p>{{ a.body }}</p></div>
+      {% endfor %}
+    </div>
+
+    <table class="table">
+      <tr><th style="width:42%">면접 질문축</th><th>답변에서 보여야 할 것</th></tr>
+      {% for row in data.strategy_section.interview_rows %}
+      <tr><td class="head">{{ row.question }}</td><td>{{ row.point }}</td></tr>
+      {% endfor %}
+    </table>
+
+    <div class="finalBox">
+      <div class="title">최종 판단</div>
+      <div class="body">{{ data.strategy_section.final_judgment.body }}</div>
+    </div>
+
+    <div class="checkBox">
+      <div class="title">{{ data.strategy_section.checklist.title }}</div>
+      <ul>{% for b in data.strategy_section.checklist.bullets %}<li>{{ b }}</li>{% endfor %}</ul>
+      <div class="tagrow">
+        {% for t in data.strategy_section.checklist.tags %}<span class="tag">{{ t }}</span>{% endfor %}
+      </div>
+    </div>
+
+    {{ footer(brand_text ~ " · 학생부종합 지원전략 리포트", "3") }}
+  </section>
+</body>
+</html>

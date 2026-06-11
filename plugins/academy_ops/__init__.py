@@ -11,10 +11,6 @@ from .brand_logo_tool import register_brand_logo_tools
 from .commentary_config import plan_commentary_aux_defaults
 from .consultation_notes_tool import register_consultation_note_tool
 from .hakjong_report_tool import register_hakjong_report_tool
-from .hakjong_report_guard import (
-    _block_after_hakjong_report_package,
-    _track_hakjong_report_package_result,
-)
 from .gateway_dispatch import (
     _academy_command,
     _academy_pre_gateway_dispatch,
@@ -63,8 +59,6 @@ def register(ctx: Any) -> None:
         args_hint="[요청]",
     )
     ctx.register_hook("pre_gateway_dispatch", _academy_pre_gateway_dispatch)
-    ctx.register_hook("pre_tool_call", _block_after_hakjong_report_package)
-    ctx.register_hook("post_tool_call", _track_hakjong_report_package_result)
     ctx.register_auxiliary_task(
         key="academy_plan_commentary",
         display_name="Academy plan commentary",

@@ -48,10 +48,13 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
     "academy_hakjong_report_package": {
         "domain": "academy_ops",
         "purpose": (
-            "이미 생성된 premium_hakjong_report PDF/HTML을 검증하고 통과한 PDF만 MEDIA로 전달한다. "
-            "생성기가 아니므로 산출물이 없으면 사용자에게 경로를 묻지 말고 draft 경로에 HTML/PDF를 먼저 만든 뒤 호출한다."
+            "내용 JSON만 주면 껍데기(로고/푸터/브랜딩)는 고정 템플릿이 보장한다. "
+            "학교별 학종 패키지(susi27_rule_lookup)와 생기부(life_record_lookup/search/summary)를 "
+            "근거로 섹션 내용을 작성하라. "
+            "검증 통과한 PDF만 ~/.miho/media_cache/susi_student_record/validated 로 승격하고 "
+            "media_tag를 반환한다."
         ),
-        "requires": ["html_path", "pdf_path", "student_name", "evidence_tools"],
+        "requires": ["student_name", "student_stage", "evidence_tools", "content"],
     },
     "academy_render_image": {
         "domain": "academy_ops",
@@ -80,9 +83,13 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
     "jungsi_student_university_score": {
         "domain": "jungsi_excel_importer",
         "purpose": (
-            "학생 성적과 대학/학과 반영식으로 환산점수, 전년도 컷/합격자 점수, MaxLive 비교를 "
-            "계산·검증한다. 수시 교과/실기 상담에서 '내신환산', '환산점수', '작년 합격자 점수', "
-            "'상향/중립/안전'을 점수로 판단할 때 로그인 링크가 아니라 이 계산 도구를 우선한다."
+            "실기/수시 추천 작업 순서: "
+            "①학생 성적 확보(life_record_lookup 또는 사용자 제공) "
+            "②후보 학교 룰 조회(susi27_rule_lookup — 학종 패키지·실기 종목·반영식·전년도 결과 포함) "
+            "③환산점수 계산(susi27_score_calculate 또는 jungsi_student_university_score) "
+            "④전년도 결과(admission_result_26_json)와 비교 "
+            "⑤상향/적정 분류 + 왜 되는지/안 되는지 근거 서술. "
+            "점수 없이 추천을 확정하지 말 것. 모든 후보에 환산점수·전년도 수치를 병기할 것."
         ),
         "requires": ["student_query", "university or department candidates"],
     },
