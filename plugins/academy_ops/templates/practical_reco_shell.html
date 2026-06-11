@@ -1,0 +1,311 @@
+{#-
+  practical_reco_shell.html — 수시 실기전형 추천 리포트 고정 껍데기 (Jinja2)
+  디자인 계보: hakjong_report_shell.html (an_sihyun 캐논)과 같은 브랜드 체계.
+
+  "정확성은 코드, 판단은 LLM": 환산점수/전년도 수치는 도구 산출값만 사용하고,
+  이 템플릿이 표지/topbar/footer/브랜딩/페이지 골격을 항상 동일하게 보장한다.
+  리포트 1부 = 학생 1명 + 추천 학교 N개 (상향/적정).
+
+  context 변수:
+    font_css / logo_src / brand_text / report_date : 학종 템플릿과 동일
+    data:
+      student: {name, avg_grade, basis_label}        # basis_label 예: "생기부 내신 기준"
+      title_lines: [".."]                            # 표지 h1, 1~2줄
+      badge: {line1, line2}                          # 예: "상향 2" / "적정 4"
+      cover: {pills[], key_judgment{headline, body}, metrics[{label,value}]x3}
+      comparison: {note, rows[{school, department, track, converted, max_total,
+                               first_cut, final_cut, verdict(상향|적정)}]}
+      schools: [{name, department, track, verdict,
+                 numbers[{label,value}],             # 내신환산/실기만점 합산/전년도 최초/최종 등
+                 events[],                           # 실기 종목
+                 rationale_paragraphs[], caution}]
+      final: {cards[{title,body}], callout{title, paragraphs[]}, tags[]}
+      footnote                                       # 예: "산출 근거: 맥스 수시엔진 검증 룰 · 전년도 입시결과"
+-#}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>수시 실기전형 지원전략 리포트</title>
+  <style>
+    {{ font_css }}
+    @page { size: A4; margin: 0; }
+    :root {
+      --max-ink: #111827;
+      --max-soft: #334155;
+      --max-muted: #64748b;
+      --max-paper: #ffffff;
+      --max-accent: #1d4ed8;
+      --max-accent-soft: #eff6ff;
+      --max-warm: #c2410c;
+      --max-warm-soft: #fff7ed;
+      --max-green: #15803d;
+      --max-green-soft: #f0fdf4;
+      --max-line: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--max-paper); color: var(--max-ink); }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      line-height: 1.55;
+      overflow-wrap: anywhere; word-break: keep-all;
+    }
+    .page {
+      width: 210mm; min-height: 297mm;
+      padding: 14mm 16mm 12mm;
+      page-break-after: always; break-after: page;
+      display: flex; flex-direction: column; gap: 6mm;
+    }
+    .page:last-child { page-break-after: auto; break-after: auto; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--max-line); padding-bottom: 4mm;
+    }
+    .logo { height: 11mm; object-fit: contain; }
+    .topbar .right { font-size: 10.5px; color: var(--max-muted); font-weight: 700; }
+    .kicker { font-size: 11.5px; font-weight: 800; color: var(--max-accent); letter-spacing: 0.02em; }
+    h1 { margin: 1.5mm 0 0; font-size: 30px; line-height: 1.22; letter-spacing: -0.02em; font-weight: 900; }
+    h2 { margin: 0; font-size: 21px; line-height: 1.25; letter-spacing: -0.01em; font-weight: 900; }
+    p { margin: 0; font-size: 11.3px; color: var(--max-soft); }
+    .small { font-size: 10.3px; color: var(--max-muted); }
+    .footer {
+      margin-top: auto; border-top: 1px solid var(--max-line); padding-top: 3.5mm;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 9.8px; color: var(--max-muted);
+    }
+    /* ── 표지 ── */
+    .identityCard {
+      border: 1px solid #dbeafe; border-radius: 18px; padding: 8mm;
+      background: linear-gradient(135deg, #f6faff 0%, #ffffff 60%, #f8fafc 100%);
+      display: flex; flex-direction: column; gap: 3mm; position: relative;
+    }
+    .identityCard .label { font-size: 10.5px; color: var(--max-muted); font-weight: 700; }
+    .identityCard .name { font-size: 27px; font-weight: 900; letter-spacing: -0.01em; }
+    .identityCard .target { font-size: 13.5px; font-weight: 800; }
+    .stamp {
+      position: absolute; top: 8mm; right: 8mm;
+      border: 2.5px solid #1d4ed8; color: #1d4ed8; border-radius: 50%;
+      width: 34mm; height: 21mm;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 900; line-height: 1.3;
+      transform: rotate(-8deg); background: rgba(255,255,255,0.78); text-align: center;
+    }
+    .pillrow { display: flex; flex-wrap: wrap; gap: 2.2mm; }
+    .pill {
+      display: inline-flex; align-items: center; border: 1px solid #bfdbfe;
+      border-radius: 999px; padding: 1.6mm 3.4mm; font-size: 10px; font-weight: 800;
+      color: var(--max-accent); background: var(--max-accent-soft);
+    }
+    .keyJudgment {
+      border-left: 4px solid #2563eb; background: var(--max-accent-soft);
+      border-radius: 0 14px 14px 0; padding: 5mm 6mm;
+      display: flex; flex-direction: column; gap: 2mm;
+    }
+    .keyJudgment .headline { font-size: 13.5px; font-weight: 900; color: #1e3a8a; }
+    .metricsRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+    .metricCard { border: 1px solid var(--max-line); border-radius: 14px; padding: 4.5mm 5mm; background: #fff; }
+    .metricCard .t { font-size: 10px; color: var(--max-muted); font-weight: 700; margin-bottom: 1.2mm; }
+    .metricCard .v { font-size: 17px; font-weight: 900; letter-spacing: -0.01em; }
+    /* ── 비교표 ── */
+    .table {
+      width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10.4px;
+      border: 1px solid var(--max-line); border-radius: 12px; overflow: hidden;
+    }
+    .table th, .table td {
+      border-bottom: 1px solid #eef2f7; padding: 2.8mm 2.6mm;
+      vertical-align: top; text-align: left;
+    }
+    .table tr:last-child th, .table tr:last-child td { border-bottom: none; }
+    .table th { background: #f8fafc; font-weight: 800; white-space: nowrap; }
+    .table td.head { font-weight: 800; }
+    .table td.num { font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
+    .verdict {
+      display: inline-flex; align-items: center; border-radius: 999px;
+      padding: 1.2mm 3mm; font-size: 9.6px; font-weight: 900; white-space: nowrap;
+    }
+    .verdict.up { color: var(--max-warm); background: var(--max-warm-soft); border: 1px solid #fed7aa; }
+    .verdict.fit { color: var(--max-green); background: var(--max-green-soft); border: 1px solid #bbf7d0; }
+    .legend {
+      border: 1px solid var(--max-line); border-radius: 14px; padding: 4.5mm 5mm; background: #fbfcfe;
+      font-size: 10.6px; color: var(--max-soft);
+    }
+    .legend b { color: var(--max-ink); }
+    /* ── 학교 카드 ── */
+    .schoolCard {
+      border: 1px solid var(--max-line); border-radius: 16px; padding: 5.5mm 6mm;
+      display: flex; flex-direction: column; gap: 3mm; background: #fff;
+    }
+    .schoolCard .head { display: flex; align-items: baseline; justify-content: space-between; gap: 4mm; }
+    .schoolCard .title { font-size: 14.5px; font-weight: 900; }
+    .schoolCard .sub { font-size: 10.4px; color: var(--max-muted); }
+    .numRow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+    .numBox { border: 1px solid #e8edf4; border-radius: 10px; padding: 2.8mm 3.2mm; background: #f8fafc; }
+    .numBox .t { font-size: 9.3px; color: var(--max-muted); font-weight: 700; }
+    .numBox .v { font-size: 13px; font-weight: 900; font-variant-numeric: tabular-nums; }
+    .eventrow { display: flex; flex-wrap: wrap; gap: 2mm; }
+    .event {
+      border: 1px solid #cbd5e1; background: #f1f5f9; padding: 1.2mm 2.8mm;
+      border-radius: 999px; font-size: 9.4px; font-weight: 700; color: var(--max-soft);
+    }
+    .caution { font-size: 10.4px; color: #9a3412; background: var(--max-warm-soft); border-radius: 10px; padding: 2.8mm 3.5mm; }
+    /* ── 최종 ── */
+    .finalGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+    .finalCard {
+      border: 1px solid #dbeafe; border-radius: 14px; padding: 5mm;
+      background: linear-gradient(160deg, #f8fbff, #ffffff);
+    }
+    .finalCard .title { font-size: 12px; font-weight: 900; margin-bottom: 1.5mm; }
+    .finalBox {
+      border: 2px solid var(--max-ink); border-radius: 18px; padding: 6mm 7mm;
+      display: flex; flex-direction: column; gap: 2mm;
+    }
+    .finalBox .title { font-size: 13px; font-weight: 900; }
+    .finalBox p { font-size: 12px; font-weight: 700; line-height: 1.6; color: var(--max-ink); }
+    .finalBox p + p { margin-top: 1.5mm; }
+    .tagrow { display: flex; flex-wrap: wrap; gap: 2mm; }
+    .tag {
+      border: 1px solid #cbd5e1; background: #f1f5f9; padding: 1.4mm 3mm;
+      border-radius: 999px; font-size: 9.6px; font-weight: 800; color: var(--max-soft);
+    }
+  </style>
+</head>
+{%- macro topbar(right_label) %}
+    <div class="topbar">
+      <img class="logo" src="{{ logo_src }}" alt="MAX" />
+      <div class="right">{{ right_label }}</div>
+    </div>
+{%- endmacro %}
+{%- macro footer(left_text, right_text) %}
+    <div class="footer"><span>{{ left_text }}</span><span>{{ right_text }}</span></div>
+{%- endmacro %}
+{%- macro verdict_pill(v) %}<span class="verdict {{ 'up' if v == '상향' else 'fit' }}">{{ v }}</span>{%- endmacro %}
+{%- set school_pages = data.schools | batch(3) | list %}
+<body class="maxReport">
+
+  {#- ───────── 표지 ───────── #}
+  <section class="page">
+    {{ topbar(brand_text) }}
+
+    <div>
+      <div class="kicker">수시 실기전형 맞춤 분석</div>
+      <h1>{% for line in data.title_lines %}{{ line }}{% if not loop.last %}<br/>{% endif %}{% endfor %}</h1>
+    </div>
+
+    <div class="identityCard">
+      <div class="label">{{ data.student.name }} 학생을 위한 수시 실기전형 추천 리포트</div>
+      <div class="name">{{ data.student.name }} 학생</div>
+      <div class="target">{{ data.student.basis_label }}{% if data.student.avg_grade %} · 평균등급 {{ data.student.avg_grade }}{% endif %}</div>
+      <div class="stamp">{{ data.badge.line1 }}<br/>{{ data.badge.line2 }}</div>
+      <div class="pillrow">
+        {% for pill in data.cover.pills %}<span class="pill">{{ pill }}</span>{% endfor %}
+      </div>
+    </div>
+
+    <div class="keyJudgment">
+      <div class="headline">핵심 판단: {{ data.cover.key_judgment.headline }}</div>
+      <p>{{ data.cover.key_judgment.body }}</p>
+    </div>
+
+    <div class="metricsRow">
+      {% for m in data.cover.metrics %}
+      <div class="metricCard"><div class="t">{{ m.label }}</div><div class="v">{{ m.value }}</div></div>
+      {% endfor %}
+    </div>
+
+    {{ footer(brand_text, "학생·학부모 확인용 · " ~ report_date) }}
+  </section>
+
+  {#- ───────── 01 · 한눈 비교 ───────── #}
+  <section class="page">
+    {{ topbar("01 · 추천 학교 한눈 비교") }}
+    <h2>{{ data.student.name }} 학생 추천 {{ data.comparison.rows | length }}개교 — 환산점수와 전년도 결과</h2>
+
+    <table class="table">
+      <tr>
+        <th>대학 · 학과</th><th>전형</th>
+        <th>내신환산</th><th>실기만점 합산</th>
+        <th>전년도 최초합</th><th>전년도 최종합</th><th>판정</th>
+      </tr>
+      {% for r in data.comparison.rows %}
+      <tr>
+        <td class="head">{{ r.school }} {{ r.department }}</td>
+        <td>{{ r.track }}</td>
+        <td class="num">{{ r.converted }}</td>
+        <td class="num">{{ r.max_total }}</td>
+        <td class="num">{{ r.first_cut }}</td>
+        <td class="num">{{ r.final_cut }}</td>
+        <td>{{ verdict_pill(r.verdict) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <div class="legend">
+      <b>판정 기준</b> · <span class="verdict fit">적정</span> 내신환산이 전년도 최종합격선 부근 이상 ·
+      <span class="verdict up">상향</span> 현재 환산으로는 부족하지만 실기 만점 합산이 전년도 최종합격선에 도달 가능한 학교.
+      실기를 만점 받아도 전년도 결과에 닿지 않는 학교는 이 리포트에 싣지 않습니다.
+      {% if data.comparison.note %}<br/>{{ data.comparison.note }}{% endif %}
+    </div>
+
+    {{ footer(data.footnote, "1") }}
+  </section>
+
+  {#- ───────── 02 · 학교별 상세 ───────── #}
+  {% for group in school_pages %}
+  <section class="page">
+    {{ topbar("02 · 학교별 상세 (" ~ loop.index ~ "/" ~ school_pages | length ~ ")") }}
+    {% if loop.first %}<h2>학교별 점수 비교와 추천 이유</h2>{% endif %}
+
+    {% for s in group %}
+    <div class="schoolCard">
+      <div class="head">
+        <div>
+          <div class="title">{{ s.name }} {{ s.department }}</div>
+          <div class="sub">{{ s.track }}</div>
+        </div>
+        {{ verdict_pill(s.verdict) }}
+      </div>
+      <div class="numRow">
+        {% for n in s.numbers %}
+        <div class="numBox"><div class="t">{{ n.label }}</div><div class="v">{{ n.value }}</div></div>
+        {% endfor %}
+      </div>
+      {% if s.events %}
+      <div class="eventrow">
+        {% for e in s.events %}<span class="event">{{ e }}</span>{% endfor %}
+      </div>
+      {% endif %}
+      {% for para in s.rationale_paragraphs %}<p>{{ para }}</p>{% endfor %}
+      {% if s.caution %}<div class="caution">{{ s.caution }}</div>{% endif %}
+    </div>
+    {% endfor %}
+
+    {{ footer(data.footnote, loop.index + 1) }}
+  </section>
+  {% endfor %}
+
+  {#- ───────── 03 · 최종 정리 ───────── #}
+  <section class="page">
+    {{ topbar("03 · 최종 정리") }}
+    <h2>지원 전략 정리</h2>
+
+    <div class="finalGrid">
+      {% for c in data.final.cards %}
+      <div class="finalCard"><div class="title">{{ c.title }}</div><p>{{ c.body }}</p></div>
+      {% endfor %}
+    </div>
+
+    <div class="finalBox">
+      <div class="title">{{ data.final.callout.title }}</div>
+      {% for para in data.final.callout.paragraphs %}<p>{{ para }}</p>{% endfor %}
+    </div>
+
+    <div class="tagrow">
+      {% for t in data.final.tags %}<span class="tag">{{ t }}</span>{% endfor %}
+    </div>
+
+    {{ footer(brand_text ~ " · 수시 실기전형 지원전략 리포트", school_pages | length + 2) }}
+  </section>
+</body>
+</html>
