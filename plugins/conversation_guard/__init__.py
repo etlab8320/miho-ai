@@ -51,6 +51,8 @@ def is_low_information_message(text: str) -> bool:
 
 
 async def _guard_pre_gateway_dispatch(event: Any = None, **_: Any) -> dict[str, object]:
+    if _has_context(event):
+        return {"action": "allow"}
     text = _normalized_text(getattr(event, "text", ""))
     if is_low_information_message(text):
         return {
@@ -64,6 +66,16 @@ async def _guard_pre_gateway_dispatch(event: Any = None, **_: Any) -> dict[str, 
             "priority": _ROUTE_PRIORITY,
         }
     return {"action": "allow"}
+
+
+def _has_context(event: Any) -> bool:
+    if getattr(event, "media_urls", None):
+        return True
+    if _normalized_text(getattr(event, "channel_context", "")):
+        return True
+    if _normalized_text(getattr(event, "reply_to_text", "")):
+        return True
+    return False
 
 
 def register(ctx: Any) -> None:

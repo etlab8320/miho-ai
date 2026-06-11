@@ -46,3 +46,16 @@ async def test_guard_allows_meaningful_turn() -> None:
     result = await _guard_pre_gateway_dispatch(event=SimpleNamespace(text="김보민 기록 보여줘"))
 
     assert result == {"action": "allow"}
+
+
+@pytest.mark.asyncio
+async def test_guard_allows_low_information_turn_with_context() -> None:
+    result = await _guard_pre_gateway_dispatch(
+        event=SimpleNamespace(
+            text="???",
+            media_urls=["/tmp/report.pdf"],
+            channel_context="앞에서 자료를 보내 달라고 했다.",
+        )
+    )
+
+    assert result == {"action": "allow"}
