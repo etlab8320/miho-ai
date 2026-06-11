@@ -145,25 +145,108 @@ def _extract_notes(text: str) -> list[dict[str, Any]]:
 
 
 def _subject_notes(text: str) -> list[dict[str, Any]]:
-    section = _section(text, "세부능력및특기사항", "8. 행동특성")
-    pattern = re.compile(r"(?:^|\n)(?:\(([12])학기\))?([가-힣A-Za-zⅠⅡⅢ0-9·・\s]{1,30}):\s*(.*?)(?=\n(?:\([12]학기\))?[가-힣A-Za-zⅠⅡⅢ0-9·・\s]{1,30}:\s|\n\s*<|\n\s*8\. 행동|\Z)", re.S)
     rows: list[dict[str, Any]] = []
-    for semester, subject, body in pattern.findall(section):
-        note = _clean(body)
-        clean_subject = _clean(subject)
-        if clean_subject and note and len(note) >= 20:
-            rows.append({"grade": None, "semester": _int(semester), "subject": clean_subject, "note_text": note})
+    for grade, section in _grade_sections(text):
+        rows.extend(_subject_notes_in_grade(section, grade))
     return rows
+
+
+def _grade_sections(text: str) -> list[tuple[int | None, str]]:
+    matches = list(re.finditer(r"\[([123])학년\]", text))
+    if not matches:
+        return [(None, text)]
+    sections: list[tuple[int | None, str]] = []
+    for idx, match in enumerate(matches):
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        sections.append((int(match.group(1)), text[match.end() : end]))
+    return sections
+
+
+def _subject_notes_in_grade(section: str, grade: int | None) -> list[dict[str, Any]]:
+    start = _special_note_heading_end(section)
+    if start is None:
+        return []
+    body = section[start:]
+    behavior_start = re.search(r"\n\s*8\.\s*행동특성", body)
+    if behavior_start:
+        body = body[: behavior_start.start()]
+    return _parse_subject_note_lines(_strip_note_noise(_lines(body)), grade)
+
+
+def _special_note_heading_end(text: str) -> int | None:
+    match = re.search(r"세\s*부\s*능\s*력\s*및\s*특\s*기\s*사\s*항", text)
+    return match.end() if match else None
+
+
+def _strip_note_noise(lines: list[str]) -> list[str]:
+    return [
+        line
+        for line in lines
+        if line not in {"과목", "세 부 능 력 및 특 기 사 항", "세부능력및특기사항"}
+        and not re.fullmatch(r"\d+/\d+", line)
+        and not re.fullmatch(r"\d{4}년 \d+월 \d+일", line)
+        and not re.fullmatch(r"\d+", line)
+        and "발급번호" not in line
+        and "고등학교" not in line
+    ]
+
+
+def _parse_subject_note_lines(lines: list[str], grade: int | None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    current_body: list[str] = []
+    for line in lines:
+        marker = _subject_note_marker(line)
+        if marker:
+            _flush_subject_note(rows, current, current_body)
+            semester, subject, first_body = marker
+            current = {"grade": grade, "semester": semester, "subject": subject}
+            current_body = [first_body]
+            continue
+        if current:
+            current_body.append(line)
+    _flush_subject_note(rows, current, current_body)
+    return rows
+
+
+def _subject_note_marker(line: str) -> tuple[int | None, str, str] | None:
+    match = re.match(r"^(?:\(([12])학기\))?([가-힣A-Za-zⅠⅡⅢ0-9·・\s]{1,30}):\s*(.*)$", line)
+    if not match:
+        return None
+    subject = _clean(match.group(2))
+    if not subject or len(subject) > 20:
+        return None
+    return _int(match.group(1)), subject, match.group(3)
+
+
+def _flush_subject_note(rows: list[dict[str, Any]], current: dict[str, Any] | None, body: list[str]) -> None:
+    if not current:
+        return
+    note = _clean_note_text(" ".join(body))
+    if len(note) >= 20 and not _is_unavailable_note(note):
+        rows.append({**current, "note_text": note})
 
 
 def _behavior_notes(text: str) -> list[dict[str, Any]]:
     section = _section(text, "8. 행동특성 및 종합의견", None)
     rows: list[dict[str, Any]] = []
     for grade, body in re.findall(r"(?:^|\n)\s*([123])\s*\n(.*?)(?=\n\s*[123]\s*\n|\n\s*주민등록번호|\Z)", section, flags=re.S):
-        note = _clean(body)
-        if note and "행동특성" not in note[:30]:
+        note = _clean_note_text(body)
+        if note and "행동특성" not in note[:30] and not _is_unavailable_note(note):
             rows.append({"grade": int(grade), "semester": None, "subject": "행동특성 및 종합의견", "note_text": note})
     return rows
+
+
+def _clean_note_text(value: str) -> str:
+    text = re.sub(r"반\s+번호\s+이름\s+[가-힣]{2,4}", " ", value)
+    text = re.sub(r"[가-힣A-Za-z0-9·・]+고등학교\s+\d+/\d+", " ", text)
+    text = re.sub(r"\d{4}년\s+\d+월\s+\d+일\s+발급번호\s+\S+", " ", text)
+    text = re.sub(r"발급번호\s+\S+", " ", text)
+    return _clean(text)
+
+
+def _is_unavailable_note(note: str) -> bool:
+    return "정보공개" in note and "내부검토" in note and "제공하지 않습니다" in note
 
 
 def _section(text: str, start: str, end: str | None) -> str:

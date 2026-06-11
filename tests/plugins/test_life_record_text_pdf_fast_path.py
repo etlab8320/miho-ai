@@ -9,6 +9,7 @@ from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 from plugins.life_record.context import capture_gateway_context
+from plugins.life_record.pdf_text_source import extract_from_pdf_text
 
 
 def _event(thread_id: str) -> MessageEvent:
@@ -132,3 +133,34 @@ def test_text_layer_pdf_does_not_wait_for_life_record_text_model(monkeypatch, tm
     assert result["runs"] == 2
     assert result["counts"]["subject_grade_rows"] == 1
     assert result["counts"]["special_note_rows"] >= 1
+
+
+def test_pdf_text_parser_reads_spaced_subject_note_heading() -> None:
+    parsed = extract_from_pdf_text(
+        [
+            """
+6. 교과학습발달상황
+[1학년]
+과목
+세 부 능 력 및 특 기 사 항
+(1학기)국어: 토론에서 근거를 들어 자기 의견을 설명하고 발표 흐름을 안정적으로 이끌었음.
+수학: 함수 개념을 스포츠 기록 분석에 적용하며 문제 해결 과정을 논리적으로 정리함.
+영어: 모둠 활동에서 자료를 조사하고 발표 내용을 자연스럽게 연결하여 협업 역량을 보임.
+반 번호 이름 홍길동
+후속 탐구 자료를 정리함.
+8. 행동특성 및 종합의견
+행동특성및종합의견
+1
+책임감 있게 학급 활동에 참여함.
+3
+해당내용은 「공공기관의 정보공개에 관한 법률」 제9조제1항제5호에 따라 내부검토 중인 사항으로 당해학년도에는 제공하지 않습니다.
+"""
+        ]
+    )
+
+    subjects = {(row["semester"], row["subject"]) for row in parsed["notes"]}
+    assert (1, "국어") in subjects
+    assert (None, "수학") in subjects
+    assert (None, "영어") in subjects
+    assert all("정보공개" not in row["note_text"] for row in parsed["notes"])
+    assert all("반 번호 이름" not in row["note_text"] for row in parsed["notes"])
