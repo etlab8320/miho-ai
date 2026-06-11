@@ -1600,7 +1600,6 @@ class GatewayRunner:
     _session_model_overrides: Dict[str, Dict[str, str]] = {}
     _session_reasoning_overrides: Dict[str, Dict[str, Any]] = {}
     _last_run_observability: Dict[str, Dict[str, Any]] = {}
-    _pending_forge_preflight: Dict[str, Dict[str, Any]] = {}
 
     def __init__(self, config: Optional[GatewayConfig] = None):
         global _gateway_runner_ref
@@ -1647,7 +1646,6 @@ class GatewayRunner:
         self._running_agents: Dict[str, Any] = {}
         self._running_agents_ts: Dict[str, float] = {}  # start timestamp per session
         self._last_run_observability: Dict[str, Dict[str, Any]] = {}
-        self._pending_forge_preflight: Dict[str, Dict[str, Any]] = {}
         self._pending_messages: Dict[str, str] = {}  # Queued messages during interrupt
         # Overflow buffer for explicit /queue commands.  The adapter-level
         # _pending_messages dict is a single slot per session (designed for
@@ -7787,42 +7785,9 @@ class GatewayRunner:
                 return self._telegram_topic_root_lobby_message()
             return None
 
-        try:
-            from gateway.preflight_learning import consume_preflight_correction
-
-            if consume_preflight_correction(
-                getattr(self, "_pending_forge_preflight", {}),
-                _quick_key,
-                correction_text=event.text,
-            ):
-                return "알겠어. 이건 작업 생성이 아니라 대화로 볼게."
-        except Exception as exc:
-            logger.debug("forge preflight correction recording failed: %s", exc)
-
-        try:
-            from gateway.forge_preflight import project_target_question_for
-
-            _project_target_question = project_target_question_for(event.text)
-        except Exception:
-            _project_target_question = None
-        if _project_target_question:
-            try:
-                from gateway.preflight_learning import remember_preflight_prompt
-
-                _pending_preflight = getattr(self, "_pending_forge_preflight", None)
-                if _pending_preflight is None:
-                    _pending_preflight = {}
-                    self._pending_forge_preflight = _pending_preflight
-                remember_preflight_prompt(
-                    _pending_preflight,
-                    _quick_key,
-                    original_text=event.text,
-                    question=_project_target_question,
-                    platform=source.platform.value if source.platform else None,
-                )
-            except Exception as exc:
-                logger.debug("forge preflight prompt tracking failed: %s", exc)
-            return _project_target_question
+        # forge preflight(키워드 기반 "어디에 만들까?" 게이트)는 제거됐다 —
+        # 라우팅 힌트의 '작성/상담' 같은 단어에 오발동해 학원 요청을 가로챘다.
+        # 코딩 대상이 불명확하면 본문 에이전트가 스스로 묻는다 (의도 판단은 LLM).
 
         # ── Claim this session before any await ───────────────────────
         # Between here and _run_agent registering the real AIAgent, there
