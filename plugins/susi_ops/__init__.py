@@ -7,7 +7,7 @@ from typing import Any
 from .service import lookup_rules, calculate_score
 
 
-def _lookup_handler(args: dict[str, Any]) -> dict[str, Any]:
+def _lookup_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
     return lookup_rules(
         university=args.get("university"),
         department=args.get("department"),
@@ -16,7 +16,7 @@ def _lookup_handler(args: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _calculate_handler(args: dict[str, Any]) -> dict[str, Any]:
+def _calculate_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
     return calculate_score(
         university_id=str(args.get("university_id") or ""),
         grades=args.get("grades") or [],
