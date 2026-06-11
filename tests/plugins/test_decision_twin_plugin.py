@@ -177,6 +177,26 @@ def test_hakjong_report_route_text_forbids_path_or_lock_excuses() -> None:
     assert "academy_hakjong_report_package" in text
 
 
+def test_media_delivery_route_text_forbids_login_fallbacks() -> None:
+    decision = parse_decision_payload(
+        {
+            "action": "route",
+            "route": "gateway_media",
+            "required_tool": "media_delivery_contract",
+            "intent": "직전 파일을 첨부로 다시 전달",
+            "confidence": 0.9,
+            "tool_instruction": "직전 리포트 PDF를 MEDIA 태그로 다시 전달한다",
+        }
+    )
+
+    text = route_result_text("아니 파일을 줘야지 첨부해서", decision)
+
+    assert "MEDIA:<absolute_path>" in text
+    assert "로그인 링크" in text
+    assert "정시" in text
+    assert "사용하지 마라" in text
+
+
 def test_decision_contracts_cover_every_registered_tool() -> None:
     from miho_cli.plugins import discover_plugins
     from tools.registry import discover_builtin_tools, registry
@@ -233,6 +253,55 @@ async def test_decision_twin_blocks_jungsi_login_for_hakjong_context() -> None:
         gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
         resolver=resolver,
         owner_context_builder=lambda _text: "학종 리포트는 생기부/수시 근거와 premium_hakjong_report 계약을 사용한다.",
+    )
+
+    assert result == {"action": "allow"}
+
+
+@pytest.mark.asyncio
+async def test_decision_twin_blocks_jungsi_login_for_media_delivery_context() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "route",
+            "route": "jungsi",
+            "intent": "file.delivery.login",
+            "required_tool": "jungsi_login",
+            "confidence": 0.96,
+            "evidence": ["파일 첨부 요청을 정시 로그인으로 오판했다"],
+            "tool_instruction": "정시엔진 로그인 링크를 발급한다",
+        }
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event("아니 파일을 줘야지 첨부해서"),
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+        owner_context_builder=lambda _text: "직전 학종 리포트 PDF는 MEDIA 태그로 전달해야 한다.",
+    )
+
+    assert result == {"action": "allow"}
+
+
+@pytest.mark.asyncio
+async def test_decision_twin_blocks_life_record_lock_for_susi_score_recommendation() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "route",
+            "route": "life_record",
+            "intent": "백종환 학생의 학종 상담 맥락을 바탕으로 지원 후보 6개 학교 선정",
+            "required_tool": "life_record_lookup",
+            "confidence": 0.91,
+            "evidence": ["학생 생기부를 보라는 표현이 있다"],
+            "tool_instruction": "생기부를 조회해 학종 후보를 추천한다",
+        }
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event(
+            "학종말고 서울경기인천강원충청권,대전 학교들중에 "
+            "종환이 점수로 내신환산이랑 작년 합격자 점수 보고 6개만 상향 중립 안전으로 뽑아줘"
+        ),
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+        owner_context_builder=lambda _text: "수시 실기/교과 추천은 학생 환산점수와 전년도 컷을 대조해야 한다.",
     )
 
     assert result == {"action": "allow"}

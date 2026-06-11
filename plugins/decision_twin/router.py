@@ -110,6 +110,14 @@ def route_result_text(user_text: str, decision: LlmRouteDecision) -> str:
 
 
 def _route_execution_contract(required_tool: str) -> str:
+    if required_tool == "media_delivery_contract":
+        return (
+            "파일 전달 실행 계약: 이미 생성된 전달 대상 파일은 반드시 `MEDIA:<absolute_path>` "
+            "형식으로 답해 플랫폼 첨부로 전달해라. 정시엔진, 로그인 링크, OAuth, 계정 연결은 "
+            "사용하지 마라. 직전 대화나 컨텍스트에 MEDIA/path가 있으면 사용자에게 경로를 다시 "
+            "묻지 말고 그 파일을 전달해라. 전달 가능한 파일이 없으면 파일을 찾지 못했다고 "
+            "말하고 필요한 생성/검증 계약으로 이어가라. 로그인 링크로 대체하지 마라.\n"
+        )
     if required_tool != "academy_hakjong_report_package":
         return ""
     return (

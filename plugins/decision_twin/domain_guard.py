@@ -20,8 +20,56 @@ _LIFE_RECORD_MARKERS = (
     "학교생활기록부",
     "life_record",
 )
+_MEDIA_DELIVERY_MARKERS = (
+    "media:",
+    "첨부",
+    "전달",
+    "다시 줘",
+    "다시 보내",
+    "파일을 줘",
+    "파일 보내",
+    "pdf 보내",
+    "리포트 파일",
+)
+_HAKJONG_NEGATION_MARKERS = (
+    "학종말고",
+    "학종 말고",
+    "학생부종합 말고",
+)
+_SUSI_MARKERS = (
+    "수시",
+    "교과",
+    "실기",
+    "내신",
+)
+_SUSI_SCORE_MARKERS = (
+    "내신환산",
+    "환산점수",
+    "학생 점수",
+    "점수로",
+)
+_SUSI_CUTOFF_MARKERS = (
+    "작년 합격자",
+    "전년도",
+    "전년",
+    "컷",
+    "입결",
+    "최초합",
+    "최종합",
+)
+_RECOMMENDATION_MARKERS = (
+    "붙을만한",
+    "추천",
+    "뽑아",
+    "목록",
+    "상향",
+    "중립",
+    "안전",
+)
+_LIFE_RECORD_DOMAIN = "life_record"
 _JUNGSI_DOMAIN = "jungsi_excel_importer"
 _JUNGSI_PREFIX = "jungsi_"
+_LIFE_RECORD_PREFIX = "life_record_"
 
 
 def has_domain_conflict(
@@ -39,10 +87,17 @@ def has_domain_conflict(
     tool = decision.required_tool
     if not tool:
         return False
-    if _tool_domain(tool) != _JUNGSI_DOMAIN:
-        return False
+    domain = _tool_domain(tool)
     context = _context_blob(user_text, owner_context, turn_context)
-    return _contains_any(context, _HAKJONG_MARKERS) or _contains_any(context, _LIFE_RECORD_MARKERS)
+    if _is_jungsi_tool(tool, domain):
+        return (
+            _contains_any(context, _HAKJONG_MARKERS)
+            or _contains_any(context, _LIFE_RECORD_MARKERS)
+            or _is_media_delivery_context(context)
+        )
+    if _is_life_record_tool(tool, domain):
+        return _is_susi_score_recommendation_context(context)
+    return False
 
 
 def _tool_domain(tool: str) -> str:
@@ -53,6 +108,27 @@ def _tool_domain(tool: str) -> str:
     if tool.startswith(_JUNGSI_PREFIX):
         return _JUNGSI_DOMAIN
     return ""
+
+
+def _is_jungsi_tool(tool: str, domain: str) -> bool:
+    return domain == _JUNGSI_DOMAIN or tool.startswith(_JUNGSI_PREFIX)
+
+
+def _is_life_record_tool(tool: str, domain: str) -> bool:
+    return domain == _LIFE_RECORD_DOMAIN or tool.startswith(_LIFE_RECORD_PREFIX)
+
+
+def _is_media_delivery_context(text: str) -> bool:
+    return _contains_any(text, _MEDIA_DELIVERY_MARKERS)
+
+
+def _is_susi_score_recommendation_context(text: str) -> bool:
+    if _contains_any(text, _HAKJONG_NEGATION_MARKERS):
+        return _contains_any(text, _SUSI_SCORE_MARKERS) or _contains_any(text, _SUSI_CUTOFF_MARKERS)
+    has_score_basis = _contains_any(text, _SUSI_SCORE_MARKERS) and _contains_any(text, _SUSI_CUTOFF_MARKERS)
+    has_susi_scope = _contains_any(text, _SUSI_MARKERS)
+    has_recommendation = _contains_any(text, _RECOMMENDATION_MARKERS)
+    return has_susi_scope and has_score_basis and has_recommendation
 
 
 def _context_blob(user_text: str, owner_context: str, turn_context: dict[str, Any] | None) -> str:

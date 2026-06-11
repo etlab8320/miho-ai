@@ -24,7 +24,9 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         "domain": "life_record",
         "purpose": (
             "학생 생기부 DB에서 학년/학기/영역별 원문 근거를 조회한다. "
-            "학종/수시 리포트 근거 확인에는 정시엔진이 아니라 이 생기부 조회 계열을 우선한다."
+            "학종 리포트 근거 확인에는 정시엔진이 아니라 이 생기부 조회 계열을 우선한다. "
+            "다만 학종이 아닌 수시 교과/실기 환산점수, 전년도 컷, 상향/중립/안전 추천은 "
+            "생기부 조회만으로 잠그지 말고 수시 점수 산출 흐름과 대학 공식 자료를 함께 써야 한다."
         ),
         "requires": ["student or current thread context"],
     },
@@ -85,7 +87,10 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "media_delivery_contract": {
         "domain": "gateway_media",
-        "purpose": "이미 생성된 로컬 파일은 MEDIA:<absolute_path> 형식으로 답해야 플랫폼이 파일로 전달한다.",
+        "purpose": (
+            "이미 생성된 로컬 파일은 MEDIA:<absolute_path> 형식으로 답해야 플랫폼이 파일로 전달한다. "
+            "파일 재전달/첨부 요청을 정시엔진 로그인 링크나 계정 연결 안내로 대체하지 않는다."
+        ),
         "requires": ["file under Miho media cache or allowed media dir"],
     },
 }
