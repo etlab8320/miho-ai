@@ -98,6 +98,14 @@ def _validate_pdf_physical(
     errors: list[str],
 ) -> None:
     """Physical PDF checks: portrait, brand text, student name, university names."""
+    # 디스코드 첨부 한도(10MB) 가드 — 사장님 지시(2026-06-12): 한도를 넘는 PDF는
+    # 만들어도 전달이 안 되므로(413 Payload Too Large 실사고) 승격 자체를 거부한다.
+    size_mb = pdf_path.stat().st_size / 1_048_576
+    if size_mb > 9.0:
+        errors.append(
+            f"PDF가 {size_mb:.1f}MB로 디스코드 첨부 한도(약 10MB)를 넘는다 — "
+            "섹션/문단 분량을 줄여 9MB 아래로 다시 만들어라."
+        )
     info = _contract._pdf_info(pdf_path)
     if info.get("error"):
         errors.append(f"PDF 정보를 읽을 수 없다: {info['error']}")

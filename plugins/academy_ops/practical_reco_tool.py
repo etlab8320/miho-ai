@@ -98,6 +98,14 @@ def _validate_pdf_physical(
     errors: list[str],
 ) -> None:
     """Physical PDF checks: portrait, brand text, student name."""
+    # 디스코드 첨부 한도(10MB) 가드 — 사장님 지시(2026-06-12): 한도를 넘는 PDF는
+    # 만들어도 전달이 안 되므로(413 Payload Too Large 실사고) 승격 자체를 거부한다.
+    size_mb = pdf_path.stat().st_size / 1_048_576
+    if size_mb > 9.0:
+        errors.append(
+            f"PDF가 {size_mb:.1f}MB로 디스코드 첨부 한도(약 10MB)를 넘는다 — "
+            "섹션/문단 분량을 줄여 9MB 아래로 다시 만들어라."
+        )
     info = _contract._pdf_info(pdf_path)
     if info.get("error"):
         errors.append(f"PDF 정보를 읽을 수 없다: {info['error']}")
@@ -311,7 +319,9 @@ def register_practical_reco_tool(ctx: Any) -> None:
             "단, 이 선별 과정은 리포트에 쓰지 않는다: 제외한 학교 이름, 검토 학교 수, '제외했다/걸렀다' 류 "
             "과정 설명은 전부 금지 — 리포트는 추천하는 학교 이야기만 한다. "
             "전년도 대비 전형 구조(만점·종목·비중)가 바뀐 학교는 해당 학교 카드의 caution에 "
-            "'올해 전형이 작년과 달라진 부분'을 학부모가 이해할 수 있게 짧게 적는다. "
+            "'작년에는 어떻게 반영됐는지'(작년 비중/만점/종목 — susi26_rule_lookup 수치)와 "
+            "'올해는 어떻게 바뀌었는지'를 대조해서 학부모가 이해할 수 있게 적는다 "
+            "(예: '작년엔 내신30:실기70(만점700)이었지만 올해는 20:80(만점800)이라 작년 점수와 직접 비교는 어렵습니다'). "
             "톤은 선생님이 학생·학부모에게 설명하듯 자연스럽게. "
             "검증 통과한 PDF만 ~/.miho/media_cache/susi_student_record/validated 로 승격하고 "
             "media_tag를 반환한다."
