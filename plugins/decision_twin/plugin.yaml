@@ -1,0 +1,7 @@
+name: decision_twin
+version: 0.1.0
+description: "LLM-backed gateway intent judge that routes Miho turns from context and tool contracts."
+author: "ET Lab"
+kind: backend
+hooks:
+  - pre_gateway_dispatch

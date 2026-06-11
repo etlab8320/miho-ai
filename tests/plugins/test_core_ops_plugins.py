@@ -9,7 +9,7 @@ import pytest
 from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
-from miho_cli.plugins import PluginManager
+from miho_cli.plugins import PluginManager, get_plugin_auxiliary_tasks
 
 
 def test_academy_ops_loads_without_user_opt_in(tmp_path, monkeypatch):
@@ -22,6 +22,19 @@ def test_academy_ops_loads_without_user_opt_in(tmp_path, monkeypatch):
     assert loaded.enabled
     assert "pre_gateway_dispatch" in loaded.hooks_registered
     assert "academy" in loaded.commands_registered
+
+
+def test_decision_twin_loads_without_user_opt_in(tmp_path, monkeypatch):
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+
+    manager = PluginManager()
+    manager.discover_and_load()
+
+    loaded = manager._plugins["decision_twin"]
+    assert loaded.enabled
+    callbacks = manager._hooks["pre_gateway_dispatch"]
+    assert any(callback.__module__.endswith("decision_twin") for callback in callbacks)
+    assert any(task["key"] == "miho_decision_twin" for task in get_plugin_auxiliary_tasks())
 
 
 def test_youtube_ops_does_not_load_without_user_opt_in(tmp_path, monkeypatch):
