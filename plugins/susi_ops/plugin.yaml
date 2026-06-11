@@ -1,0 +1,8 @@
+name: susi_ops
+version: 0.1.0
+description: "2027 수시엔진 staging rule lookup and verified score calculation tools."
+author: "ET Lab"
+kind: backend
+tools:
+  - susi27_rule_lookup
+  - susi27_score_calculate
