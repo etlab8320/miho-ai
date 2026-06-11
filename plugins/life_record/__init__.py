@@ -40,7 +40,19 @@ _LIFE_RECORD_TOOLS = {
 }
 # Unique fingerprints of the life-record DB — if a general-purpose tool's args
 # contain these, the model is hand-rolling/poking the 생기부 DB directly.
-_DB_MARKERS = ("life_records.sqlite3", "student_documents", "subject_special_notes")
+_DB_MARKERS = (
+    ".miho/life_records",
+    "life_records.sqlite3",
+    "central.sqlite3",
+    "student_documents",
+    "subject_grades",
+    "subject_special_notes",
+    "attendance_records",
+    "central_grades",
+    "central_notes",
+    "central_attendance",
+    "central_awards",
+)
 
 
 def _block_life_record_handcoding(tool_name: Any = None, args: Any = None, **_: Any) -> dict[str, str] | None:

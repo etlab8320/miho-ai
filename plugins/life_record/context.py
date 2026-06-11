@@ -62,7 +62,16 @@ def user_requested_life_record_confirm() -> bool:
     compact = " ".join(text.split())
     if not compact:
         return False
-    confirm_markers = ("검수 확정", "원본 확인", "원본 대조", "확정해", "확정해줘", "중앙DB", "중앙 DB", "승격")
+    confirm_markers = (
+        "검수 확정",
+        "검수 완료",
+        "원본 확인 완료",
+        "원본 확인했",
+        "원본 대조 완료",
+        "원본 대조했고",
+        "확정해",
+        "확정해줘",
+    )
     return any(marker in compact for marker in confirm_markers)
 
 
