@@ -41,6 +41,8 @@ _SUSI_MARKERS = (
     "교과",
     "실기",
     "내신",
+    "체대",
+    "체육",
 )
 _SUSI_SCORE_MARKERS = (
     "내신환산",
@@ -62,6 +64,10 @@ _RECOMMENDATION_MARKERS = (
     "추천",
     "뽑아",
     "목록",
+    "리스트",
+    "선별",
+    "유리한",
+    "할만한",
     "상향",
     "중립",
     "안전",
@@ -117,6 +123,21 @@ def has_domain_conflict(
     return False
 
 
+def should_skip_clarify_response(
+    *,
+    user_text: str,
+    owner_context: str = "",
+    turn_context: dict[str, Any] | None = None,
+) -> bool:
+    """Return True when clarification would block a complete score request."""
+    current = str(user_text or "").casefold()
+    context = _context_blob(user_text, owner_context, turn_context)
+    return _is_complete_score_recommendation_context(current) or (
+        _contains_any(current, _SUSI_MARKERS)
+        and _is_complete_score_recommendation_context(context)
+    )
+
+
 def _tool_domain(tool: str) -> str:
     contract = decision_tool_contracts().get(tool, {})
     domain = str(contract.get("domain") or "")
@@ -159,6 +180,15 @@ def _is_susi_score_recommendation_context(text: str) -> bool:
     has_susi_scope = _contains_any(text, _SUSI_MARKERS)
     has_recommendation = _contains_any(text, _RECOMMENDATION_MARKERS)
     return has_susi_scope and has_score_basis and has_recommendation
+
+
+def _is_complete_score_recommendation_context(text: str) -> bool:
+    has_student_basis = _contains_any(text, ("성적", "생기부", "학생", "내신"))
+    has_score_basis = _contains_any(text, _SUSI_SCORE_MARKERS) or _contains_any(text, _SUSI_CUTOFF_MARKERS)
+    has_susi_scope = _contains_any(text, _SUSI_MARKERS)
+    has_recommendation = _contains_any(text, _RECOMMENDATION_MARKERS)
+    has_count_or_bucket = "6개" in text or _contains_any(text, ("상향", "중립", "안전", "할만한"))
+    return has_student_basis and has_score_basis and has_susi_scope and has_recommendation and has_count_or_bucket
 
 
 def _context_blob(user_text: str, owner_context: str, turn_context: dict[str, Any] | None) -> str:

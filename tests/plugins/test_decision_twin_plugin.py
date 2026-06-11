@@ -358,6 +358,73 @@ async def test_decision_twin_allows_score_tool_with_life_record_thread_memory() 
     assert result["required_tool"] == "jungsi_student_university_score"
 
 
+@pytest.mark.asyncio
+async def test_decision_twin_does_not_clarify_complete_score_recommendation() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "clarify",
+            "intent": "종환 학생의 유리한 체대 실기전형 6개 학교 확인",
+            "confidence": 0.91,
+            "user_message": "체대 실기전형을 말하는 걸까?",
+        }
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event(
+            "종환이 생기부 성적보고, 서울경기인천 충청권, 대전, 강원 권에서 "
+            "가장유리한학교들을 선별해서, 6개 상향 2개 할만한곳 4개 추려서 "
+            "종환시 내신환산점수랑 해서 리스트줘"
+        ),
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+        owner_context_builder=lambda _text: "수시 실기/교과 추천은 학생 환산점수와 전년도 컷을 대조해야 한다.",
+    )
+
+    assert result == {"action": "allow"}
+
+
+@pytest.mark.asyncio
+async def test_decision_twin_does_not_clarify_score_followup_with_thread_context() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "clarify",
+            "intent": "실기전형 조건 확인",
+            "confidence": 0.87,
+            "user_message": "어떤 실기전형을 말하는지 한 번만 더 알려줘.",
+        }
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event("실기전형 으로"),
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+        owner_context_builder=lambda _text: (
+            "직전 요청: 종환이 성적 기준 서울경기인천 충청권 대전 강원 권역에서 "
+            "6개 학교를 상향 2개 할만한곳 4개로 내신환산점수와 함께 리스트업."
+        ),
+    )
+
+    assert result == {"action": "allow"}
+
+
+@pytest.mark.asyncio
+async def test_decision_twin_keeps_clarify_for_incomplete_request() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "clarify",
+            "intent": "학생 성적 분석 대상 확인",
+            "confidence": 0.88,
+            "user_message": "어느 학생 기준으로 볼지 알려줘.",
+        }
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event("내신환산점수 봐줘"),
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+    )
+
+    assert result["action"] == "respond"
+    assert result["text"] == "어느 학생 기준으로 볼지 알려줘."
+
+
 def test_score_route_text_requires_calculation_not_login() -> None:
     decision = parse_decision_payload(
         {

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .domain_guard import has_domain_conflict
+from .domain_guard import has_domain_conflict, should_skip_clarify_response
 from .router import (
     DECISION_TWIN_TASK,
     DecisionResolver,
@@ -66,6 +66,13 @@ async def _decision_twin_pre_gateway_dispatch(
             "required_tool": decision.required_tool,
             "priority": _ROUTE_PRIORITY,
         }
+    turn_context = _turn_context(event)
+    if (
+        decision.action == "clarify"
+        and should_skip_clarify_response(user_text=text, owner_context=owner_context, turn_context=turn_context)
+    ):
+        logger.info("decision twin skipped clarify for complete score context: intent=%s", decision.intent)
+        return {"action": "allow"}
     if decision.action == "clarify" and decision.confidence >= 0.75 and decision.user_message:
         return {
             "action": "respond",
