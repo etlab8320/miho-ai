@@ -51,6 +51,10 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
             "내용 JSON만 주면 껍데기(로고/푸터/브랜딩)는 고정 템플릿이 보장한다. "
             "학교별 학종 패키지(susi27_rule_lookup)와 생기부(life_record_lookup/search/summary)를 "
             "근거로 섹션 내용을 작성하라. "
+            "글쓰기 톤: 학원 선생님이 학생·학부모에게 상담하며 설명하는 따뜻하고 자연스러운 말투 — "
+            "딱딱한 보고서체('~한다/~이다' 나열) 금지. "
+            "내부 판단 과정·배제 설명('OO 분야는 제외하고' 류)은 쓰지 말고, "
+            "사용자가 지정한 학교·학과 내용만 직접적으로 쓴다. "
             "검증 통과한 PDF만 ~/.miho/media_cache/susi_student_record/validated 로 승격하고 "
             "media_tag를 반환한다."
         ),
@@ -86,10 +90,13 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
             "실기/수시 추천 작업 순서: "
             "①학생 성적 확보(life_record_lookup 또는 사용자 제공) "
             "②후보 학교 룰 조회(susi27_rule_lookup — 학종 패키지·실기 종목·반영식·전년도 결과 포함) "
-            "③환산점수 계산(susi27_score_calculate 또는 jungsi_student_university_score) "
+            "③환산점수 계산(susi27_score_calculate 또는 jungsi_student_university_score) — "
+            "등급 나열로 대체 금지, 학교별 반영식으로 계산한 환산점수 숫자를 반드시 산출 "
             "④전년도 결과(admission_result_26_json)와 비교 "
             "⑤상향/적정 분류 + 왜 되는지/안 되는지 근거 서술. "
-            "점수 없이 추천을 확정하지 말 것. 모든 후보에 환산점수·전년도 수치를 병기할 것."
+            "점수 없이 추천을 확정하지 말 것. 모든 후보에 환산점수·전년도 수치를 병기할 것. "
+            "주의: 실기전형은 내신 환산점수+실기 종목+전년도 결과로 판단한다 — "
+            "생기부 세특/서사/스토리/학종 언어는 실기전형 추천에 넣지 말 것 (그건 학종 리포트 전용)."
         ),
         "requires": ["student_query", "university or department candidates"],
     },

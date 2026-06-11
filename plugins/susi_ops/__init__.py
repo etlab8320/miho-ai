@@ -50,6 +50,8 @@ def register(ctx: Any) -> None:
             "academy_hakjong_report_package로 넘긴다. "
             "실기/수시 추천 체인: 이 도구의 score_logic을 susi27_score_calculate에 넘겨 환산하고 "
             "admission_result_26·cut_data와 비교해 상향/적정을 판단한다. "
+            "실기전형 추천은 환산점수 숫자+실기 종목+전년도 결과로만 판단 — 등급 나열로 대체하지 말고, "
+            "생기부 세특/서사/학종 언어는 넣지 말 것 (학종 리포트 전용). "
             "정시엔진 U_ID 기반 요약이 필요할 때만 jungsi_rule_summary를 대신 사용한다 (둘 다 호출하지 말 것)."
         ),
     )

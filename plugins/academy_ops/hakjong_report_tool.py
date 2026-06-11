@@ -317,6 +317,10 @@ def register_hakjong_report_tool(ctx: Any) -> None:
             "내용 JSON만 주면 껍데기(로고/푸터/브랜딩)는 고정 템플릿이 보장한다. "
             "학교별 학종 패키지(susi27_rule_lookup)와 생기부(life_record_lookup/search/summary)를 "
             "근거로 섹션 내용을 작성하라. "
+            "글쓰기 톤: 학원 선생님이 학생과 학부모 앞에서 상담하며 설명하는 따뜻하고 자연스러운 말투로 — "
+            "딱딱한 보고서체 나열 금지, 학생 이름을 부르며 말을 거는 문장으로. "
+            "내부 판단 과정이나 배제 설명('OO 분야는 제외하고' 류)은 리포트에 쓰지 말고, "
+            "요청받은 학교·학과에 대한 내용만 직접적으로 쓴다. "
             "검증 통과한 PDF만 ~/.miho/media_cache/susi_student_record/validated 로 승격하고 "
             "media_tag를 반환한다."
         ),

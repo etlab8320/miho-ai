@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .context import THREAD_ID, USER_TEXT, capture_gateway_context, current_life_record_dir
+from .context import THREAD_ID, capture_gateway_context, current_life_record_dir
 from .tools import (
     _confirm_tool_handler,
     _delete_tool_handler,
@@ -54,67 +54,13 @@ _DB_MARKERS = (
     "central_attendance",
     "central_awards",
 )
-_LIFE_RECORD_CONTEXT_MARKERS = (
-    "생기부",
-    "생활기록부",
-    "학교생활기록부",
-    "life_record",
-)
-_HAKJONG_CONTEXT_MARKERS = (
-    "학종",
-    "학생부종합",
-    "hakjong",
-)
-_SUSI_CONTEXT_MARKERS = (
-    "수시",
-    "교과",
-    "실기",
-    "내신",
-)
-_SCORE_CONTEXT_MARKERS = (
-    "점수",
-    "환산",
-    "내신환산",
-    "전년도",
-    "작년 합격자",
-    "컷",
-    "입결",
-    "계산",
-    "반영식",
-    "상향",
-    "중립",
-    "안전",
-)
-_JUNGSI_SCORE_TOOLS = {
-    "jungsi_student_score_lookup",
-    "jungsi_student_university_score",
-    "jungsi_cutoff_lookup",
-    "jungsi_rule_summary",
-    "jungsi_university_search",
-}
-_LIFE_RECORD_REQUIRED_MARKERS = (
-    "`life_record_",
-    "required_tool=life_record_",
-    "required_tool:life_record_",
-    "반드시 `life_record_",
-)
-_LIFE_RECORD_ALLOWED_TOOLS = _LIFE_RECORD_TOOLS | {"send_message"}
-_JUNGSI_PREFIX = "jungsi_"
-
-
 def _block_life_record_handcoding(tool_name: Any = None, args: Any = None, **_: Any) -> dict[str, str] | None:
     """pre_tool_call guard: forbid touching the 생기부 DB with execute_code/terminal/
-    sqlite. The dedicated life_record_* tools (which legitimately use that DB) pass."""
+    sqlite. The dedicated life_record_* tools (which legitimately use that DB) pass.
+    데이터 무결성 보호만 한다 — 문맥 키워드로 다른 도구를 차단하지 않는다 (의도 판단은 LLM)."""
     name = str(tool_name or "").strip()
     if not name:
         return None
-    context = _active_context_text(args)
-    if _is_strict_life_record_turn(context) and name not in _LIFE_RECORD_ALLOWED_TOOLS:
-        return _block_life_record_tool_contract()
-    if name in _JUNGSI_SCORE_TOOLS and _is_susi_score_context(context):
-        return None
-    if name.startswith(_JUNGSI_PREFIX) and _is_life_record_or_hakjong_context(context):
-        return _block_jungsi_for_life_record_context()
     if name in _LIFE_RECORD_TOOLS:
         return None
     try:
@@ -131,51 +77,6 @@ def _block_life_record_handcoding(tool_name: Any = None, args: Any = None, **_: 
             ),
         }
     return None
-
-
-def _active_context_text(args: Any) -> str:
-    values = [USER_TEXT.get()]
-    try:
-        values.append(json.dumps(args or {}, ensure_ascii=False))
-    except (TypeError, ValueError):
-        values.append("")
-    return "\n".join(str(value or "") for value in values).casefold()
-
-
-def _is_strict_life_record_turn(context: str) -> bool:
-    return any(marker.casefold() in context for marker in _LIFE_RECORD_REQUIRED_MARKERS)
-
-
-def _is_life_record_or_hakjong_context(context: str) -> bool:
-    markers = _LIFE_RECORD_CONTEXT_MARKERS + _HAKJONG_CONTEXT_MARKERS
-    return any(marker.casefold() in context for marker in markers)
-
-
-def _is_susi_score_context(context: str) -> bool:
-    has_susi = any(marker.casefold() in context for marker in _SUSI_CONTEXT_MARKERS)
-    has_score = any(marker.casefold() in context for marker in _SCORE_CONTEXT_MARKERS)
-    return has_susi and has_score
-
-
-def _block_life_record_tool_contract() -> dict[str, str]:
-    return {
-        "action": "block",
-        "message": (
-            "이 턴은 생기부/학종 근거 조회 계약이 걸려 있어. "
-            "정시엔진, 터미널, 세션검색, 파일검색으로 우회하지 말고 "
-            "life_record_lookup / life_record_search / life_record_summary 중 필요한 도구를 사용해."
-        ),
-    }
-
-
-def _block_jungsi_for_life_record_context() -> dict[str, str]:
-    return {
-        "action": "block",
-        "message": (
-            "현재 요청은 생기부/학종 문맥이므로 정시엔진 도구를 사용할 수 없어. "
-            "학생 원문 근거는 life_record_lookup / life_record_search / life_record_summary로 조회해."
-        ),
-    }
 
 
 def _life_record_attachment(event: Any) -> Path | None:

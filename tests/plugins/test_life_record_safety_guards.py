@@ -40,16 +40,14 @@ def test_pre_tool_call_blocks_central_life_record_db_access() -> None:
     ) is None
 
 
-def test_pre_tool_call_blocks_jungsi_tools_in_life_record_context() -> None:
+def test_pre_tool_call_allows_jungsi_tools_in_life_record_context() -> None:
+    """문맥 키워드로 도구를 차단하지 않는다 — 의도 판단은 LLM (routing-v2)."""
     from plugins.life_record import _block_life_record_handcoding
     from plugins.life_record.context import capture_gateway_context
 
     capture_gateway_context(_event("유가은 학생 생기부를 왜 정시엔진에서 찾아... 학종 자료를 봐야지"))
 
-    blocked = _block_life_record_handcoding(tool_name="jungsi_login", args={})
-
-    assert blocked and blocked["action"] == "block"
-    assert "life_record_lookup" in blocked["message"]
+    assert _block_life_record_handcoding(tool_name="jungsi_login", args={}) is None
 
 
 def test_pre_tool_call_allows_score_calculation_in_susi_score_context() -> None:
@@ -72,19 +70,17 @@ def test_pre_tool_call_allows_score_calculation_in_explicit_susi_context() -> No
     assert _block_life_record_handcoding(tool_name="jungsi_student_university_score", args={}) is None
 
 
-def test_pre_tool_call_enforces_life_record_required_tool_turn() -> None:
+def test_pre_tool_call_no_strict_turn_blocking() -> None:
+    """라우팅 힌트가 있어도 다른 도구를 차단하지 않는다 (routing-v2)."""
     from plugins.life_record import _block_life_record_handcoding
     from plugins.life_record.context import capture_gateway_context
 
     capture_gateway_context(
-        _event("[Miho decision twin] 반드시 `life_record_lookup` 도구 또는 해당 플러그인 계약을 사용해라.")
+        _event("[라우팅 힌트 — 참고용] 추천 도구: life_record_lookup")
     )
 
     assert _block_life_record_handcoding(tool_name="life_record_lookup", args={"query": "유가은"}) is None
-    blocked = _block_life_record_handcoding(tool_name="session_search", args={"query": "유가은 학종"})
-
-    assert blocked and blocked["action"] == "block"
-    assert "life_record_lookup" in blocked["message"]
+    assert _block_life_record_handcoding(tool_name="session_search", args={"query": "유가은 학종"}) is None
 
 
 def test_pre_tool_call_allows_jungsi_tools_outside_life_record_context() -> None:
