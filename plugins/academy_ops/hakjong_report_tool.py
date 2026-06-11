@@ -37,6 +37,11 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
         ),
     )
     if not report["ok"]:
+        draft_paths = _draft_paths(
+            str(payload.get("student_name") or ""),
+            str(payload.get("university_name") or ""),
+            str(payload.get("department_name") or ""),
+        )
         return json.dumps(
             {
                 "ok": False,
@@ -44,6 +49,16 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
                 "errors": report["errors"],
                 "warnings": report["warnings"],
                 "checks": report["checks"],
+                "draft_paths": {key: str(value) for key, value in draft_paths.items()},
+                "next_action": {
+                    "ask_user_for_paths": False,
+                    "steps": (
+                        "사용자에게 파일 경로를 묻지 말고 draft_paths.html_path에 write_file로 "
+                        "locked premium_hakjong_report HTML을 생성한다. "
+                        "그 HTML을 A4 세로 PDF와 page PNG/contact sheet로 렌더링한 뒤 "
+                        "academy_hakjong_report_package를 같은 학생/대학 인자로 다시 호출한다."
+                    ),
+                },
             },
             ensure_ascii=False,
         )
@@ -159,6 +174,17 @@ def _safe_stem(*parts: str) -> str:
     raw = "_".join(part.strip() for part in parts if part and part.strip())
     clean = re.sub(r"[^\w가-힣.-]+", "_", raw, flags=re.UNICODE).strip("_.")
     return clean[:120] or "hakjong_report"
+
+
+def _draft_paths(student_name: str, university_name: str, department_name: str) -> dict[str, Path]:
+    out_dir = get_miho_home() / "media_cache" / "susi_student_record" / "drafts"
+    stem = _safe_stem(student_name, university_name, department_name)
+    return {
+        "html_path": out_dir / f"{stem}.html",
+        "pdf_path": out_dir / f"{stem}.pdf",
+        "page_image_dir": out_dir / f"{stem}_pages",
+        "contact_sheet_path": out_dir / f"{stem}_contact_sheet.png",
+    }
 
 
 def _copy_unique(source: Path, target: Path) -> Path:

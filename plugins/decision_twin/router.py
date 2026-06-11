@@ -96,14 +96,29 @@ def should_route_decision(decision: LlmRouteDecision) -> bool:
 def route_result_text(user_text: str, decision: LlmRouteDecision) -> str:
     instruction = decision.tool_instruction or "사용자 요청을 처리한다."
     evidence = ", ".join(decision.evidence) if decision.evidence else "LLM decision twin"
+    contract = _route_execution_contract(decision.required_tool)
     return (
         "[Miho decision twin]\n"
         f"의도: {decision.intent or decision.required_tool}\n"
         f"근거: {evidence}\n"
         f"반드시 `{decision.required_tool}` 도구 또는 해당 플러그인 계약을 사용해라.\n"
         f"도구 지시: {instruction}\n"
+        f"{contract}"
         "도구 실행 전후로 원문 근거가 부족하면 일반 답변으로 때우지 말고 필요한 파일/로그인/학생명을 요청해라.\n"
         f"사용자 원문: {user_text}"
+    )
+
+
+def _route_execution_contract(required_tool: str) -> str:
+    if required_tool != "academy_hakjong_report_package":
+        return ""
+    return (
+        "학종 리포트 실행 계약: 경로가 잠겨 있지 않다. 파일 경로를 사용자에게 묻지 마라. "
+        "이전 대화의 잠금/막힘 설명은 현재 턴에서 폐기한다. 산출물이 없으면 "
+        "~/.miho/media_cache/susi_student_record/drafts 아래 기본 경로를 잡고 "
+        "life_record_* 근거 확인 후 write_file로 locked premium_hakjong_report HTML을 만들고, "
+        "terminal 또는 렌더링 도구로 A4 세로 PDF/page PNG/contact sheet를 생성한 다음 "
+        "academy_hakjong_report_package를 다시 호출해 MEDIA 파일로 전달해라.\n"
     )
 
 

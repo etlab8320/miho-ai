@@ -143,6 +143,31 @@ def test_hakjong_report_package_rejects_non_locked_template(monkeypatch, tmp_pat
     assert any("locked premium_hakjong_report" in error for error in result["errors"])
 
 
+def test_hakjong_report_package_missing_artifacts_returns_generation_plan(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
+
+    result = json.loads(
+        _hakjong_report_package_tool_handler(
+            {
+                "student_name": "홍길동",
+                "university_name": "성균관대학교",
+                "department_name": "스포츠과학과",
+                "track_name": "성균인재",
+                "student_stage": "grade3",
+                "evidence_tools": ["life_record_lookup", "qualitative_profile"],
+                "page_image_paths": [],
+            }
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["next_action"]["ask_user_for_paths"] is False
+    assert "write_file" in result["next_action"]["steps"]
+    assert "academy_hakjong_report_package" in result["next_action"]["steps"]
+    assert result["draft_paths"]["html_path"].endswith(".html")
+    assert result["draft_paths"]["pdf_path"].endswith(".pdf")
+
+
 def test_hakjong_report_package_rejects_missing_source_evidence(monkeypatch, tmp_path) -> None:
     _patch_pdf_tools(monkeypatch)
     html_path, pdf_path, page_images, contact_sheet = _write_report_files(tmp_path)

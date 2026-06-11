@@ -12,7 +12,7 @@ from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 from plugins.decision_twin import _decision_twin_pre_gateway_dispatch
 from plugins.decision_twin.contracts import decision_tool_contracts
-from plugins.decision_twin.router import build_decision_messages, parse_decision_payload
+from plugins.decision_twin.router import build_decision_messages, parse_decision_payload, route_result_text
 
 
 def _event(text: str, *, user_id: str = "u1") -> MessageEvent:
@@ -155,6 +155,26 @@ def test_decision_prompt_contains_context_and_tool_contracts() -> None:
     assert "academy_hakjong_report_package" in joined
     assert "life_record_summary" in joined
     assert "키워드 하나" in joined
+
+
+def test_hakjong_report_route_text_forbids_path_or_lock_excuses() -> None:
+    decision = parse_decision_payload(
+        {
+            "action": "route",
+            "route": "academy_ops",
+            "required_tool": "academy_hakjong_report_package",
+            "intent": "학종 리포트 PDF 생성",
+            "confidence": 0.94,
+            "tool_instruction": "국민대 경희대 인하대 3개 리포트를 만든다",
+        }
+    )
+
+    text = route_result_text("가은이 3개 학교 학종 리포트로 줘", decision)
+
+    assert "경로가 잠겨 있지 않다" in text
+    assert "파일 경로를 사용자에게 묻지 마라" in text
+    assert "write_file" in text
+    assert "academy_hakjong_report_package" in text
 
 
 def test_decision_contracts_cover_every_registered_tool() -> None:

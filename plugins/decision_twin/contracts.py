@@ -45,7 +45,10 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "academy_hakjong_report_package": {
         "domain": "academy_ops",
-        "purpose": "잠긴 premium_hakjong_report PDF/HTML을 검증하고 통과한 PDF만 MEDIA로 전달한다.",
+        "purpose": (
+            "이미 생성된 premium_hakjong_report PDF/HTML을 검증하고 통과한 PDF만 MEDIA로 전달한다. "
+            "생성기가 아니므로 산출물이 없으면 사용자에게 경로를 묻지 말고 draft 경로에 HTML/PDF를 먼저 만든 뒤 호출한다."
+        ),
         "requires": ["html_path", "pdf_path", "student_name", "evidence_tools"],
     },
     "academy_render_image": {
