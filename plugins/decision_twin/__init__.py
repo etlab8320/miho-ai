@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import importlib
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -79,12 +81,26 @@ async def _decision_twin_pre_gateway_dispatch(
 
 
 def _mark_required_tool_route(event: Any, required_tool: str) -> None:
-    try:
-        from plugins.academy_ops.hakjong_report_guard import mark_hakjong_report_required_route
-    except Exception as exc:
-        logger.info("decision twin route marker skipped: %s", exc)
-        return
-    mark_hakjong_report_required_route(event, required_tool=required_tool)
+    for module_name in _guard_module_names():
+        try:
+            module = sys.modules.get(module_name) or importlib.import_module(module_name)
+        except Exception:
+            continue
+        marker = getattr(module, "mark_hakjong_report_required_route", None)
+        if callable(marker):
+            marker(event, required_tool=required_tool)
+            return
+    logger.info("decision twin route marker skipped: hakjong report guard unavailable")
+
+
+def _guard_module_names() -> tuple[str, ...]:
+    root = __name__.split(".", 1)[0]
+    names = [
+        f"{root}.academy_ops.hakjong_report_guard",
+        "plugins.academy_ops.hakjong_report_guard",
+        "miho_plugins.academy_ops.hakjong_report_guard",
+    ]
+    return tuple(dict.fromkeys(names))
 
 
 def _should_run(event: Any, gateway: Any) -> bool:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -88,6 +89,23 @@ async def test_decision_twin_marks_hakjong_report_required_route_for_guard() -> 
 
     assert result["required_tool"] == "academy_hakjong_report_package"
     assert blocked and blocked["action"] == "block"
+
+
+def test_decision_twin_marks_guard_in_runtime_plugin_namespace(monkeypatch) -> None:
+    import plugins.decision_twin as decision_twin
+
+    calls: list[tuple[object, str]] = []
+
+    runtime_guard = SimpleNamespace(
+        mark_hakjong_report_required_route=lambda event, required_tool="": calls.append((event, required_tool))
+    )
+    monkeypatch.setitem(sys.modules, "miho_plugins.academy_ops.hakjong_report_guard", runtime_guard)
+    monkeypatch.setattr(decision_twin, "__name__", "miho_plugins.decision_twin")
+    event = object()
+
+    decision_twin._mark_required_tool_route(event, "academy_hakjong_report_package")
+
+    assert calls == [(event, "academy_hakjong_report_package")]
 
 
 @pytest.mark.asyncio
