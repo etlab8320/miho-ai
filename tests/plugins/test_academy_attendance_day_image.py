@@ -66,11 +66,54 @@ def test_attendance_day_image_contract_is_visible_to_llm_router() -> None:
 
 
 @pytest.mark.asyncio
-async def test_attendance_day_image_request_sets_image_arg_even_if_router_omits_it() -> None:
+async def test_attendance_day_image_request_no_keyword_injection_on_semantic_abstain(monkeypatch) -> None:
+    """semantic이 abstain(None)하면 keyword 폴백 없이 image 주입이 일어나지 않는다."""
+    from plugins.academy_ops import route_overrides
+
+    route_overrides._last_output.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.route_overrides.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: None,
+    )
+
     calls: list[dict] = []
 
     async def fake_resolver(messages: list[dict[str, str]]) -> object:
-        assert "오늘 출석해야할 학생들 명단좀 이미지로 줘" in messages[-1]["content"]
+        content = router_execute("academy_attendance_day", {"date": "2026-05-29"}, confidence=0.96)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+    def handler(args: dict, **_: object) -> str:
+        calls.append(args)
+        return json.dumps({"ok": True, "message": "출석 명단"}, ensure_ascii=False)
+
+    route = await resolve_and_execute_academy_request(
+        "오늘 출석해야할 학생들 명단좀 이미지로 줘",
+        resolver=fake_resolver,
+        handlers={"academy_attendance_day": handler},
+        today="2026-05-29",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.HANDLED
+    # semantic abstain → image 주입 없음
+    assert calls == [{"date": "2026-05-29"}]
+    route_overrides._last_output.update(text=None, label=None, hit=False)
+
+
+@pytest.mark.asyncio
+async def test_attendance_day_image_request_sets_image_arg_when_semantic_returns_image(monkeypatch) -> None:
+    """semantic이 image를 반환하면 image=True 주입이 일어난다."""
+    from plugins.academy_ops import route_overrides
+
+    route_overrides._last_output.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.route_overrides.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: "image",
+    )
+
+    calls: list[dict] = []
+
+    async def fake_resolver(messages: list[dict[str, str]]) -> object:
         content = router_execute("academy_attendance_day", {"date": "2026-05-29"}, confidence=0.96)
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
@@ -89,3 +132,4 @@ async def test_attendance_day_image_request_sets_image_arg_even_if_router_omits_
     assert route == AcademyNaturalRoute.HANDLED
     assert calls == [{"date": "2026-05-29", "image": True}]
     assert "MEDIA:" in route.response_text
+    route_overrides._last_output.update(text=None, label=None, hit=False)

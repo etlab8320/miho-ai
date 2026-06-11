@@ -93,49 +93,16 @@ def should_route_decision(decision: LlmRouteDecision) -> bool:
     return decision.confidence >= MIN_ROUTE_CONFIDENCE
 
 
-def route_result_text(user_text: str, decision: LlmRouteDecision) -> str:
-    instruction = decision.tool_instruction or "사용자 요청을 처리한다."
+def annotate_result_text(user_text: str, decision: LlmRouteDecision) -> str:
     evidence = ", ".join(decision.evidence) if decision.evidence else "LLM decision twin"
-    contract = _route_execution_contract(decision.required_tool)
-    return (
-        "[Miho decision twin]\n"
-        f"의도: {decision.intent or decision.required_tool}\n"
-        f"근거: {evidence}\n"
-        f"반드시 `{decision.required_tool}` 도구 또는 해당 플러그인 계약을 사용해라.\n"
-        f"도구 지시: {instruction}\n"
-        f"{contract}"
-        "도구 실행 전후로 원문 근거가 부족하면 일반 답변으로 때우지 말고 필요한 파일/로그인/학생명을 요청해라.\n"
-        f"사용자 원문: {user_text}"
-    )
-
-
-def _route_execution_contract(required_tool: str) -> str:
-    if required_tool == "jungsi_student_university_score":
-        return (
-            "점수계산 실행 계약: 이 요청은 로그인 안내가 아니라 학생 점수와 대학 반영식으로 "
-            "환산점수, 전년도 컷/합격자 점수, MaxLive 비교를 계산·검증하는 작업이다. "
-            "가능한 경우 학생명과 대학/학과 후보를 인자로 넣어 `jungsi_student_university_score`를 "
-            "실행해라. 점수 없이 학교 추천을 확정하지 마라. 로그인 상태가 실제로 부족할 때만 "
-            "로그인 필요를 짧게 안내하고, 로그인 링크로 대체하지 마라.\n"
-        )
-    if required_tool == "media_delivery_contract":
-        return (
-            "파일 전달 실행 계약: 이미 생성된 전달 대상 파일은 반드시 `MEDIA:<absolute_path>` "
-            "형식으로 답해 플랫폼 첨부로 전달해라. 정시엔진, 로그인 링크, OAuth, 계정 연결은 "
-            "사용하지 마라. 직전 대화나 컨텍스트에 MEDIA/path가 있으면 사용자에게 경로를 다시 "
-            "묻지 말고 그 파일을 전달해라. 전달 가능한 파일이 없으면 파일을 찾지 못했다고 "
-            "말하고 필요한 생성/검증 계약으로 이어가라. 로그인 링크로 대체하지 마라.\n"
-        )
-    if required_tool != "academy_hakjong_report_package":
-        return ""
-    return (
-        "학종 리포트 실행 계약: 경로가 잠겨 있지 않다. 파일 경로를 사용자에게 묻지 마라. "
-        "이전 대화의 잠금/막힘 설명은 현재 턴에서 폐기한다. 산출물이 없으면 "
-        "~/.miho/media_cache/susi_student_record/drafts 아래 기본 경로를 잡고 "
-        "life_record_* 근거 확인 후 write_file로 locked premium_hakjong_report HTML을 만들고, "
-        "terminal 또는 렌더링 도구로 A4 세로 PDF/page PNG/contact sheet를 생성한 다음 "
-        "academy_hakjong_report_package를 다시 호출해 MEDIA 파일로 전달해라.\n"
-    )
+    hint_lines = [
+        "[라우팅 힌트 — 참고용. 최종 판단과 도구 선택은 네가 직접 한다]",
+        f"의도: {decision.intent or decision.required_tool}",
+    ]
+    if decision.required_tool:
+        hint_lines.append(f"추천 도구: {decision.required_tool}")
+    hint_lines.append(f"근거: {evidence}")
+    return f"{user_text}\n\n" + "\n".join(hint_lines)
 
 
 def _system_prompt() -> str:
@@ -144,7 +111,7 @@ def _system_prompt() -> str:
         "키워드 하나로 라우팅하지 말고 현재 문장, 첨부, reply/thread context, owner_memory, tool_contracts를 함께 읽어라. "
         "사용자의 실제 job을 추론하고, 전용 도구나 MEDIA 계약이 필요한 경우 action=route와 required_tool을 채워라. "
         "생기부/학종/학원DB/유튜브/파일전달처럼 근거 도구가 필요한 업무는 기억이나 추측만으로 답하게 두지 마라. "
-        "확신이 낮거나 필수 인자가 없으면 action=allow 또는 clarify로 둔다. "
+        "확신이 낮거나 필수 인자가 없으면 action=allow로 둔다. "
         "clarify의 user_message는 한국어 평문이어야 하고 400/401/CORS/stack trace 같은 개발자 표현을 쓰지 마라. "
         "도구 계약에 없는 도구명을 만들지 말고, required_tool은 tool_contracts의 키 중 하나만 사용해라."
     )

@@ -148,11 +148,11 @@ def test_login_confident_none_does_not_trigger(monkeypatch):
     assert login_preflight.is_academy_login_status_request("파카 로그인 됐어?") is False
 
 
-def test_login_abstain_falls_back_to_keywords(monkeypatch):
+def test_login_abstain_returns_false_no_keyword_fallback(monkeypatch):
+    """semantic abstain(None) → 키워드 폴백 없이 False 반환."""
     monkeypatch.setattr(semantic_intents, "classify", lambda *a, **k: None)
-    # Keyword path still works for known phrasings.
-    assert login_preflight.is_academy_login_request("파카 로그인 연결해줘") is True
-    assert login_preflight.is_academy_login_status_request("파카 로그인되어있어?") is True
+    assert login_preflight.is_academy_login_request("파카 로그인 연결해줘") is False
+    assert login_preflight.is_academy_login_status_request("파카 로그인되어있어?") is False
 
 
 # --- route_overrides mapping ---------------------------------------------------
@@ -181,10 +181,11 @@ def test_output_none_does_not_force(monkeypatch):
     assert route_overrides.should_render_attendance_day_image("이미지로", "academy_attendance_day") is False
 
 
-def test_output_abstain_falls_back_to_keywords(monkeypatch):
+def test_output_abstain_returns_empty_no_keyword_fallback(monkeypatch):
+    """semantic abstain(None) → 키워드 폴백 없이 empty/"" 반환."""
     monkeypatch.setattr(semantic_intents, "classify", lambda *a, **k: None)
     assert (
         route_overrides.forced_tool_for_output_request("달력 이미지로 보여줘", "academy_student_attendance_range")
-        == "academy_student_attendance_calendar_image"
+        == ""
     )
-    assert route_overrides.should_render_attendance_day_image("이미지로 보여줘", "academy_attendance_day") is True
+    assert route_overrides.should_render_attendance_day_image("이미지로 보여줘", "academy_attendance_day") is False

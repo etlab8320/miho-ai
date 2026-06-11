@@ -18,37 +18,86 @@ from plugins.academy_ops.auth_store import AcademyBinding, encrypt_token, save_b
 from plugins.academy_ops.login_preflight import is_academy_login_request, is_academy_login_status_request
 
 
-@pytest.fixture(autouse=True)
-def _force_keyword_routing(monkeypatch):
-    """Pin this module to the keyword fallback path (semantic embeddings off).
-
-    These tests assert the behaviour used whenever no semantic embedding
-    provider is available; pinning the flag keeps them deterministic even when
-    VOYAGE_API_KEY happens to be set locally.
-    """
-    monkeypatch.setenv("MIHO_ACADEMY_SEMANTIC_ROUTING", "0")
-    monkeypatch.setenv("MIHO_ACADEMY_NATURAL_GUIDANCE_COPY", "0")
-    from plugins.academy_ops import login_preflight, semantic_intents
+@pytest.fixture
+def _semantic_login_request(monkeypatch):
+    """Patch semantic_intents to classify as login_request."""
+    from plugins.academy_ops import login_preflight
 
     login_preflight._last_login.update(text=None, label=None, hit=False)
-    semantic_intents._anchor_cache.clear()
+    monkeypatch.setattr(
+        "plugins.academy_ops.login_preflight.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: "login_request",
+    )
     yield
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+
+
+@pytest.fixture
+def _semantic_login_status(monkeypatch):
+    """Patch semantic_intents to classify as login_status."""
+    from plugins.academy_ops import login_preflight
+
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.login_preflight.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: "login_status",
+    )
+    yield
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+
+
+@pytest.fixture
+def _semantic_abstain(monkeypatch):
+    """Patch semantic_intents to abstain (return None) — no embedding provider."""
+    from plugins.academy_ops import login_preflight
+
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.login_preflight.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: None,
+    )
+    yield
+    login_preflight._last_login.update(text=None, label=None, hit=False)
 
 
 def test_academy_login_request_detection_is_intent_based() -> None:
+    """semantic_intents가 label을 반환하면 그 값을 그대로 사용한다."""
+    from plugins.academy_ops import login_preflight
+
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+    original_classify = login_preflight.semantic_intents.classify
+
+    # login_request 반환 시
+    login_preflight.semantic_intents.classify = lambda text, group, intents, **kw: "login_request"
+    login_preflight._last_login.update(text=None, label=None, hit=False)
     assert is_academy_login_request("파카로그인 하자")
-    assert is_academy_login_request("피크 계정 연결해줘")
-    assert is_academy_login_request("학원관리 로그인 연결해줘")
-    assert not is_academy_login_request("로그인 했어")
+    assert not is_academy_login_status_request("파카로그인 하자")
+
+    # login_status 반환 시
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+    login_preflight.semantic_intents.classify = lambda text, group, intents, **kw: "login_status"
+    login_preflight._last_login.update(text=None, label=None, hit=False)
     assert is_academy_login_status_request("로그인했어 되었는지 확인해줘")
-    assert is_academy_login_status_request("로그인 완료")
-    assert is_academy_login_status_request("파카 로그인되어있어?")
-    assert not is_academy_login_request("파카 로그인되어있어?")
-    assert not is_academy_login_request("파카 로그인 관련 구조 얘기해줘")
-    assert not is_academy_login_request("paca login status")
-    assert is_academy_login_request("paca login please")
+    assert not is_academy_login_request("로그인했어 되었는지 확인해줘")
+
+    # none 반환 시
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+    login_preflight.semantic_intents.classify = lambda text, group, intents, **kw: "none"
+    login_preflight._last_login.update(text=None, label=None, hit=False)
     assert not is_academy_login_request("학생 카드 디자인 의견 줘")
     assert not is_academy_login_status_request("학생 카드 디자인 의견 줘")
+
+    login_preflight.semantic_intents.classify = original_classify
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+
+
+def test_keyword_fallback_absent_when_semantic_abstains(_semantic_abstain) -> None:
+    """semantic이 None을 반환(abstain)하면 키워드 폴백 없이 False를 반환한다."""
+    # 예전 키워드 경로에서는 True였을 입력들
+    assert not is_academy_login_request("파카로그인 하자")
+    assert not is_academy_login_request("피크 계정 연결해줘")
+    assert not is_academy_login_status_request("로그인했어 되었는지 확인해줘")
+    assert not is_academy_login_status_request("파카 로그인되어있어?")
 
 
 @pytest.mark.asyncio
@@ -254,6 +303,7 @@ async def test_auth_gate_allows_non_academy_decision() -> None:
 async def test_natural_login_request_returns_login_link_for_authorized_discord_user(
     monkeypatch,
     tmp_path,
+    _semantic_login_request,
 ) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     monkeypatch.setenv("MIHO_ACADEMY_AUTH_BASE_URL", "https://academy-login.etlab.kr")
@@ -278,7 +328,11 @@ async def test_natural_login_request_returns_login_link_for_authorized_discord_u
 
 
 @pytest.mark.asyncio
-async def test_natural_login_request_accepts_string_discord_platform(monkeypatch, tmp_path) -> None:
+async def test_natural_login_request_accepts_string_discord_platform(
+    monkeypatch,
+    tmp_path,
+    _semantic_login_request,
+) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     event = MessageEvent(
         text="피크 계정 연결해줘",
@@ -301,7 +355,11 @@ async def test_natural_login_request_accepts_string_discord_platform(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_natural_login_request_does_not_bypass_gateway_auth(monkeypatch, tmp_path) -> None:
+async def test_natural_login_request_does_not_bypass_gateway_auth(
+    monkeypatch,
+    tmp_path,
+    _semantic_login_request,
+) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     event = MessageEvent(
         text="학원관리 로그인 연결해줘",
@@ -319,7 +377,11 @@ async def test_natural_login_request_does_not_bypass_gateway_auth(monkeypatch, t
 
 
 @pytest.mark.asyncio
-async def test_login_completion_confirmation_returns_binding_status(monkeypatch, tmp_path) -> None:
+async def test_login_completion_confirmation_returns_binding_status(
+    monkeypatch,
+    tmp_path,
+    _semantic_login_status,
+) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     monkeypatch.setattr("plugins.academy_ops.refresh_remote_pending_logins", lambda: 0)
     save_binding(
@@ -355,7 +417,11 @@ async def test_login_completion_confirmation_returns_binding_status(monkeypatch,
 
 
 @pytest.mark.asyncio
-async def test_login_completion_confirmation_reports_missing_binding(monkeypatch, tmp_path) -> None:
+async def test_login_completion_confirmation_reports_missing_binding(
+    monkeypatch,
+    tmp_path,
+    _semantic_login_status,
+) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     monkeypatch.setattr("plugins.academy_ops.refresh_remote_pending_logins", lambda: 0)
     event = MessageEvent(
@@ -379,6 +445,13 @@ async def test_login_completion_confirmation_reports_missing_binding(monkeypatch
 async def test_generic_login_confirmation_without_academy_context_is_ignored(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     monkeypatch.setattr("plugins.academy_ops.refresh_remote_pending_logins", lambda: 0)
+    # semantic이 None(abstain) 반환 → override 없음 → allow
+    from plugins.academy_ops import login_preflight
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.login_preflight.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: None,
+    )
     event = MessageEvent(
         text="로그인 완료 확인해줘",
         source=SessionSource(
@@ -394,7 +467,11 @@ async def test_generic_login_confirmation_without_academy_context_is_ignored(mon
 
 
 @pytest.mark.asyncio
-async def test_pending_login_allows_generic_completion_confirmation(monkeypatch, tmp_path) -> None:
+async def test_pending_login_allows_generic_completion_confirmation(
+    monkeypatch,
+    tmp_path,
+    _semantic_login_status,
+) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     monkeypatch.setattr("plugins.academy_ops.refresh_remote_pending_logins", lambda: 0)
     create_login_link(discord_user_id="discord-user-1", guild_id="guild-1", channel_id="channel-1")
@@ -417,7 +494,11 @@ async def test_pending_login_allows_generic_completion_confirmation(monkeypatch,
 
 
 @pytest.mark.asyncio
-async def test_academy_login_status_question_does_not_create_link(monkeypatch, tmp_path) -> None:
+async def test_academy_login_status_question_does_not_create_link(
+    monkeypatch,
+    tmp_path,
+    _semantic_login_status,
+) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path))
     monkeypatch.setattr("plugins.academy_ops.refresh_remote_pending_logins", lambda: 0)
     event = MessageEvent(

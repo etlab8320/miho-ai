@@ -1,10 +1,9 @@
 """Fast routing for natural-language academy login binding requests.
 
-Intent detection prefers embedding-based semantic routing
-(:mod:`plugins.academy_ops.semantic_intents`). It falls back to the historical
-keyword logic only when no semantic embedding provider is available, routing is
-disabled, or the match is ambiguous — so behaviour is unchanged whenever
-embeddings are unavailable (e.g. CI without ``VOYAGE_API_KEY``).
+Intent detection uses embedding-based semantic routing
+(:mod:`plugins.academy_ops.semantic_intents`). When the embedding provider is
+unavailable, routing is disabled, or the match is ambiguous, semantic_intents
+returns None and no override is applied (allow).
 """
 
 from __future__ import annotations
@@ -12,43 +11,6 @@ from __future__ import annotations
 from typing import Any
 
 from . import semantic_intents
-
-# EMERGENCY FALLBACK ONLY — keyword markers used solely when semantic_intents
-# returns None (no embedding provider / routing disabled / ambiguous). The
-# primary intent path is embedding similarity over LOGIN_INTENTS below; these
-# substrings must never be the primary classifier. Do not add keyword lists
-# like these as a primary routing path (see test_academy_no_hardcoded_nlp).
-ACADEMY_MARKERS = ("paca", "peak", "파카", "피크", "학원", "학원관리", "academy")
-LOGIN_MARKERS = ("로그인", "연결", "연동", "인증", "계정", "바인딩", "login", "connect", "link")
-LOGIN_REQUEST_MARKERS = (
-    "로그인하자",
-    "로그인해줘",
-    "로그인링크",
-    "로그인연결",
-    "계정연결",
-    "계정연동",
-    "연결해줘",
-    "연동해줘",
-    "바인딩해줘",
-    "loginplease",
-    "loginlink",
-    "connectaccount",
-    "linkaccount",
-)
-LOGIN_STATUS_MARKERS = (
-    "했어",
-    "했는데",
-    "완료",
-    "됐",
-    "돼",
-    "되었",
-    "되어",
-    "상태",
-    "확인",
-    "connected",
-    "done",
-    "success",
-)
 
 # Example utterances per intent for semantic matching. These are anchors for
 # embedding similarity, NOT substring keywords — new phrasings are matched by
@@ -113,36 +75,22 @@ def _semantic_login(text: str) -> str | None:
 def is_academy_login_request(text: str) -> bool:
     label = _semantic_login(text)
     if label is None:
-        return _keyword_is_login_request(text)
+        return False
     return label == "login_request"
 
 
 def is_academy_login_status_request(text: str) -> bool:
     label = _semantic_login(text)
     if label is None:
-        return _keyword_is_login_status_request(text)
+        return False
     return label == "login_status"
 
 
-def _keyword_is_login_request(text: str) -> bool:
-    normalized = _compact(text)
-    if not normalized or not _contains_any(normalized, LOGIN_MARKERS):
-        return False
-    if not _contains_any(normalized, ACADEMY_MARKERS) or _keyword_is_login_status_request(text):
-        return False
-    return _contains_any(normalized, LOGIN_REQUEST_MARKERS)
-
-
-def _keyword_is_login_status_request(text: str) -> bool:
-    normalized = _compact(text)
-    if not normalized or not _contains_any(normalized, LOGIN_MARKERS):
-        return False
-    return _contains_any(normalized, LOGIN_STATUS_MARKERS)
-
-
 def has_academy_login_context(text: str) -> bool:
-    normalized = _compact(text)
-    return _contains_any(normalized, LOGIN_MARKERS) and _contains_any(normalized, ACADEMY_MARKERS)
+    label = _semantic_login(text)
+    if label is None:
+        return False
+    return label in ("login_request", "login_status")
 
 
 def is_gateway_source_authorized(gateway: Any, source: Any) -> bool:
@@ -153,11 +101,3 @@ def is_gateway_source_authorized(gateway: Any, source: Any) -> bool:
         return bool(checker(source))
     except Exception:
         return False
-
-
-def _compact(text: str) -> str:
-    return "".join(str(text or "").lower().split())
-
-
-def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
-    return any(_compact(marker) in text for marker in markers)

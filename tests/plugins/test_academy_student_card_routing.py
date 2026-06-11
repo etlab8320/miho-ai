@@ -36,7 +36,16 @@ def test_consultation_candidate_contract_supports_png_image_requests() -> None:
 
 
 @pytest.mark.asyncio
-async def test_student_management_card_request_forces_card_image_when_resolver_picks_summary() -> None:
+async def test_student_management_card_request_forces_card_image_when_semantic_returns_card(monkeypatch) -> None:
+    """semantic이 card를 반환하면 summary → card_image로 강제 전환된다."""
+    from plugins.academy_ops import route_overrides
+
+    route_overrides._last_output.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.route_overrides.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: "card",
+    )
+
     calls: list[dict] = []
 
     async def resolver(_: list[dict[str, str]]) -> object:
@@ -69,10 +78,57 @@ async def test_student_management_card_request_forces_card_image_when_resolver_p
     assert route == AcademyNaturalRoute.HANDLED
     assert calls == [{"student_query": "백지민", "today": "2026-05-29"}]
     assert "MEDIA:/tmp/baek-card.png" in route.response_text
+    route_overrides._last_output.update(text=None, label=None, hit=False)
 
 
 @pytest.mark.asyncio
-async def test_card_image_followup_reuses_student_card_context_not_previous_attendance() -> None:
+async def test_student_management_card_no_override_on_semantic_abstain(monkeypatch) -> None:
+    """semantic abstain(None) → 키워드 폴백 없이 summary 그대로 실행."""
+    from plugins.academy_ops import route_overrides
+
+    route_overrides._last_output.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.route_overrides.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: None,
+    )
+
+    summary_calls: list[dict] = []
+
+    async def resolver(_: list[dict[str, str]]) -> object:
+        return _Response(router_execute("academy_student_summary", {"student_query": "백지민"}, confidence=0.93))
+
+    def summary_handler(args: dict, **_: object) -> str:
+        summary_calls.append(args)
+        return json.dumps({"ok": True, "message": "백지민 요약"}, ensure_ascii=False)
+
+    route = await resolve_and_execute_academy_request(
+        "백지민 학생관리카드 줘",
+        resolver=resolver,
+        handlers={
+            "academy_student_summary": summary_handler,
+            "academy_student_card_image": lambda args, **kwargs: pytest.fail("카드 이미지 실행되면 안 됨"),
+        },
+        context_key="thread-card2",
+        today="2026-05-29",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.HANDLED
+    assert summary_calls  # summary가 실행됐다
+    route_overrides._last_output.update(text=None, label=None, hit=False)
+
+
+@pytest.mark.asyncio
+async def test_card_image_followup_reuses_student_card_context_when_semantic_returns_card(monkeypatch) -> None:
+    """semantic이 card/image를 반환하면 thread context의 카드 데이터로 재실행한다."""
+    from plugins.academy_ops import route_overrides
+
+    route_overrides._last_output.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.route_overrides.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: "card",
+    )
+
     calls: list[dict] = []
     remember_thread_context(
         "thread-card-followup",
@@ -112,3 +168,4 @@ async def test_card_image_followup_reuses_student_card_context_not_previous_atte
     assert route == AcademyNaturalRoute.HANDLED
     assert calls == [{"student_query": "백지민", "today": "2026-05-29"}]
     assert "baek-card-v2.png" in route.response_text
+    route_overrides._last_output.update(text=None, label=None, hit=False)

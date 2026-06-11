@@ -1,4 +1,7 @@
-"""Regression tests for decision-twin clarification policy."""
+"""Regression tests for decision-twin clarification policy.
+
+clarify 액션은 무조건 allow로 처리된다 (domain_guard / should_skip_clarify_response 제거 후).
+"""
 
 from __future__ import annotations
 
@@ -31,7 +34,9 @@ def _gateway() -> SimpleNamespace:
 
 
 @pytest.mark.asyncio
-async def test_decision_twin_does_not_clarify_actionable_hakjong_report_request() -> None:
+async def test_clarify_always_returns_allow() -> None:
+    """LLM이 clarify를 반환하면 무조건 allow다."""
+
     async def resolver(_messages):
         return {
             "action": "clarify",
@@ -53,7 +58,7 @@ async def test_decision_twin_does_not_clarify_actionable_hakjong_report_request(
 
 
 @pytest.mark.asyncio
-async def test_decision_twin_does_not_clarify_hakjong_followup_with_thread_context() -> None:
+async def test_clarify_returns_allow_for_hakjong_followup() -> None:
     async def resolver(_messages):
         return {
             "action": "clarify",
@@ -76,7 +81,7 @@ async def test_decision_twin_does_not_clarify_hakjong_followup_with_thread_conte
 
 
 @pytest.mark.asyncio
-async def test_decision_twin_does_not_clarify_media_redelivery_when_file_context_exists() -> None:
+async def test_clarify_returns_allow_for_media_redelivery() -> None:
     async def resolver(_messages):
         return {
             "action": "clarify",
@@ -98,7 +103,7 @@ async def test_decision_twin_does_not_clarify_media_redelivery_when_file_context
 
 
 @pytest.mark.asyncio
-async def test_decision_twin_does_not_clarify_actionable_life_record_lookup() -> None:
+async def test_clarify_returns_allow_for_life_record_lookup() -> None:
     async def resolver(_messages):
         return {
             "action": "clarify",
@@ -118,7 +123,7 @@ async def test_decision_twin_does_not_clarify_actionable_life_record_lookup() ->
 
 
 @pytest.mark.asyncio
-async def test_decision_twin_blocks_life_record_lock_for_actionable_silgi_recommendation() -> None:
+async def test_clarify_returns_allow_for_silgi_recommendation() -> None:
     async def resolver(_messages):
         return {
             "action": "route",
@@ -130,6 +135,7 @@ async def test_decision_twin_blocks_life_record_lock_for_actionable_silgi_recomm
             "tool_instruction": "생기부를 조회한다",
         }
 
+    # route + required_tool + confidence >= 0.72 → rewrite (가드 없음)
     result = await _decision_twin_pre_gateway_dispatch(
         event=_event(
             "종환이 생기부 성적보고 충청 대전 강원권에서 "
@@ -142,11 +148,15 @@ async def test_decision_twin_blocks_life_record_lock_for_actionable_silgi_recomm
         ),
     )
 
-    assert result == {"action": "allow"}
+    # domain_guard 없음 — rewrite로 통과, 원문 보존
+    assert result["action"] == "rewrite"
+    assert "종환이 생기부 성적보고" in result["text"]
 
 
 @pytest.mark.asyncio
-async def test_decision_twin_keeps_clarify_for_actionless_hakjong_request() -> None:
+async def test_clarify_returns_allow_for_actionless_request() -> None:
+    """clarify는 이제 무조건 allow — respond 분기 없음."""
+
     async def resolver(_messages):
         return {
             "action": "clarify",
@@ -161,5 +171,4 @@ async def test_decision_twin_keeps_clarify_for_actionless_hakjong_request() -> N
         resolver=resolver,
     )
 
-    assert result["action"] == "respond"
-    assert result["text"] == "어느 학생과 어느 대학 기준인지 알려줘."
+    assert result == {"action": "allow"}

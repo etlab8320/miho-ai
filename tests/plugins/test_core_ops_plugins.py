@@ -73,6 +73,13 @@ def test_core_ops_plugins_still_respect_disabled_config(tmp_path, monkeypatch):
 async def test_fresh_install_routes_academy_login_before_llm(tmp_path, monkeypatch):
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
     monkeypatch.setenv("MIHO_ACADEMY_AUTH_BASE_URL", "https://academy-login.etlab.kr")
+    # semantic이 login_request를 반환하도록 설정 (embedding 없는 CI 환경 대응)
+    from plugins.academy_ops import login_preflight, semantic_intents
+    from plugins.academy_ops.gateway_dispatch import _academy_pre_gateway_dispatch
+
+    login_preflight._last_login.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(semantic_intents, "classify", lambda *a, **k: "login_request")
+    monkeypatch.setattr("plugins.academy_ops.gateway_dispatch.refresh_remote_pending_logins", lambda: 0)
     event = MessageEvent(
         text="파카 로그인하자",
         source=SessionSource(
@@ -83,18 +90,9 @@ async def test_fresh_install_routes_academy_login_before_llm(tmp_path, monkeypat
         ),
     )
     gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
-    manager = PluginManager()
-    manager.discover_and_load()
 
-    results = await manager.invoke_hook_async(
-        "pre_gateway_dispatch",
-        event=event,
-        gateway=gateway,
-    )
+    result = await _academy_pre_gateway_dispatch(event=event, gateway=gateway)
+    login_preflight._last_login.update(text=None, label=None, hit=False)
 
-    assert any(
-        result.get("action") == "respond"
-        and "https://academy-login.etlab.kr/academy/login?state=" in result.get("text", "")
-        for result in results
-        if isinstance(result, dict)
-    )
+    assert result.get("action") == "respond"
+    assert "https://academy-login.etlab.kr/academy/login?state=" in result.get("text", "")

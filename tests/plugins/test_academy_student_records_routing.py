@@ -34,7 +34,16 @@ def test_student_record_route_args_recover_recent_when_router_uses_today_only() 
     assert args["fallback_recent_when_empty"] is True
 
 
-def test_student_record_chart_conversion_keeps_attempt_limit_not_tiny_date_window() -> None:
+def test_student_record_chart_conversion_keeps_attempt_limit_not_tiny_date_window(monkeypatch) -> None:
+    """semantic이 image를 반환하면 lookup → chart_image로 전환하고 attempt limit를 유지한다."""
+    from plugins.academy_ops import route_overrides
+
+    route_overrides._last_output.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.route_overrides.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: "image",
+    )
+
     decision = normalize_route_decision_tools(
         "학생 최근 5회차 실기 그래프 이미지로 줘",
         {
@@ -62,6 +71,7 @@ def test_student_record_chart_conversion_keeps_attempt_limit_not_tiny_date_windo
         "period_days": 180,
         "limit": 5,
     }
+    route_overrides._last_output.update(text=None, label=None, hit=False)
 
 
 def test_student_record_chart_args_reject_zero_day_window() -> None:

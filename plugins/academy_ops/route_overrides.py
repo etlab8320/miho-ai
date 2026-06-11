@@ -1,9 +1,9 @@
 """Output-contract corrections for academy natural routes.
 
-Prefers embedding-based semantic detection of the requested output format
-(image / card) via :mod:`plugins.academy_ops.semantic_intents`. Falls back to
-the historical keyword logic only when no semantic embedding provider is
-available, routing is disabled, or the match is ambiguous.
+Uses embedding-based semantic detection of the requested output format
+(image / card) via :mod:`plugins.academy_ops.semantic_intents`. When the
+embedding provider is unavailable, routing is disabled, or the match is
+ambiguous, semantic_intents returns None and no override is applied.
 """
 
 from __future__ import annotations
@@ -11,14 +11,6 @@ from __future__ import annotations
 from typing import Any
 
 from . import semantic_intents
-
-# EMERGENCY FALLBACK ONLY — keyword markers used solely when semantic_intents
-# returns None (no embedding provider / routing disabled / ambiguous). The
-# primary path is embedding similarity over OUTPUT_INTENTS below; these
-# substrings must never be the primary classifier (see
-# test_academy_no_hardcoded_nlp).
-IMAGE_OUTPUT_MARKERS = ("이미지", "사진", "png", "달력", "캘린더")
-CARD_OUTPUT_MARKERS = ("카드", "관리카드", "학생관리")
 
 OUTPUT_INTENT_GROUP = "academy_output_format"
 OUTPUT_INTENTS: dict[str, tuple[str, ...]] = {
@@ -69,7 +61,7 @@ def _semantic_output(text: str) -> str | None:
 def forced_tool_for_output_request(text: str, tool_name: str) -> str:
     label = _semantic_output(text)
     if label is None:
-        return _keyword_forced_tool(text, tool_name)
+        return ""
     if tool_name == "academy_student_attendance_range" and label == "image":
         return "academy_student_attendance_calendar_image"
     if tool_name == "academy_student_summary" and label in ("card", "image"):
@@ -82,28 +74,5 @@ def forced_tool_for_output_request(text: str, tool_name: str) -> str:
 def should_render_attendance_day_image(text: str, tool_name: str) -> bool:
     label = _semantic_output(text)
     if label is None:
-        return _keyword_should_render(text, tool_name)
+        return False
     return tool_name == "academy_attendance_day" and label == "image"
-
-
-def _keyword_forced_tool(text: str, tool_name: str) -> str:
-    normalized = text.lower()
-    if tool_name == "academy_student_attendance_range" and _has_any(normalized, IMAGE_OUTPUT_MARKERS):
-        return "academy_student_attendance_calendar_image"
-    if tool_name == "academy_student_summary" and _asks_for_card_image(normalized):
-        return "academy_student_card_image"
-    if tool_name == "academy_student_record_lookup" and _has_any(normalized, IMAGE_OUTPUT_MARKERS):
-        return "academy_student_record_chart_image"
-    return ""
-
-
-def _keyword_should_render(text: str, tool_name: str) -> bool:
-    return tool_name == "academy_attendance_day" and _has_any(text.lower(), IMAGE_OUTPUT_MARKERS)
-
-
-def _asks_for_card_image(text: str) -> bool:
-    return _has_any(text, CARD_OUTPUT_MARKERS) or _has_any(text, IMAGE_OUTPUT_MARKERS)
-
-
-def _has_any(text: str, markers: tuple[str, ...]) -> bool:
-    return any(marker in text for marker in markers)

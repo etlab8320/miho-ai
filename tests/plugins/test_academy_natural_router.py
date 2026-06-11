@@ -137,7 +137,16 @@ async def test_natural_router_retries_resolver_timeout_before_user_failure() -> 
 
 
 @pytest.mark.asyncio
-async def test_attendance_image_followup_forces_calendar_tool_after_llm_decision() -> None:
+async def test_attendance_image_followup_forces_calendar_tool_after_llm_decision(monkeypatch) -> None:
+    """semantic이 image를 반환하면 attendance_range → calendar_image로 강제 전환된다."""
+    from plugins.academy_ops import route_overrides
+
+    route_overrides._last_output.update(text=None, label=None, hit=False)
+    monkeypatch.setattr(
+        "plugins.academy_ops.route_overrides.semantic_intents.classify",
+        lambda text, group, intents, **kwargs: "image",
+    )
+
     calls: list[tuple[str, dict]] = []
     remember_thread_context(
         "thread-image",
@@ -188,6 +197,7 @@ async def test_attendance_image_followup_forces_calendar_tool_after_llm_decision
         "calendar",
         {"student_query": "학생A", "start_date": "2026-05-01", "end_date": "2026-05-31", "today": "2026-05-26"},
     )]
+    route_overrides._last_output.update(text=None, label=None, hit=False)
 
 
 @pytest.mark.asyncio
