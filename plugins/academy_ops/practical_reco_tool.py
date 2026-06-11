@@ -140,11 +140,19 @@ def _practical_reco_package_tool_handler(args: dict[str, Any] | None = None, **_
     payload = args or {}
     student_name = str(payload.get("student_name") or "").strip()
     content = payload.get("content")
+    if isinstance(content, str):
+        # LLM이 JSON 문자열로 보내는 경우가 흔하다 — 파싱해서 받아준다.
+        # dict 강제로 반려하면 에이전트가 도구를 포기하고 PDF를 손제작하는
+        # 우회(2026-06-12 13MB 첨부 실패 사고)로 빠진다.
+        try:
+            content = json.loads(content)
+        except (TypeError, ValueError):
+            pass
     evidence_tools = [str(t) for t in (payload.get("evidence_tools") or [])]
 
     if not isinstance(content, dict):
         return json.dumps(
-            {"ok": False, "errors": ["content는 dict여야 한다."], "warnings": [], "checks": {}},
+            {"ok": False, "errors": ["content는 dict(또는 JSON 문자열)여야 한다. JSON 객체 형태로 다시 보내라."], "warnings": [], "checks": {}},
             ensure_ascii=False,
         )
 
