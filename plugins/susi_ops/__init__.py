@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .service import lookup_rules, calculate_score, lookup_prev_year
+from .service import lookup_rules, calculate_score, lookup_prev_year, recommend_candidates
 
 
 def _lookup_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
@@ -23,6 +23,16 @@ def _prev_year_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
         department=args.get("department"),
         admission_track=args.get("admission_track"),
         limit=int(args.get("limit") or 8),
+    )
+
+
+def _recommend_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
+    return recommend_candidates(
+        student_query=str(args.get("student_query") or ""),
+        university=args.get("university"),
+        department=args.get("department"),
+        admission_track=args.get("admission_track"),
+        max_candidates=int(args.get("max_candidates") or 30),
     )
 
 
@@ -116,5 +126,32 @@ def register(ctx: Any) -> None:
             "정원(quota), 수능최저, 작년 실기 종목(practical_events_prev). "
             "추천 후보를 확정하기 전에 반드시 이 도구로 작년 구조를 확인하고, 올해(susi27_rule_lookup) "
             "구조와 비중·만점·종목이 다르면 전년도 점수 비교를 보정하고 해당 학교 카드에 변경 내용을 적어라."
+        ),
+    )
+    ctx.register_tool(
+        name="susi27_recommend_candidates",
+        toolset="susi_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "student_query": {"type": "string", "description": "학생 이름 (중앙 생기부 DB 검수 완료 학생)."},
+                "university": {"type": "string", "description": "선택: 대학명 필터."},
+                "department": {"type": "string", "description": "선택: 학과명 필터."},
+                "admission_track": {"type": "string", "description": "선택: 전형명 필터. 예: 실기."},
+                "max_candidates": {"type": "integer", "default": 30, "minimum": 1, "maximum": 60},
+            },
+            "required": ["student_query"],
+            "additionalProperties": False,
+        },
+        handler=_recommend_handler,
+        description=(
+            "수시 실기/교과 추천의 시작점 — 이 도구 하나가 체인 전체를 코드로 돌린다: "
+            "학생 확정 성적 조회 → verified 룰 전체에 학교별 환산 → 실기 만점 도달성 판정"
+            "(만점으로도 전년도 최종합 미달인 학교는 자동 제외) → 여유점수 순 정렬. "
+            "반환 후보마다 내신환산·실기만점·만점합산·전년도 최초/최종·여유·suggested_verdict(적정/상향)· "
+            "실기 종목·정원이 들어있다. 추천 요청이 오면 룰/계산 도구를 따로 조립하지 말고 이걸 먼저 호출해라. "
+            "지역 제한 요청이면 결과에서 해당 지역 학교를 골라내면 된다. "
+            "suggested_verdict는 제안 — 최종 선택(몇 개교, 상향/적정 배분)과 서사는 네 판단이고, "
+            "발표 전 susi26_rule_lookup으로 전년도 전형 구조 변경 여부를 크로스체크해라."
         ),
     )

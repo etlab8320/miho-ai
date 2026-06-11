@@ -289,3 +289,55 @@ def test_prev_year_parses_rows(monkeypatch):
     assert row["stage2_record"] == "30" and row["stage2_practical"] == "70"
     assert row["practical_events_prev"] == ["10m왕복달리기", "서전트점프"]
     assert len(calls) == 2
+
+
+def test_recommend_candidates_missing_student(monkeypatch, tmp_path):
+    from plugins.susi_ops import service
+
+    monkeypatch.setattr(service, "_CENTRAL_LIFE_DB", tmp_path / "none.sqlite3")
+    assert "error" in service.recommend_candidates("없는학생")
+
+
+def test_recommend_candidates_filters_unreachable(monkeypatch):
+    from plugins.susi_ops import service
+
+    monkeypatch.setattr(service, "_student_grades_from_central", lambda q: ("백종환", [{"교과": "국어", "과목": "국어", "이수단위": 4, "등급": "7"}]))
+
+    class FakeRow(dict):
+        def __getitem__(self, k):
+            return dict.__getitem__(self, k)
+
+    rules = [FakeRow(university_id="u1", university="가능대", department="체육", admission_track="실기",
+                     practical_events_json=None, raw_json='{"정원": "10", "내신교과": "200", "실기만점": "800"}'),
+             FakeRow(university_id="u2", university="불가대", department="체육", admission_track="실기",
+                     practical_events_json=None, raw_json='{"정원": "5", "내신교과": "200", "실기만점": "600"}')]
+
+    class FakeConn:
+        def execute(self, sql, params=()):
+            class C:
+                def fetchall(self_inner):
+                    return rules
+                def fetchone(self_inner):
+                    return ['{"final_pass_cutoff": {"total_score": 900.0, "record_score": 150.0}}']
+            return C()
+
+    monkeypatch.setattr(service, "_connect", lambda: FakeConn())
+
+    def fake_calc(uid, grades, att, prac):
+        base = {"status": "calculated", "student_record_score": 160.0}
+        if uid == "u1":
+            base["vs_prev_year"] = {"practical_max": 800.0, "max_possible_total": 960.0,
+                                    "prev_final_total": 900.0, "prev_first_total": None,
+                                    "reachable_at_full_practical": True}
+        else:
+            base["vs_prev_year"] = {"practical_max": 600.0, "max_possible_total": 760.0,
+                                    "prev_final_total": 900.0, "prev_first_total": None,
+                                    "reachable_at_full_practical": False}
+        return base
+
+    monkeypatch.setattr(service, "calculate_score", fake_calc)
+    result = service.recommend_candidates("백종환")
+    names = [c["university"] for c in result["candidates"]]
+    assert "가능대" in names and "불가대" not in names
+    assert result["skipped"]["unreachable"] == 1
+    assert result["candidates"][0]["suggested_verdict"] == "적정"

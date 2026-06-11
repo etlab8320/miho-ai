@@ -100,13 +100,11 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
     "jungsi_student_university_score": {
         "domain": "jungsi_excel_importer",
         "purpose": (
-            "실기/수시 추천 작업 순서: "
-            "①학생 성적 확보(life_record_lookup 또는 사용자 제공) "
-            "②후보 학교 룰 조회(susi27_rule_lookup — 학종 패키지·실기 종목·반영식·전년도 결과 포함) "
-            "③환산점수 계산(susi27_score_calculate 또는 jungsi_student_university_score) — "
-            "등급 나열로 대체 금지, 학교별 반영식으로 계산한 환산점수 숫자를 반드시 산출 "
-            "④전년도 결과(admission_result_26_json)와 비교 "
-            "⑤상향/적정 분류 + 왜 되는지/안 되는지 근거 서술. "
+            "실기/수시 추천은 susi27_recommend_candidates 한 번 호출로 시작한다 — "
+            "성적 조회·학교별 환산·만점 도달성 필터·정렬을 코드가 전부 처리해 후보 목록을 준다. "
+            "룰/계산 도구를 손으로 조립하지 마라(느리고 틀린다). "
+            "정시(수능 성적) 상담만 jungsi_student_university_score를 쓴다. "
+            "후보 목록에서 최종 학교를 고르고 상향/적정 분류와 근거를 서술한다. "
             "분류 절대 규칙: 상향 = 현재 환산으로는 전년도 컷에 못 미치지만 "
             "(학생 내신환산 + 실기 만점) ≥ 전년도 최종합격 점수라서 실기로 뒤집을 수 있는 학교만. "
             "실기를 만점 받아도 전년도 결과에 못 닿는 학교는 상향이 아니라 수학적으로 불가능 — "
@@ -114,7 +112,7 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
             "점수 없이 추천을 확정하지 말 것. 모든 후보에 내신환산·실기만점·실기만점 합산·전년도 최초/최종 수치를 병기할 것. "
             "susi27_score_calculate가 돌려주는 vs_prev_year의 reachable_at_full_practical이 false인 학교는 "
             "warning 그대로 — 어떤 분류로도 추천 금지. "
-            "⑥추천 확정 전 전년도 크로스체크: 각 후보의 올해 룰(내신 만점·실기 만점·실기 종목·비중)과 "
+            "추천 확정 전 전년도 크로스체크: 각 후보의 올해 룰(내신 만점·실기 만점·실기 종목·비중)과 "
             "전년도 결과(admission_result_26의 record_score/practical_score 구조)를 대조하라. "
             "작년 합격자 내신환산이 올해 내신 만점보다 크거나, 실기 종목/비중이 달라 보이면 "
             "전형 구조가 바뀐 것 — 단순 점수 비교가 무효일 수 있으니 해당 학교에 '전형 변경' 주의를 달고 "

@@ -469,3 +469,143 @@ def lookup_prev_year(
         r["practical_events_prev"] = events_by_id.get(str(r.get("practical_id")), [])
 
     return {"year": "26(전년도)", "count": len(result), "rows": result}
+
+
+# ---------------------------------------------------------------------------
+# 원콜 추천 파이프라인 — "정확성은 코드, 판단은 LLM"
+# ---------------------------------------------------------------------------
+# 추천의 기계적 체인(학생 성적 조회 → verified 룰 전수 환산 → 전년도 도달성
+# 판정 → 정렬)을 단일 호출로 끝낸다. 2026-06-12 실사고: 이 체인을 LLM이 매 턴
+# 도구를 더듬어 조립하느라 10분+ 배회 — 오케스트레이션 자체가 기계적인 일은
+# 코드가 한다. LLM은 이 결과에서 학교를 고르고 서사만 쓴다.
+
+_CENTRAL_LIFE_DB = pathlib.Path(os.path.expanduser("~/.miho/life_records/central.sqlite3"))
+
+
+def _student_grades_from_central(student_query: str) -> tuple[str | None, list[dict[str, Any]]]:
+    if not _CENTRAL_LIFE_DB.exists():
+        return None, []
+    conn = sqlite3.connect(_CENTRAL_LIFE_DB)
+    conn.row_factory = sqlite3.Row
+    try:
+        student = conn.execute(
+            "SELECT id, name FROM students WHERE name LIKE ? ORDER BY id DESC LIMIT 1",
+            (f"%{str(student_query or '').strip()}%",),
+        ).fetchone()
+        if student is None:
+            return None, []
+        rows = conn.execute(
+            "SELECT category, subject, credits, rank_grade FROM central_grades WHERE student_id = ?",
+            (student["id"],),
+        ).fetchall()
+        grades = [
+            {"교과": r["category"], "과목": r["subject"], "이수단위": r["credits"], "등급": r["rank_grade"]}
+            for r in rows
+        ]
+        return student["name"], grades
+    finally:
+        conn.close()
+
+
+def recommend_candidates(
+    student_query: str,
+    university: str | None = None,
+    department: str | None = None,
+    admission_track: str | None = None,
+    max_candidates: int = 30,
+) -> dict[str, Any]:
+    student_name, grades = _student_grades_from_central(student_query)
+    if not grades:
+        return {
+            "error": f"중앙 생기부 DB에서 '{student_query}' 학생의 확정 성적을 찾지 못했어. "
+            "생기부 인제스트/검수(life_record_confirm)가 끝난 학생만 추천 계산이 가능해."
+        }
+
+    conn = _connect()
+    conds = ["c.confidence = 'verified'", "c.admission_result_26_json IS NOT NULL", "c.admission_result_26_json != ''"]
+    params: list[Any] = []
+    for term, col in ((university, "c.university"), (department, "c.department"), (admission_track, "c.admission_track")):
+        clean = _safe_like_term(term)
+        if clean:
+            conds.append(f"{col} LIKE ?")
+            params.append(f"%{clean}%")
+    rule_rows = conn.execute(
+        f"SELECT c.university_id, c.university, c.department, c.admission_track, "
+        f"c.practical_events_json, d.raw_json "
+        f"FROM susi_calculation_rules c "
+        f"LEFT JOIN db_university_rows d ON d.university_id = c.university_id "
+        f"WHERE {' AND '.join(conds)}",
+        params,
+    ).fetchall()
+
+    candidates = []
+    skipped = {"calc_failed": 0, "unreachable": 0}
+    for row in rule_rows:
+        calc = calculate_score(row["university_id"], grades, {}, {})
+        if calc.get("status") != "calculated":
+            skipped["calc_failed"] += 1
+            continue
+        vs = calc.get("vs_prev_year") or {}
+        if not vs:
+            skipped["calc_failed"] += 1
+            continue
+        if not vs.get("reachable_at_full_practical"):
+            skipped["unreachable"] += 1
+            continue
+        raw = _json_loads(row["raw_json"], {})
+        ev = _json_loads(row["practical_events_json"], None) or {}
+        events = ev.get("events") if isinstance(ev, dict) else ev
+        event_names = [e.get("name") if isinstance(e, dict) else str(e) for e in (events or [])][:6]
+        record = calc["student_record_score"]
+        # 적정/상향 제안: 작년 최종합격자의 내신환산보다 높으면 적정 출발선
+        prev_final_record = None
+        r26 = None
+        try:
+            r26 = _json_loads(
+                conn.execute(
+                    "SELECT admission_result_26_json FROM susi_calculation_rules WHERE university_id = ?",
+                    (row["university_id"],),
+                ).fetchone()[0],
+                {},
+            )
+            prev_final_record = _first_number((r26.get("final_pass_cutoff") or {}).get("record_score"))
+        except Exception:
+            pass
+        suggested = "적정" if (prev_final_record is not None and record >= prev_final_record) else "상향"
+        margin = round(vs["max_possible_total"] - vs["prev_final_total"], 2)
+        candidates.append(
+            {
+                "university_id": row["university_id"],
+                "university": row["university"],
+                "department": row["department"],
+                "admission_track": row["admission_track"],
+                "student_record_score": record,
+                "practical_max": vs.get("practical_max"),
+                "max_possible_total": vs.get("max_possible_total"),
+                "prev_first_total": vs.get("prev_first_total"),
+                "prev_final_total": vs.get("prev_final_total"),
+                "prev_final_record": prev_final_record,
+                "margin_at_full_practical": margin,
+                "suggested_verdict": suggested,
+                "practical_events": event_names,
+                "quota": raw.get("정원"),
+                "stage_record_practical": f"{raw.get('내신교과') or '?'}:{raw.get('실기만점') or '?'}",
+            }
+        )
+
+    candidates.sort(key=lambda c: (-(c["suggested_verdict"] == "적정"), -c["margin_at_full_practical"]))
+    max_candidates = max(1, min(int(max_candidates or 30), 60))
+    total = len(candidates)
+    candidates = candidates[:max_candidates]
+    return {
+        "student": student_name,
+        "grade_rows_used": len(grades),
+        "total_feasible": total,
+        "returned": len(candidates),
+        "skipped": skipped,
+        "note": (
+            "전 후보는 verified 룰 + 전년도 결과가 있는 학교만이며, 실기 만점으로도 전년도 최종합에 "
+            "못 닿는 학교는 이미 제외됐다. suggested_verdict는 제안일 뿐 — 최종 분류와 서사는 네 판단."
+        ),
+        "candidates": candidates,
+    }
