@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .service import lookup_rules, calculate_score
+from .service import lookup_rules, calculate_score, lookup_prev_year
 
 
 def _lookup_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
@@ -14,6 +14,15 @@ def _lookup_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
         admission_track=args.get("admission_track"),
         limit=int(args.get("limit") or 8),
         detail=bool(args.get("detail")),
+    )
+
+
+def _prev_year_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
+    return lookup_prev_year(
+        university=args.get("university"),
+        department=args.get("department"),
+        admission_track=args.get("admission_track"),
+        limit=int(args.get("limit") or 8),
     )
 
 
@@ -85,5 +94,27 @@ def register(ctx: Any) -> None:
             "검증(verified)된 수시 룰로 학생 교과 성적을 환산점수로 계산한다. "
             "university_id와 grades는 susi27_rule_lookup 결과와 life_record_lookup 성적에서 가져온다. "
             "unverified/missing 룰은 추측하지 않고 거부한다 — 그 경우 점수 없이 추천을 확정하지 말 것."
+        ),
+    )
+    ctx.register_tool(
+        name="susi26_rule_lookup",
+        toolset="susi_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "university": {"type": "string", "description": "대학명 일부 또는 전체."},
+                "department": {"type": "string", "description": "학과/모집단위명 일부."},
+                "admission_track": {"type": "string", "description": "전형명 일부. 예: 실기우수자."},
+                "limit": {"type": "integer", "default": 8, "minimum": 1, "maximum": 20},
+            },
+            "additionalProperties": False,
+        },
+        handler=_prev_year_handler,
+        description=(
+            "전년도(26) 수시 전형 구조를 수시엔진 원본 DB에서 직접 조회한다 — 추천 크로스체크 전용. "
+            "반환: 작년 내신:실기 비중(stage2_record/stage2_practical), 실기만점(practical_max), "
+            "정원(quota), 수능최저, 작년 실기 종목(practical_events_prev). "
+            "추천 후보를 확정하기 전에 반드시 이 도구로 작년 구조를 확인하고, 올해(susi27_rule_lookup) "
+            "구조와 비중·만점·종목이 다르면 전년도 점수 비교를 보정하고 해당 학교 카드에 변경 내용을 적어라."
         ),
     )

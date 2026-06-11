@@ -323,3 +323,93 @@ def calculate_score(
         "attendance_seen": bool(attendance),
         "practical_records_seen": sorted(practical_records.keys()),
     }
+
+
+# ---------------------------------------------------------------------------
+# 전년도(26susi) 원본 조회 — Vultr DB read-only
+# ---------------------------------------------------------------------------
+# 추천 크로스체크용: 작년 전형 구조(내신:실기 비중, 실기만점, 정원, 실기 종목)를
+# 원본에서 직접 확인한다. 사장님 승인(2026-06-12) — ssh vultr 경유 read-only SELECT.
+
+import re as _re
+import shlex as _shlex
+import subprocess as _subprocess
+
+_PREV_YEAR_DB = "26susi"
+_SAFE_TERM_RE = _re.compile(r"[^\w가-힣%·()\s.-]")
+
+
+def _safe_like_term(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return _SAFE_TERM_RE.sub("", text)[:60]
+
+
+def _vultr_mysql(sql: str, timeout: int = 12) -> list[list[str]]:
+    proc = _subprocess.run(
+        # ssh는 원격 인자를 셸로 합치므로 SQL(백틱 포함)을 통째로 quote해야 한다
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6", "vultr", f"mysql -N -B -e {_shlex.quote(sql)}"],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip()[:200] or "vultr mysql query failed")
+    return [line.split("\t") for line in proc.stdout.splitlines() if line.strip()]
+
+
+def lookup_prev_year(
+    university: str | None = None,
+    department: str | None = None,
+    admission_track: str | None = None,
+    limit: int = 8,
+) -> dict[str, Any]:
+    uni = _safe_like_term(university)
+    dept = _safe_like_term(department)
+    track = _safe_like_term(admission_track)
+    if not any((uni, dept)):
+        return {"error": "university 또는 department 중 하나는 필요해."}
+    conds = []
+    if uni:
+        conds.append(f"대학명 LIKE '%{uni}%'")
+    if dept:
+        conds.append(f"학과명 LIKE '%{dept}%'")
+    if track:
+        conds.append(f"전형명 LIKE '%{track}%'")
+    limit = max(1, min(int(limit or 8), 20))
+    sql = (
+        "SELECT 대학ID, 실기ID, 대학명, 학과명, 전형명, 정원, "
+        "`1단계배수`, `1단계학생부`, `2단계내신`, `2단계실기`, `2단계면접`, "
+        "수능최저, 실기만점, 내신교과 "
+        f"FROM `{_PREV_YEAR_DB}`.`대학정보` WHERE {' AND '.join(conds)} LIMIT {limit}"
+    )
+    try:
+        rows = _vultr_mysql(sql)
+    except Exception as exc:
+        return {"error": f"전년도(26susi) DB 조회 실패: {exc}. (Vultr ssh 접근이 가능한 환경에서만 동작해)"}
+
+    cols = [
+        "university_id", "practical_id", "university", "department", "admission_track",
+        "quota", "stage1_multiple", "stage1_record", "stage2_record", "stage2_practical",
+        "stage2_interview", "minimum_csat", "practical_max", "record_subjects",
+    ]
+    result = [dict(zip(cols, row)) for row in rows]
+
+    practical_ids = sorted({r["practical_id"] for r in result if r.get("practical_id") and r["practical_id"] != "NULL"})
+    events_by_id: dict[str, list[str]] = {}
+    if practical_ids:
+        id_list = ",".join(pid for pid in practical_ids if pid.isdigit())
+        if id_list:
+            try:
+                ev_rows = _vultr_mysql(
+                    f"SELECT DISTINCT 실기ID, 종목명 FROM `{_PREV_YEAR_DB}`.`26수시실기배점` WHERE 실기ID IN ({id_list})"
+                )
+                for pid, name in ev_rows:
+                    events_by_id.setdefault(pid, []).append(name)
+            except Exception:
+                pass
+    for r in result:
+        r["practical_events_prev"] = events_by_id.get(str(r.get("practical_id")), [])
+
+    return {"year": "26(전년도)", "count": len(result), "rows": result}

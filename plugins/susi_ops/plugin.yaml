@@ -6,3 +6,4 @@ kind: backend
 tools:
   - susi27_rule_lookup
   - susi27_score_calculate
+  - susi26_rule_lookup

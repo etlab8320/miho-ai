@@ -250,3 +250,42 @@ def test_calculate_score_known_case_gachon() -> None:
     assert result["average_grade"] == pytest.approx(1.75, abs=0.001)
     assert result["student_record_score"] == pytest.approx(298.875, abs=0.001)
     assert result["used_subjects"] == 4
+
+
+# ---------------------------------------------------------------------------
+# lookup_prev_year (26susi 크로스체크)
+# ---------------------------------------------------------------------------
+
+def test_prev_year_requires_search_term():
+    from plugins.susi_ops.service import lookup_prev_year
+
+    assert "error" in lookup_prev_year()
+
+
+def test_prev_year_sanitizes_terms():
+    from plugins.susi_ops.service import _safe_like_term
+
+    assert _safe_like_term("중부'; DROP TABLE x; --") == "중부 DROP TABLE x --"
+    assert _safe_like_term('대진"`\\') == "대진"
+    assert _safe_like_term(None) is None
+
+
+def test_prev_year_parses_rows(monkeypatch):
+    from plugins.susi_ops import service
+
+    calls = []
+
+    def fake_mysql(sql, timeout=12):
+        calls.append(sql)
+        if "대학정보" in sql:
+            return [["334", "96", "중부대학교", "스포츠건강관리학전공", "실기우수자", "12",
+                     "NULL", "NULL", "30", "70", "NULL", "NULL", "700", "100"]]
+        return [["96", "10m왕복달리기"], ["96", "서전트점프"]]
+
+    monkeypatch.setattr(service, "_vultr_mysql", fake_mysql)
+    result = service.lookup_prev_year(university="중부")
+    assert result["count"] == 1
+    row = result["rows"][0]
+    assert row["stage2_record"] == "30" and row["stage2_practical"] == "70"
+    assert row["practical_events_prev"] == ["10m왕복달리기", "서전트점프"]
+    assert len(calls) == 2
