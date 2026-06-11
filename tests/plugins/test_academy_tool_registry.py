@@ -11,6 +11,7 @@ from plugins import academy_ops
 class _ToolRegistryContext:
     def __init__(self) -> None:
         self.tools: list[str] = []
+        self.hooks: list[str] = []
 
     def register_tool(self, *, name: str, **_: Any) -> None:
         self.tools.append(name)
@@ -18,8 +19,8 @@ class _ToolRegistryContext:
     def register_command(self, *_args: Any, **_kwargs: Any) -> None:
         return None
 
-    def register_hook(self, *_args: Any, **_kwargs: Any) -> None:
-        return None
+    def register_hook(self, name: str, *_args: Any, **_kwargs: Any) -> None:
+        self.hooks.append(name)
 
     def register_auxiliary_task(self, *_args: Any, **_kwargs: Any) -> None:
         return None
@@ -48,3 +49,5 @@ def test_academy_plugin_yaml_matches_runtime_registered_tools() -> None:
 
     assert _plugin_yaml_tools() == ctx.tools
     assert "academy_staff_attendance_range" in ctx.tools
+    assert "pre_tool_call" in ctx.hooks
+    assert "post_tool_call" in ctx.hooks
