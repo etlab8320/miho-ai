@@ -56,6 +56,41 @@ async def test_decision_twin_rewrites_to_required_tool_from_llm_judge() -> None:
 
 
 @pytest.mark.asyncio
+async def test_decision_twin_marks_hakjong_report_required_route_for_guard() -> None:
+    from gateway.session_context import clear_session_vars, set_session_vars
+    from plugins.academy_ops.hakjong_report_guard import (
+        _block_after_hakjong_report_package,
+        _reset_hakjong_report_package_state,
+    )
+
+    async def resolver(_messages):
+        return {
+            "action": "route",
+            "route": "academy_ops",
+            "intent": "hakjong.report.package",
+            "required_tool": "academy_hakjong_report_package",
+            "confidence": 0.94,
+            "evidence": ["학생부종합전형 상담용 리포트 PDF/HTML 패키지를 요청했다"],
+            "tool_instruction": "프리미엄 학종 리포트 패키지 계약을 사용한다",
+        }
+
+    _reset_hakjong_report_package_state()
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event("가은 학생 4개 대학 학종 상담 리포트 파일로 보내줘"),
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+    )
+    tokens = set_session_vars(platform="discord", chat_id="channel-1")
+    try:
+        blocked = _block_after_hakjong_report_package(tool_name="execute_code", args={})
+    finally:
+        clear_session_vars(tokens)
+
+    assert result["required_tool"] == "academy_hakjong_report_package"
+    assert blocked and blocked["action"] == "block"
+
+
+@pytest.mark.asyncio
 async def test_decision_twin_skips_when_sender_is_not_authorized() -> None:
     calls = 0
 

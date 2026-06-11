@@ -52,6 +52,7 @@ async def _decision_twin_pre_gateway_dispatch(
         )
         return {"action": "allow"}
     if should_route_decision(decision):
+        _mark_required_tool_route(event, decision.required_tool)
         return {
             "action": "rewrite",
             "text": route_result_text(text, decision),
@@ -75,6 +76,15 @@ async def _decision_twin_pre_gateway_dispatch(
             "priority": -10,
         }
     return {"action": "allow"}
+
+
+def _mark_required_tool_route(event: Any, required_tool: str) -> None:
+    try:
+        from plugins.academy_ops.hakjong_report_guard import mark_hakjong_report_required_route
+    except Exception as exc:
+        logger.info("decision twin route marker skipped: %s", exc)
+        return
+    mark_hakjong_report_required_route(event, required_tool=required_tool)
 
 
 def _should_run(event: Any, gateway: Any) -> bool:
