@@ -109,6 +109,7 @@ _RECOMMENDATION_MARKERS = (
     "할만한",
     "상향",
     "중립",
+    "적정",
     "안전",
 )
 _SCORE_CALCULATION_MARKERS = (
@@ -223,7 +224,11 @@ def _is_susi_score_recommendation_context(text: str) -> bool:
     has_score_basis = _contains_any(text, _SUSI_SCORE_MARKERS) and _contains_any(text, _SUSI_CUTOFF_MARKERS)
     has_susi_scope = _contains_any(text, _SUSI_MARKERS)
     has_recommendation = _contains_any(text, _RECOMMENDATION_MARKERS)
-    return has_susi_scope and has_score_basis and has_recommendation
+    return (
+        has_susi_scope
+        and has_recommendation
+        and (has_score_basis or _is_actionable_susi_candidate_selection_context(text))
+    )
 
 
 def _is_complete_score_recommendation_context(text: str) -> bool:
@@ -231,8 +236,21 @@ def _is_complete_score_recommendation_context(text: str) -> bool:
     has_score_basis = _contains_any(text, _SUSI_SCORE_MARKERS) or _contains_any(text, _SUSI_CUTOFF_MARKERS)
     has_susi_scope = _contains_any(text, _SUSI_MARKERS)
     has_recommendation = _contains_any(text, _RECOMMENDATION_MARKERS)
-    has_count_or_bucket = "6개" in text or _contains_any(text, ("상향", "중립", "안전", "할만한"))
+    has_count_or_bucket = _has_count_or_bucket(text)
     return has_student_basis and has_score_basis and has_susi_scope and has_recommendation and has_count_or_bucket
+
+
+def _is_actionable_susi_candidate_selection_context(text: str) -> bool:
+    has_student_basis = _contains_any(text, ("성적", "생기부", "학생", "내신", "점수"))
+    has_susi_scope = _contains_any(text, _SUSI_MARKERS)
+    has_recommendation = _contains_any(text, _RECOMMENDATION_MARKERS)
+    return has_student_basis and has_susi_scope and has_recommendation and _has_count_or_bucket(text)
+
+
+def _has_count_or_bucket(text: str) -> bool:
+    if re.search(r"\d+\s*개", text):
+        return True
+    return _contains_any(text, ("상향", "중립", "적정", "안전", "할만한"))
 
 
 def _is_actionable_hakjong_report_context(current: str, context: str) -> bool:

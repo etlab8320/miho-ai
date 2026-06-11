@@ -53,3 +53,39 @@ def test_workspace_prompt_applies_context_and_rag_budget():
     assert "previous_calendar_date=2026-05-28" in prompt
     assert "after_midnight_window=true" in prompt
     assert "life" + "_log_date" not in prompt
+
+
+def test_workspace_prompt_prioritizes_recent_thread_over_retrieved_memory():
+    source = SimpleNamespace(
+        chat_id="thread-1",
+        parent_chat_id="channel-1",
+        thread_id="thread-1",
+    )
+    prompt = build_workspace_prompt(
+        workspace_active_dir=Path("/tmp/workspace"),
+        rag_dir=Path("/tmp/workspace/rag"),
+        source=source,
+        context_seed="",
+        recent=[
+            {
+                "role": "user",
+                "user_name": "max",
+                "text": "종환이 생기부 성적보고 충청 대전 강원권에서 유리한 학교들 선별해서 줘. 실기전형이다",
+            }
+        ],
+        retrieved=[
+            {
+                "role": "assistant",
+                "user_name": "miho",
+                "source_kind": "assistant_inference",
+                "text": "학교별 DB에 26입시결과를 붙여두는 게 훨씬 실전적이라는 이전 답변",
+                "score": 0.88,
+            }
+        ],
+        max_recent=5,
+    )
+
+    assert "Current user message is the active instruction" in prompt
+    assert "Background only" in prompt
+    assert prompt.index("### Recent Thread Messages") < prompt.index("### Retrieved Relevant Memory")
+    assert "older retrieved request" in prompt

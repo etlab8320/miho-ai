@@ -118,6 +118,34 @@ async def test_decision_twin_does_not_clarify_actionable_life_record_lookup() ->
 
 
 @pytest.mark.asyncio
+async def test_decision_twin_blocks_life_record_lock_for_actionable_silgi_recommendation() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "route",
+            "route": "life_record",
+            "intent": "종환 학생 생기부 확인",
+            "required_tool": "life_record_lookup",
+            "confidence": 0.92,
+            "evidence": ["생기부 성적보고라는 표현이 있다"],
+            "tool_instruction": "생기부를 조회한다",
+        }
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=_event(
+            "종환이 생기부 성적보고 충청 대전 강원권에서 "
+            "유리한 학교들 선별해서 상향 2개 4개정도 적정 추려서 줘 실기전형이다"
+        ),
+        gateway=_gateway(),
+        resolver=resolver,
+        owner_context_builder=lambda _text: (
+            "수시 실기 추천은 학생 성적과 대학별 전형자료를 대조해서 상향/적정 후보를 계산해야 한다."
+        ),
+    )
+
+    assert result == {"action": "allow"}
+
+
+@pytest.mark.asyncio
 async def test_decision_twin_keeps_clarify_for_actionless_hakjong_request() -> None:
     async def resolver(_messages):
         return {
