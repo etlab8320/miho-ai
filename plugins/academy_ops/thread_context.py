@@ -1,10 +1,19 @@
-"""Short-lived thread context for follow-up academy requests."""
+"""Short-lived thread context for follow-up academy requests.
+
+Backed by a write-through SQLite store so context survives process restarts.
+The in-memory dict acts as a read cache; writes go to both dict and DB.
+"""
 
 from __future__ import annotations
 
 import json
+import os
+import sqlite3
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
+
+from miho_constants import get_miho_home
 
 
 STUDENT_CONTEXT_TOOLS = {
@@ -35,8 +44,116 @@ INHERITABLE_ENTITY_ARGS = (
     "event_query",
     "trainer_query",
 )
-CONTEXT_TTL = timedelta(minutes=30)
 _CONTEXTS: dict[str, dict[str, Any]] = {}
+
+
+def _db_path() -> Path:
+    return get_miho_home() / "academy_ops" / "thread_context.sqlite3"
+
+
+# Allow tests to override the DB path without touching ~/.miho
+_DB_PATH_OVERRIDE: Path | None = None
+
+
+def _get_db_path() -> Path:
+    return _DB_PATH_OVERRIDE if _DB_PATH_OVERRIDE is not None else _db_path()
+
+
+def _context_ttl() -> timedelta:
+    raw = os.getenv("MIHO_ACADEMY_CONTEXT_TTL_HOURS", "168").strip()
+    try:
+        hours = float(raw)
+    except ValueError:
+        hours = 168.0
+    return timedelta(hours=hours)
+
+
+def _ensure_schema(db: Path) -> None:
+    db.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS thread_context (
+                key TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _expires_iso() -> str:
+    ttl = _context_ttl()
+    return (datetime.now(timezone.utc).replace(microsecond=0) + ttl).isoformat()
+
+
+def _serialize_payload(record: dict[str, Any]) -> str:
+    """Serialize the record dict (excluding updated_at) to JSON.
+
+    Non-serialisable values fall back to str() rather than silently dropping
+    them — data preservation beats a clean failure.
+    """
+    data = {k: v for k, v in record.items() if k != "updated_at"}
+
+    def _default(obj: Any) -> Any:
+        return str(obj)
+
+    return json.dumps(data, ensure_ascii=False, default=_default)
+
+
+def _write_db(key: str, record: dict[str, Any]) -> None:
+    db = _get_db_path()
+    _ensure_schema(db)
+    now = _now_utc_iso()
+    expires = _expires_iso()
+    payload_json = _serialize_payload(record)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            """
+            INSERT INTO thread_context (key, payload, updated_at, expires_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                payload = excluded.payload,
+                updated_at = excluded.updated_at,
+                expires_at = excluded.expires_at
+            """,
+            (key, payload_json, now, expires),
+        )
+
+
+def _read_db(key: str) -> dict[str, Any] | None:
+    """Load from SQLite; returns None if missing or expired (expired rows deleted)."""
+    db = _get_db_path()
+    _ensure_schema(db)
+    now = _now_utc_iso()
+    with sqlite3.connect(db) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT payload, updated_at, expires_at FROM thread_context WHERE key = ?",
+            (key,),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["expires_at"] <= now:
+            conn.execute("DELETE FROM thread_context WHERE key = ?", (key,))
+            return None
+        try:
+            data: dict[str, Any] = json.loads(row["payload"])
+        except (json.JSONDecodeError, ValueError):
+            conn.execute("DELETE FROM thread_context WHERE key = ?", (key,))
+            return None
+        # Reconstruct updated_at as datetime so callers work unchanged
+        try:
+            updated_at = datetime.fromisoformat(row["updated_at"])
+        except ValueError:
+            updated_at = datetime.now(timezone.utc)
+        data["updated_at"] = updated_at
+        return data
 
 
 def _is_blank(value: Any) -> bool:
@@ -63,10 +180,18 @@ def get_thread_context(key: str | None) -> dict[str, Any]:
         return {}
     item = _CONTEXTS.get(key)
     if not item:
-        return {}
+        item = _read_db(key)
+        if item is None:
+            return {}
+        _CONTEXTS[key] = item
     updated_at = item.get("updated_at")
-    if not isinstance(updated_at, datetime) or datetime.now(timezone.utc) - updated_at > CONTEXT_TTL:
+    if not isinstance(updated_at, datetime) or datetime.now(timezone.utc) - updated_at > _context_ttl():
         _CONTEXTS.pop(key, None)
+        # Expired rows are pruned by _read_db on next read; delete proactively.
+        db = _get_db_path()
+        _ensure_schema(db)
+        with sqlite3.connect(db) as conn:
+            conn.execute("DELETE FROM thread_context WHERE key = ?", (key,))
         return {}
     return {name: value for name, value in item.items() if name != "updated_at"}
 
@@ -108,7 +233,7 @@ def _remember_student_context(
     student_query = str(args.get("student_query") or student.get("name") or profile.get("name") or "").strip()
     if not student_query:
         return
-    _CONTEXTS[key] = {
+    record: dict[str, Any] = {
         "kind": "student",
         "tool": tool_name,
         "student_query": student_query,
@@ -119,6 +244,8 @@ def _remember_student_context(
         "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
         "updated_at": datetime.now(timezone.utc),
     }
+    _CONTEXTS[key] = record
+    _write_db(key, record)
 
 
 def _remember_generic_context(key: str, *, tool_name: str, args: dict[str, Any]) -> None:
@@ -144,6 +271,7 @@ def _remember_generic_context(key: str, *, tool_name: str, args: dict[str, Any])
         if not _is_blank(args.get(date_key)):
             record[date_key] = str(args[date_key]).strip()
     _CONTEXTS[key] = record
+    _write_db(key, record)
 
 
 def _remember_monthly_test_context(
@@ -161,7 +289,7 @@ def _remember_monthly_test_context(
     # 식별자가 있으면 맥락을 남긴다 → 후속 "특정 학생만/특정 종목만"이 그 테스트로 이어짐.
     if not event_query and test_id is None and not test_month:
         return
-    _CONTEXTS[key] = {
+    record: dict[str, Any] = {
         "kind": "monthly_test",
         "tool": tool_name,
         "event_query": event_query,
@@ -175,6 +303,8 @@ def _remember_monthly_test_context(
         "participants": payload.get("participants") if isinstance(payload.get("participants"), list) else None,
         "updated_at": datetime.now(timezone.utc),
     }
+    _CONTEXTS[key] = record
+    _write_db(key, record)
 
 
 def _remember_staff_context(
@@ -190,7 +320,7 @@ def _remember_staff_context(
         staff_query = str(instructors[0].get("name") or "").strip()
     if not staff_query:
         return
-    _CONTEXTS[key] = {
+    record: dict[str, Any] = {
         "kind": "staff",
         "tool": tool_name,
         "staff_query": staff_query,
@@ -199,6 +329,8 @@ def _remember_staff_context(
         "summary": payload.get("summary") if isinstance(payload.get("summary"), dict) else {},
         "updated_at": datetime.now(timezone.utc),
     }
+    _CONTEXTS[key] = record
+    _write_db(key, record)
 
 
 def _remember_assignment_context(
@@ -211,7 +343,7 @@ def _remember_assignment_context(
     slots = payload.get("slots") if isinstance(payload.get("slots"), dict) else {}
     if not slots:
         return
-    _CONTEXTS[key] = {
+    record: dict[str, Any] = {
         "kind": "assignment",
         "tool": tool_name,
         "date": str(payload.get("date") or args.get("date") or ""),
@@ -220,6 +352,8 @@ def _remember_assignment_context(
         "slots": slots,
         "updated_at": datetime.now(timezone.utc),
     }
+    _CONTEXTS[key] = record
+    _write_db(key, record)
 
 
 def remember_pending_request(
@@ -232,7 +366,7 @@ def remember_pending_request(
 ) -> None:
     if not key:
         return
-    _CONTEXTS[key] = {
+    record: dict[str, Any] = {
         "kind": "pending_request",
         "tool": tool_name,
         "args": dict(args),
@@ -240,6 +374,8 @@ def remember_pending_request(
         "reason": reason,
         "updated_at": datetime.now(timezone.utc),
     }
+    _CONTEXTS[key] = record
+    _write_db(key, record)
 
 
 def pop_pending_request(key: str | None) -> dict[str, Any]:
@@ -247,6 +383,10 @@ def pop_pending_request(key: str | None) -> dict[str, Any]:
     if context.get("kind") != "pending_request":
         return {}
     _CONTEXTS.pop(str(key), None)
+    db = _get_db_path()
+    _ensure_schema(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("DELETE FROM thread_context WHERE key = ?", (str(key),))
     return context
 
 
@@ -344,3 +484,7 @@ def _monthly_test_data_block(ctx: dict[str, Any]) -> str:
 
 def clear_thread_contexts() -> None:
     _CONTEXTS.clear()
+    db = _get_db_path()
+    _ensure_schema(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("DELETE FROM thread_context")
