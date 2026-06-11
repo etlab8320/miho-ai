@@ -65,7 +65,8 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
 
 def decision_tool_contracts() -> dict[str, dict[str, Any]]:
     """Return compact, model-facing contracts for cross-domain routing."""
-    contracts = dict(_CORE_CONTRACTS)
+    contracts = _registered_tool_contracts()
+    contracts.update(_CORE_CONTRACTS)
     try:
         from plugins.academy_ops.tool_registry import TOOL_CONTRACTS
 
@@ -81,3 +82,45 @@ def decision_tool_contracts() -> dict[str, dict[str, Any]]:
     except Exception as exc:
         logger.debug("decision twin academy contracts unavailable: %s", exc)
     return contracts
+
+
+def _registered_tool_contracts() -> dict[str, dict[str, Any]]:
+    try:
+        from tools.registry import registry
+    except ImportError as exc:
+        logger.debug("decision twin registry contracts unavailable: %s", exc)
+        return {}
+
+    contracts: dict[str, dict[str, Any]] = {}
+    for name in registry.get_all_tool_names():
+        entry = registry.get_entry(name)
+        if entry is None:
+            continue
+        schema = entry.schema if isinstance(entry.schema, dict) else {}
+        contracts[name] = {
+            "domain": entry.toolset,
+            "purpose": _purpose(entry.description, schema, name, entry.toolset),
+            "args": _schema_args(schema),
+        }
+    return contracts
+
+
+def _purpose(description: str, schema: dict[str, Any], name: str, toolset: str) -> str:
+    text = str(description or schema.get("description") or "").strip()
+    if not text:
+        text = f"Registered Miho tool {name} in toolset {toolset}."
+    return _compact(text)
+
+
+def _schema_args(schema: dict[str, Any]) -> list[str]:
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return []
+    return [str(name) for name in properties.keys()]
+
+
+def _compact(value: str, limit: int = 360) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"

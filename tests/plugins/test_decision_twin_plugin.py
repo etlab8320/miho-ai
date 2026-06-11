@@ -10,6 +10,7 @@ from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 from plugins.decision_twin import _decision_twin_pre_gateway_dispatch
+from plugins.decision_twin.contracts import decision_tool_contracts
 from plugins.decision_twin.router import build_decision_messages, parse_decision_payload
 
 
@@ -101,6 +102,23 @@ def test_decision_prompt_contains_context_and_tool_contracts() -> None:
     assert "academy_hakjong_report_package" in joined
     assert "life_record_summary" in joined
     assert "키워드 하나" in joined
+
+
+def test_decision_contracts_cover_every_registered_tool() -> None:
+    from miho_cli.plugins import discover_plugins
+    from tools.registry import discover_builtin_tools, registry
+
+    discover_builtin_tools()
+    discover_plugins(force=True)
+
+    contracts = decision_tool_contracts()
+    registered_tools = set(registry.get_all_tool_names())
+    missing = sorted(registered_tools - set(contracts))
+
+    assert missing == []
+    assert contracts["send_message"]["domain"] == "messaging"
+    assert contracts["terminal"]["domain"] == "terminal"
+    assert contracts["academy_student_card_image"]["domain"] == "academy_ops"
 
 
 def test_parse_decision_payload_accepts_json_string() -> None:

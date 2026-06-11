@@ -22,6 +22,7 @@ ET needs Miho to infer the current job from the user text, thread context, owner
 ## Acceptance Criteria
 - A decisive candidate with `required_tool` cannot lose to a generic response solely because the generic candidate has a higher priority.
 - When no domain plugin has produced a candidate yet, the LLM decision twin can return a structured `required_tool` route and rewrite the turn for the body agent.
+- Every currently registered Miho tool has a decision-twin contract generated from registry metadata or an explicit domain override.
 - Unauthorized or unauthenticated gateway senders do not trigger owner-memory recall or the LLM judge.
 - The decision object records the decision-twin policy state and memory evidence.
 - Discord workspace prompts tell Miho to infer intent from current text, thread memory, and owner profile before answering.
