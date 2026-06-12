@@ -12,6 +12,7 @@ from .commentary_config import plan_commentary_aux_defaults
 from .consultation_notes_tool import register_consultation_note_tool
 from .hakjong_report_tool import register_hakjong_report_tool
 from .practical_reco_tool import register_practical_reco_tool
+from .hakjong_qualitative_tool import register_hakjong_qualitative_tool
 from .gateway_dispatch import (
     _academy_command,
     _academy_pre_gateway_dispatch,
@@ -169,6 +170,7 @@ def register(ctx: Any) -> None:
     register_brand_logo_tools(ctx)
     register_hakjong_report_tool(ctx)
     register_practical_reco_tool(ctx)
+    register_hakjong_qualitative_tool(ctx)
     register_api_query_tool(ctx)
     ctx.register_tool(
         name="academy_student_attendance_calendar_image",

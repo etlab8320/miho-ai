@@ -319,6 +319,37 @@ def _grounding_errors(
                 official_facts.append(f"수능최저: {csat['detail']}")
             if errors and official_facts:
                 errors.append("DB 공식 전형 구조 (이대로 인용하라): " + " / ".join(official_facts))
+
+        # D. 학종 정성 프로필 — 대학이 서류에서 중점적으로 보는 것. final_ready
+        # 프로필이 있는 전형은 그 대학이 원하는 생기부 키워드로 진단해야 한다.
+        try:
+            from .hakjong_qualitative_tool import lookup_profiles
+
+            prof_rows = lookup_profiles(
+                university=uni_name,
+                admission_track=str(university.get("track") or "").strip() or None,
+                limit=1,
+            ).get("profiles") or []
+        except Exception:
+            prof_rows = []
+        if prof_rows:
+            prof = prof_rows[0]
+            ident = (uni_name, str(university.get("department") or ""), str(university.get("track") or ""))
+            keywords = [
+                str(k).strip()
+                for k in (prof.get("desired_record_keywords") or [])
+                if isinstance(k, str) and 1 < len(k.strip()) <= 20
+                and not any(part and part in k for part in ident)
+            ]
+            if keywords:
+                cited = [k for k in keywords if k in text]
+                if len(cited) < 2:
+                    sample = ", ".join(keywords[:10])
+                    errors.append(
+                        f"{uni_name} {prof.get('admission_track')}의 학종 정성 프로필"
+                        "(hakjong_qualitative_profile)이 있는데 본문이 그 평가 기준에 발 딛고 있지 않다 — "
+                        f"이 대학이 생기부에서 찾는 키워드를 2개 이상 진단·전략에 녹여라. 키워드: {sample}"
+                    )
     return errors
 
 
