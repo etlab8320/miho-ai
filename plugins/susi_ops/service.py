@@ -646,7 +646,10 @@ def _track_cuts(university_id: str) -> tuple[dict | None, list[dict]]:
     if _TRACK_CUTS is None:
         data = _json_loads(_TRACK_CUTS_PATH.read_text(encoding="utf-8") if _TRACK_CUTS_PATH.exists() else None, None)
         _TRACK_CUTS = data if isinstance(data, dict) else {}
-    tracks = [t for t in (_TRACK_CUTS.get(str(university_id)) or []) if t.get("n_students", 0) >= 3]
+    tracks = [
+        t for t in (_TRACK_CUTS.get(str(university_id)) or [])
+        if t.get("n_students", 0) >= 3 and (t.get("final_cut_total") or t.get("first_cut_total"))
+    ]
     if not tracks:
         return None, []
     default = max(tracks, key=lambda t: (t.get("slot_count", 0), t.get("n_students", 0)))
