@@ -599,11 +599,45 @@ def _formula_calculate(university: str, merged_row: dict[str, Any], grades: list
     return data
 
 
+
+# 지역(광역) 맵 — 27susi.대학정보에서 동기화한 로컬 캐시. 없거나 미스가 나면
+# ssh vultr로 1회 갱신을 시도하고, 그래도 없으면 region 없이 동작한다.
+_REGION_MAP_PATH = pathlib.Path(os.path.expanduser("~/.miho/academy_ops/susi_region_map.json"))
+_REGION_MAP: dict[str, str] | None = None
+
+
+def _region_map() -> dict[str, str]:
+    global _REGION_MAP
+    if _REGION_MAP is not None:
+        return _REGION_MAP
+    data = _json_loads(_REGION_MAP_PATH.read_text(encoding="utf-8") if _REGION_MAP_PATH.exists() else None, None)
+    if not isinstance(data, dict) or not data:
+        try:
+            rows = _vultr_mysql("SELECT 대학ID, 광역 FROM `27susi`.`대학정보`")
+            data = {r[0]: r[1] for r in rows if len(r) == 2}
+            _REGION_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _REGION_MAP_PATH.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            data = {}
+    _REGION_MAP = data if isinstance(data, dict) else {}
+    return _REGION_MAP
+
+
+def _parse_regions(value: Any) -> list[str]:
+    if isinstance(value, (list, tuple)):
+        items = value
+    else:
+        items = _re.split(r"[,/·\s]+", str(value or ""))
+    out = [str(v).strip() for v in items if str(v).strip()]
+    return [] if any(v in ("전국", "전체") for v in out) else out
+
+
 def recommend_candidates(
     student_query: str,
     university: str | None = None,
     department: str | None = None,
     admission_track: str | None = None,
+    region: Any = None,
     max_candidates: int = 30,
 ) -> dict[str, Any]:
     student_name, grades = _student_grades_from_central(student_query)
@@ -612,6 +646,8 @@ def recommend_candidates(
             "error": f"중앙 생기부 DB에서 '{student_query}' 학생의 확정 성적을 찾지 못했어. "
             "생기부 인제스트/검수(life_record_confirm)가 끝난 학생만 추천 계산이 가능해."
         }
+
+    wanted_regions = _parse_regions(region)
 
     conn = _connect()
     conds = ["c.confidence LIKE '%verified%'", "c.admission_result_26_json IS NOT NULL", "c.admission_result_26_json != ''"]
@@ -677,9 +713,14 @@ def recommend_candidates(
             pass
         suggested = "적정" if (prev_final_record is not None and record >= prev_final_record) else "상향"
         margin = round(vs["max_possible_total"] - vs["prev_final_total"], 2)
+        cand_region = _region_map().get(str(row["university_id"]), "")
+        if wanted_regions and cand_region not in wanted_regions:
+            skipped["region_filtered"] = skipped.get("region_filtered", 0) + 1
+            continue
         candidates.append(
             {
                 "university_id": row["university_id"],
+                "region": cand_region,
                 "university": row["university"],
                 "department": row["department"],
                 "admission_track": row["admission_track"],
@@ -701,14 +742,22 @@ def recommend_candidates(
     max_candidates = max(1, min(int(max_candidates or 30), 60))
     total = len(candidates)
     candidates = candidates[:max_candidates]
+    result_payload_note_region = ""
+    if wanted_regions and total == 0:
+        result_payload_note_region = (
+            f"요청 지역({', '.join(wanted_regions)})에는 도달 가능한 추천 후보가 없다 — "
+            "사용자에게 알리고 전국 기준(region 없이)으로 다시 호출할지 물어라. "
+        )
     return {
         "student": student_name,
+        "region_filter": wanted_regions or "전국",
         "grade_rows_used": len(grades),
         "total_feasible": total,
         "returned": len(candidates),
         "skipped": skipped,
         "note": (
-            "전 후보는 verified 룰 + 전년도 결과가 있는 학교만이며, 실기 만점으로도 전년도 최종합에 "
+            result_payload_note_region
+            + "전 후보는 verified 룰 + 전년도 결과가 있는 학교만이며, 실기 만점으로도 전년도 최종합에 "
             "못 닿는 학교는 이미 제외됐다. suggested_verdict는 제안일 뿐 — 최종 분류와 서사는 네 판단."
         ),
         "candidates": candidates,
