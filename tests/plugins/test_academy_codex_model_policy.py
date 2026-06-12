@@ -20,7 +20,7 @@ def test_codex_policy_defaults_split_fast_and_accurate_roles(monkeypatch) -> Non
     assert codex_model_policy.codex_provider() == "openai-codex"
     assert codex_model_policy.router_model() == "gpt-5.4-mini"
     assert codex_model_policy.commentary_model() == "gpt-5.4-mini"
-    assert codex_model_policy.session_model() == "gpt-5.4-mini"
+    assert codex_model_policy.session_model() == "gpt-5.5"
     assert codex_model_policy.critical_model() == "gpt-5.4"
     assert codex_model_policy.deep_model() == "gpt-5.5"
     assert codex_model_policy.router_fallback_models() == ("gpt-5.4-mini", "gpt-5.4", "gpt-5.2")

@@ -8,7 +8,10 @@ import os
 CODEX_PROVIDER = "openai-codex"
 ROUTER_MODEL = "gpt-5.4-mini"
 COMMENTARY_MODEL = "gpt-5.4-mini"
-SESSION_MODEL = "gpt-5.4-mini"
+# Body-agent sessions need full reasoning: a mini body wandered (read its own
+# plugin source, called tools with missing args) whenever a request had no
+# specialized tool. Codex is subscription-billed, so the cost is plan quota only.
+SESSION_MODEL = "gpt-5.5"
 CRITICAL_MODEL = "gpt-5.4"
 DEEP_MODEL = "gpt-5.5"
 

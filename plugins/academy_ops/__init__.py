@@ -32,6 +32,7 @@ from .academy_calendar_tool import (
     _class_roster_range_tool_handler,
     _consultation_schedule_range_tool_handler,
 )
+from .api_query_tool import register_api_query_tool
 from .assignment_tool import _assignment_by_date_tool_handler
 from .attendance_calendar_tool import _student_attendance_calendar_image_tool_handler
 from .staff_attendance_tool import register_staff_attendance_tools
@@ -168,6 +169,7 @@ def register(ctx: Any) -> None:
     register_brand_logo_tools(ctx)
     register_hakjong_report_tool(ctx)
     register_practical_reco_tool(ctx)
+    register_api_query_tool(ctx)
     ctx.register_tool(
         name="academy_student_attendance_calendar_image",
         toolset="academy_ops",
