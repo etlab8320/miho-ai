@@ -129,6 +129,8 @@ def _validate_structure(content: dict[str, Any], errors: list[str]) -> None:
             errors.append("content.track_section.info_cards는 정확히 3개여야 한다.")
         if not isinstance(track.get("rows"), list) or not track["rows"]:
             errors.append("content.track_section.rows는 1개 이상이어야 한다.")
+        else:
+            _validate_row_fields(track["rows"], "track_section.rows", ("label", "official", "judgment"), errors)
         _validate_pointbox(track.get("strong_points"), "track_section.strong_points", errors)
         _validate_pointbox(track.get("caution_points"), "track_section.caution_points", errors)
 
@@ -145,9 +147,13 @@ def _validate_structure(content: dict[str, Any], errors: list[str]) -> None:
                 errors.append(f"content.diagnosis_section.{sub}에 headline과 body가 필요하다.")
         if not isinstance(diag.get("rows"), list) or not diag["rows"]:
             errors.append("content.diagnosis_section.rows는 1개 이상이어야 한다.")
+        else:
+            _validate_row_fields(diag["rows"], "diagnosis_section.rows", ("area", "record", "interpretation", "check"), errors)
         gauges = diag.get("gauges")
         if not isinstance(gauges, list) or len(gauges) != 3:
             errors.append("content.diagnosis_section.gauges는 정확히 3개여야 한다.")
+        else:
+            _validate_row_fields(gauges, "diagnosis_section.gauges", ("label", "level", "note"), errors)
 
     # strategy_section
     strat = content.get("strategy_section")
@@ -161,6 +167,8 @@ def _validate_structure(content: dict[str, Any], errors: list[str]) -> None:
             errors.append("content.strategy_section.actions는 정확히 4개여야 한다.")
         if not isinstance(strat.get("interview_rows"), list) or not strat["interview_rows"]:
             errors.append("content.strategy_section.interview_rows는 1개 이상이어야 한다.")
+        else:
+            _validate_row_fields(strat["interview_rows"], "strategy_section.interview_rows", ("question", "point"), errors)
         fj = strat.get("final_judgment")
         if not isinstance(fj, dict) or not _nonempty_str(fj.get("body")):
             errors.append("content.strategy_section.final_judgment.body가 비어 있다.")
@@ -170,6 +178,18 @@ def _validate_structure(content: dict[str, Any], errors: list[str]) -> None:
             cl = strat.get("checklist")
             if not isinstance(cl, dict) or not _nonempty_str(cl.get("title")):
                 errors.append("content.strategy_section.checklist.title이 비어 있다.")
+
+
+def _validate_row_fields(rows: Any, path: str, fields: tuple[str, ...], errors: list[str]) -> None:
+    """표의 모든 행은 모든 칸이 채워져야 한다 — 라벨만 있고 내용이 빈 표가
+    스키마를 통과해 학생용 PDF에 그대로 인쇄된 실사고(2026-06-12 유가은 리포트) 방지."""
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict):
+            errors.append(f"content.{path}[{i}]가 dict가 아니다.")
+            continue
+        for f in fields:
+            if not _nonempty_str(str(row.get(f) or "")):
+                errors.append(f"content.{path}[{i}].{f}가 비어 있다 — 표의 모든 칸을 채워라.")
 
 
 def _validate_pointbox(box: Any, path: str, errors: list[str]) -> None:

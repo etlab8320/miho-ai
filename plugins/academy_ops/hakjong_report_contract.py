@@ -140,3 +140,28 @@ def _int_or_none(value: str) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+def truncation_errors(content: Any, pdf_text: str, errors: list) -> None:
+    """content의 모든 문장이 PDF에 실제로 인쇄됐는지 대조 — 페이지 고정 높이
+    (height:297mm + overflow:hidden)를 넘친 내용은 조용히 잘리므로(2026-06-12
+    유가은 리포트 마지막 표 잘림) 기계로 감지해 분량 축소를 요구한다.
+    공백 차이는 PDF 텍스트 추출 변형이라 제거 후 비교한다."""
+    haystack = "".join(str(pdf_text or "").split())
+
+    def walk(obj: Any) -> None:
+        if isinstance(obj, str):
+            needle = "".join(obj.split())
+            if len(needle) >= 15 and needle not in haystack:
+                errors.append(
+                    f"내용이 페이지를 넘쳐 잘렸다 — \"{obj.strip()[:40]}…\" 가 PDF에 인쇄되지 않았다. "
+                    "해당 섹션 문단·행 분량을 줄여 한 페이지 안에 들어가게 하라."
+                )
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                walk(v)
+
+    walk(content)

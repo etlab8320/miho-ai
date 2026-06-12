@@ -96,6 +96,7 @@ def _chromium_print_to_pdf(html_path: Path, pdf_path: Path) -> None:
 def _validate_pdf_physical(
     pdf_path: Path,
     *,
+    content: dict[str, Any] | None = None,
     student_name: str,
     university_names: list[str],
     errors: list[str],
@@ -126,6 +127,8 @@ def _validate_pdf_physical(
         # pdftotext not available — skip text checks (only a warning)
         return
     body = str(text_result.get("text") or "")
+    if content is not None:
+        _contract.truncation_errors(content, body, errors)
     if _BRAND_TEXT not in body:
         errors.append(f"PDF 본문에 브랜드 텍스트가 없다: {_BRAND_TEXT}")
     if student_name and student_name not in body:
@@ -452,6 +455,7 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
     pdf_errors: list[str] = []
     _validate_pdf_physical(
         packaged_pdf,
+        content=content,
         student_name=student_name,
         university_names=university_names,
         errors=pdf_errors,

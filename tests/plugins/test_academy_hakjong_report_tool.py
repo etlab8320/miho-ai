@@ -159,7 +159,23 @@ def _base_args() -> dict:
     }
 
 
-def _patch_pdf_tools(monkeypatch, *, width: float = 594.96, height: float = 841.92) -> None:
+_all_strings_cache: dict = {}
+
+
+def _flatten_strings(obj) -> str:
+    if isinstance(obj, str):
+        return " " + obj
+    if isinstance(obj, dict):
+        return "".join(_flatten_strings(v) for v in obj.values())
+    if isinstance(obj, list):
+        return "".join(_flatten_strings(v) for v in obj)
+    return ""
+
+
+def _patch_pdf_tools(monkeypatch, *, width: float = 594.96, height: float = 841.92, content=None) -> None:
+    # 잘림 검증(truncation_errors)은 content 전 문장이 PDF 텍스트에 있길 요구한다 —
+    # 스텁도 content를 그대로 "인쇄"한 것으로 취급한다.
+    _all_strings_cache["text"] = _flatten_strings(content) if content else ""
     monkeypatch.setattr(
         _contract,
         "_pdf_info",
@@ -168,7 +184,7 @@ def _patch_pdf_tools(monkeypatch, *, width: float = 594.96, height: float = 841.
     monkeypatch.setattr(
         _contract,
         "_pdf_text",
-        lambda _path: {"text": "홍길동 성균관대학교 스포츠과학과 맥스체대입시 일산교육원"},
+        lambda _path: {"text": "홍길동 성균관대학교 스포츠과학과 맥스체대입시 일산교육원" + _all_strings_cache.get("text", "")},
     )
 
 
@@ -229,7 +245,7 @@ def test_schema_rejection_no_media_tag() -> None:
 
 def test_valid_content_returns_media_tag(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
-    _patch_pdf_tools(monkeypatch)
+    _patch_pdf_tools(monkeypatch, content=_base_args()["content"])
 
     with patch(
         "plugins.academy_ops.hakjong_report_tool._chromium_print_to_pdf",
@@ -245,7 +261,7 @@ def test_valid_content_returns_media_tag(monkeypatch, tmp_path) -> None:
 
 def test_manifest_written_on_success(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
-    _patch_pdf_tools(monkeypatch)
+    _patch_pdf_tools(monkeypatch, content=_base_args()["content"])
 
     with patch(
         "plugins.academy_ops.hakjong_report_tool._chromium_print_to_pdf",
