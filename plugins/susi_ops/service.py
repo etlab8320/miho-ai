@@ -693,6 +693,7 @@ def recommend_candidates(
             calc = {
                 "status": "calculated",
                 "student_record_score": round(float(formula["record_score"]), 4),
+                "average_grade": formula.get("reflected_average_grade"),
                 "formula_key": formula.get("formula_key"),
             }
             vs_f = _vs_prev_year(conn_calc, row["university_id"], float(formula["record_score"]))
@@ -713,19 +714,38 @@ def recommend_candidates(
         # 적정/상향 제안: 작년 최종합격자의 내신환산보다 높으면 적정 출발선
         prev_final_record = None
         prev_winner_practical = None
+        prev_winner_grade = None
+        stage1 = {}
         try:
-            r26 = _json_loads(
-                conn.execute(
-                    "SELECT admission_result_26_json FROM susi_calculation_rules WHERE university_id = ?",
-                    (row["university_id"],),
-                ).fetchone()[0],
-                {},
-            )
+            extra = conn.execute(
+                "SELECT admission_result_26_json, admission_meta_json FROM susi_calculation_rules WHERE university_id = ?",
+                (row["university_id"],),
+            ).fetchone()
+            r26 = _json_loads(extra[0], {})
             fp = (r26.get("final_pass_cutoff") or {}) if isinstance(r26, dict) else {}
             prev_final_record = _first_number(fp.get("record_score"))
             prev_winner_practical = _first_number(fp.get("practical_score"))
+            prev_winner_grade = _first_number(fp.get("grade"))
+            meta = _json_loads(extra[1], {}) or {}
+            stage1 = meta.get("stage1") if isinstance(meta.get("stage1"), dict) else {}
         except Exception:
             pass
+        # 1단계 선발(등급 컷) 신호 — 한체대류: 총점 도달성만으로 판단하면 안 된다.
+        student_grade = _first_number(calc.get("average_grade"))
+        has_stage1 = bool(str((stage1 or {}).get("multiple") or "").strip())
+        stage1_info = None
+        if has_stage1:
+            stage1_info = {
+                "has_stage1": True,
+                "stage1_multiple": (stage1 or {}).get("multiple"),
+                "prev_winner_avg_grade": prev_winner_grade,
+                "student_avg_grade": student_grade,
+            }
+            if student_grade is not None and prev_winner_grade is not None and student_grade > prev_winner_grade + 0.5:
+                stage1_info["warning"] = (
+                    f"1단계 선발이 있는 전형 — 작년 최종합격자 평균등급 {prev_winner_grade:g}인데 "
+                    f"학생 평균등급이 {student_grade:g}라 1단계 통과 자체가 어렵다. 추천에서 빼거나 명시 경고 필수."
+                )
         suggested = "적정" if (prev_final_record is not None and record >= prev_final_record) else "상향"
         margin = round(vs["max_possible_total"] - vs["prev_final_total"], 2)
         # 핵심 지표(사장님 피드백 2026-06-12): 만점 여유가 아니라 "합격에 필요한
@@ -754,6 +774,9 @@ def recommend_candidates(
                 "prev_first_total": vs.get("prev_first_total"),
                 "prev_final_total": vs.get("prev_final_total"),
                 "prev_final_record": prev_final_record,
+                "student_avg_grade": student_grade,
+                "prev_winner_avg_grade": prev_winner_grade,
+                "stage1": stage1_info,
                 "margin_at_full_practical": margin,
                 "needed_practical_rate_pct": needed_practical_rate,
                 "prev_winner_practical_rate_pct": prev_winner_practical_rate,
