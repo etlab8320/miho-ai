@@ -65,7 +65,8 @@
       overflow-wrap: anywhere; word-break: keep-all;
     }
     .page {
-      width: 210mm; min-height: 297mm;
+      width: 210mm; height: 297mm; overflow: hidden;
+      /* height 고정 — min-height면 내용이 길 때 페이지가 늘어나 푸터가 다음 장으로 밀린다 */
       padding: 14mm 16mm 12mm;
       page-break-after: always; break-after: page;
       display: flex; flex-direction: column; gap: 6mm;

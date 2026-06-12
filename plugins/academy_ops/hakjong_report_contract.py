@@ -19,6 +19,14 @@ from .hakjong_stage_contract import has_early_context_evidence, validate_stage_c
 
 BRAND_TEXT = "맥스체대입시 일산교육원"
 
+# 학종 리포트 전용 금지어 — 학종은 생기부(교과·세특·활동) 서사만 다룬다.
+# 실기 측정 기록·타전형 비교("실기우수자와 다르게")가 끼는 순간 학종 문서가 아니다
+# (2026-06-12 실사고: Peak 실기 기록을 학종 핵심판단에 끌어옴). 실기 추천 PDF는
+# 별도 도구이므로 이 목록은 학종 스키마만 쓴다.
+BANNED_HAKJONG_ONLY_TEXT = (
+    "실기",
+)
+
 BANNED_PDF_TEXT = (
     # 내부 검증 라벨/검토 과정 언어 — 학생·학부모가 볼 문서에 절대 노출 금지
     # (사장님 2026-06-12: "verified 산식, 제외/보류 판단 이런건 절대 나오면 안되고").

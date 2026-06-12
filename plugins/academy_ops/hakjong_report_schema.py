@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import Any
 
 from .hakjong_report_contract import (
+    BANNED_HAKJONG_ONLY_TEXT,
     BANNED_PDF_TEXT,
     MIN_VISIBLE_TEXT_CHARS,
     MAX_VISIBLE_TEXT_SEGMENT_CHARS,
@@ -214,6 +215,12 @@ def _validate_quality(
     for banned in BANNED_PDF_TEXT:
         if banned in all_text:
             errors.append(f"금지 문구가 포함됐다: \"{banned}\". 삭제하거나 다른 표현으로 바꿔라.")
+    for banned in BANNED_HAKJONG_ONLY_TEXT:
+        if banned in all_text:
+            errors.append(
+                f"학종 리포트에 \"{banned}\" 언급 금지 — 학종은 생기부(교과·세특·활동)와 서류·면접 이야기만 한다. "
+                "실기 측정 기록이나 다른 전형과의 비교 설명은 전부 빼고 다시 호출하라."
+            )
 
     # Stage contract: reuse hakjong_stage_contract with text as visible_text list
     validate_stage_contract(
