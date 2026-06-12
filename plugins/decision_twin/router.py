@@ -24,6 +24,7 @@ class LlmRouteDecision:
     required_tool: str = ""
     confidence: float = 0.0
     needs_region_question: bool | None = None
+    region_value: str = ""
     evidence: tuple[str, ...] = field(default_factory=tuple)
     tool_instruction: str = ""
     user_message: str = ""
@@ -60,6 +61,7 @@ def build_decision_messages(
             "required_tool": "tool name when a tool/contract must be used",
             "confidence": "0.0-1.0",
             "needs_region_question": "true|false — 사용자 요청이 학교 추천(수시/실기/교과 추천·선별)인데 문장과 turn_context 어디에도 지역(광역명들 또는 '전국') 언급이 없으면 true",
+            "region_value": "사용자가 언급한 지역 표현 그대로 (광역 단위 쉼표 구분, 예: '서울, 경기, 인천, 강원, 대전' 또는 '전국'). 언급 없으면 빈 문자열",
             "evidence": ["short reasons from text/context/memory"],
             "tool_instruction": "one concrete instruction for the body agent",
             "user_message": "Korean plain-language clarification only when action=clarify",
@@ -82,6 +84,7 @@ def parse_decision_payload(value: Any) -> LlmRouteDecision:
         required_tool=_clean_token(payload.get("required_tool")),
         confidence=_confidence(payload.get("confidence")),
         needs_region_question=_tri_bool(payload.get("needs_region_question")),
+        region_value=str(payload.get("region_value") or "").strip()[:120],
         evidence=_evidence(payload.get("evidence")),
         tool_instruction=str(payload.get("tool_instruction") or "").strip(),
         user_message=str(payload.get("user_message") or "").strip(),
@@ -104,6 +107,10 @@ def annotate_result_text(user_text: str, decision: LlmRouteDecision) -> str:
     ]
     if decision.required_tool:
         hint_lines.append(f"추천 도구: {decision.required_tool}")
+    if decision.region_value:
+        hint_lines.append(
+            f"지역: {decision.region_value} — susi27_recommend_candidates 호출 시 region 인자에 이 값을 그대로 넣어라"
+        )
     hint_lines.append(f"근거: {evidence}")
     return f"{user_text}\n\n" + "\n".join(hint_lines)
 
