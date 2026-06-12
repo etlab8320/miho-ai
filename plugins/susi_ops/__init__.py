@@ -26,35 +26,11 @@ def _prev_year_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
     )
 
 
-def _current_message_id() -> str:
-    try:
-        from gateway.session_context import get_session_env
-
-        return str(get_session_env("MIHO_SESSION_MESSAGE_ID") or "").strip()
-    except Exception:
-        return ""
-
-
-# need_region을 발급한 사용자 메시지 ID 기록 — 같은 메시지 턴 안에서 region을
-# 채워 재호출하면 사용자가 답한 게 아니므로(물리적으로 불가능) 거부한다.
-# prose 지시는 2회 연속 무시당했다(2026-06-12 13:34, 13:47 실사고).
-_REGION_ASKED_MESSAGE_IDS: set[str] = set()
-
-
+# 같은 턴 재호출 턴락은 제거됨(2026-06-12): 현관(region_gate)이 "먼저 묻기"를
+# 보장하게 되면서, 사용자가 지역을 답한 턴의 정당한 재호출까지 차단하는
+# 오작동(서연 추천 실사고)만 남았기 때문.
 def _recommend_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
     region = args.get("region")
-    message_id = _current_message_id()
-    if (region is None or str(region).strip() == "") and message_id:
-        _REGION_ASKED_MESSAGE_IDS.add(message_id)
-    elif region and message_id and message_id in _REGION_ASKED_MESSAGE_IDS:
-        return {
-            "need_region": True,
-            "message": (
-                "거부 — 같은 메시지 턴 안에서 region을 채워 재호출했다. 사용자는 아직 지역을 답하지 않았다. "
-                "도구를 그만 부르고, 사용자에게 '지역은 어디로 볼까요? (예: 강원·경기·서울·인천, 또는 전국)'만 "
-                "보낸 뒤 턴을 끝내라. 사용자가 다음 메시지로 답하면 그때 그 표현을 region에 넣어 호출할 수 있다."
-            ),
-        }
     return recommend_candidates(
         student_query=str(args.get("student_query") or ""),
         university=args.get("university"),

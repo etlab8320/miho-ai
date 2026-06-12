@@ -353,18 +353,13 @@ def test_recommend_candidates_requires_region():
     assert "지역" in result.get("message", "")
 
 
-def test_recommend_handler_blocks_same_turn_self_fill(monkeypatch):
+def test_recommend_handler_same_turn_region_recall_allowed(monkeypatch):
+    """현관 게이트 도입 후: 지역을 받은 턴의 재호출은 정상 통과해야 한다."""
     from plugins import susi_ops
 
-    monkeypatch.setattr(susi_ops, "_current_message_id", lambda: "msg-77")
     monkeypatch.setattr(susi_ops, "recommend_candidates", lambda **kw: {"need_region": True} if not kw.get("region") else {"total_feasible": 1, "candidates": []})
-    susi_ops._REGION_ASKED_MESSAGE_IDS.clear()
 
-    first = susi_ops._recommend_handler({"student_query": "종환"})
+    first = susi_ops._recommend_handler({"student_query": "서연"})
     assert first.get("need_region") is True
-    second = susi_ops._recommend_handler({"student_query": "종환", "region": "전국"})
-    assert second.get("need_region") is True and "거부" in second.get("message", "")
-
-    monkeypatch.setattr(susi_ops, "_current_message_id", lambda: "msg-78")
-    third = susi_ops._recommend_handler({"student_query": "종환", "region": "전국"})
-    assert third.get("total_feasible") == 1
+    second = susi_ops._recommend_handler({"student_query": "서연", "region": "서울, 경기, 인천, 강원, 충청"})
+    assert second.get("total_feasible") == 1

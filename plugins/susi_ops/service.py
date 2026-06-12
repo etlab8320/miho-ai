@@ -711,7 +711,7 @@ def recommend_candidates(
         record = calc["student_record_score"]
         # 적정/상향 제안: 작년 최종합격자의 내신환산보다 높으면 적정 출발선
         prev_final_record = None
-        r26 = None
+        prev_winner_practical = None
         try:
             r26 = _json_loads(
                 conn.execute(
@@ -720,11 +720,22 @@ def recommend_candidates(
                 ).fetchone()[0],
                 {},
             )
-            prev_final_record = _first_number((r26.get("final_pass_cutoff") or {}).get("record_score"))
+            fp = (r26.get("final_pass_cutoff") or {}) if isinstance(r26, dict) else {}
+            prev_final_record = _first_number(fp.get("record_score"))
+            prev_winner_practical = _first_number(fp.get("practical_score"))
         except Exception:
             pass
         suggested = "적정" if (prev_final_record is not None and record >= prev_final_record) else "상향"
         margin = round(vs["max_possible_total"] - vs["prev_final_total"], 2)
+        # 핵심 지표(사장님 피드백 2026-06-12): 만점 여유가 아니라 "합격에 필요한
+        # 실기 득점률"이 진짜 난이도다. 작년 합격자의 실제 실기 득점률과 나란히 본다.
+        practical_max_n = _first_number(vs.get("practical_max")) or 0.0
+        needed_practical_rate = None
+        prev_winner_practical_rate = None
+        if practical_max_n > 0:
+            needed_practical_rate = round(max(0.0, (vs["prev_final_total"] - record)) / practical_max_n * 100, 1)
+            if prev_winner_practical is not None:
+                prev_winner_practical_rate = round(prev_winner_practical / practical_max_n * 100, 1)
         cand_region = _region_map().get(str(row["university_id"]), "")
         if wanted_regions and cand_region not in wanted_regions:
             skipped["region_filtered"] = skipped.get("region_filtered", 0) + 1
@@ -743,6 +754,8 @@ def recommend_candidates(
                 "prev_final_total": vs.get("prev_final_total"),
                 "prev_final_record": prev_final_record,
                 "margin_at_full_practical": margin,
+                "needed_practical_rate_pct": needed_practical_rate,
+                "prev_winner_practical_rate_pct": prev_winner_practical_rate,
                 "suggested_verdict": suggested,
                 "practical_events": event_names,
                 "quota": raw.get("정원"),
@@ -750,7 +763,13 @@ def recommend_candidates(
             }
         )
 
-    candidates.sort(key=lambda c: (-(c["suggested_verdict"] == "적정"), -c["margin_at_full_practical"]))
+    # 정렬: 필요 실기 득점률이 낮은 학교(현실적으로 쉬운 순)부터. 지표가 없으면 뒤로.
+    candidates.sort(
+        key=lambda c: (
+            c["needed_practical_rate_pct"] if c["needed_practical_rate_pct"] is not None else 999.0,
+            -c["margin_at_full_practical"],
+        )
+    )
     max_candidates = max(1, min(int(max_candidates or 30), 60))
     total = len(candidates)
     candidates = candidates[:max_candidates]
@@ -769,7 +788,9 @@ def recommend_candidates(
         "skipped": skipped,
         "note": (
             result_payload_note_region
-            + "전 후보는 verified 룰 + 전년도 결과가 있는 학교만이며, 실기 만점으로도 전년도 최종합에 "
+            + "정렬은 needed_practical_rate_pct(합격에 필요한 실기 득점률, 낮을수록 현실적) 오름차순. "
+            "prev_winner_practical_rate_pct(작년 합격자의 실제 실기 득점률)와 비교해 난이도를 설명하라. "
+            "전 후보는 verified 룰 + 전년도 결과가 있는 학교만이며, 실기 만점으로도 전년도 최종합에 "
             "못 닿는 학교는 이미 제외됐다. suggested_verdict는 제안일 뿐 — 최종 분류와 서사는 네 판단."
         ),
         "candidates": candidates,
