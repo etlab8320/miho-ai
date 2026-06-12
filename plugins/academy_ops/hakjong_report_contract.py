@@ -20,6 +20,13 @@ from .hakjong_stage_contract import has_early_context_evidence, validate_stage_c
 BRAND_TEXT = "맥스체대입시 일산교육원"
 
 BANNED_PDF_TEXT = (
+    # 내부 검증 라벨/검토 과정 언어 — 학생·학부모가 볼 문서에 절대 노출 금지
+    # (사장님 2026-06-12: "verified 산식, 제외/보류 판단 이런건 절대 나오면 안되고").
+    "verified",
+    "confidence",
+    "산식",
+    "보류",
+    "제외",
     "MIHO AI",
     "MAX SPORTS ADMISSION",
     "source_thread",

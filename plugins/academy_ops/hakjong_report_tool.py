@@ -44,7 +44,10 @@ def _render_html(content: dict[str, Any]) -> str:
     env = jinja2.Environment(
         loader=jinja2.BaseLoader(),
         autoescape=jinja2.select_autoescape(["html"]),
-        undefined=jinja2.StrictUndefined,
+        # 스키마가 필수 필드를 보장하고, 선택 필드(avg_grade 등)는 비어도 렌더돼야 한다 —
+        # StrictUndefined는 스키마 통과 후 렌더 단계에서 터져 에이전트를 막다른 길로 몰았다
+        # (2026-06-12 실사고: 6회 반려 끝에 terminal 손제작 PDF로 도주).
+        undefined=jinja2.ChainableUndefined,
     )
     template = env.from_string(template_src)
     return template.render(

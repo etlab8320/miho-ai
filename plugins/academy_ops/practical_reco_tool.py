@@ -45,7 +45,10 @@ def _render_html(content: dict[str, Any]) -> str:
     env = jinja2.Environment(
         loader=jinja2.BaseLoader(),
         autoescape=jinja2.select_autoescape(["html"]),
-        undefined=jinja2.StrictUndefined,
+        # 스키마가 필수 필드를 보장하고, 선택 필드(avg_grade 등)는 비어도 렌더돼야 한다 —
+        # StrictUndefined는 스키마 통과 후 렌더 단계에서 터져 에이전트를 막다른 길로 몰았다
+        # (2026-06-12 실사고: 6회 반려 끝에 terminal 손제작 PDF로 도주).
+        undefined=jinja2.ChainableUndefined,
     )
     template = env.from_string(template_src)
     return template.render(
@@ -170,7 +173,8 @@ def _practical_reco_package_tool_handler(args: dict[str, Any] | None = None, **_
         return json.dumps(
             {
                 "ok": False,
-                "message": "실기전형 추천 리포트 내용 검증 실패. 아래 항목을 수정한 뒤 다시 호출하라.",
+                "message": "실기전형 추천 리포트 내용 검증 실패. 아래 항목을 수정한 뒤 이 도구를 다시 호출하라. "
+                "terminal/execute_code로 PDF를 직접 만드는 것은 금지 — 브랜드 템플릿과 검증을 우회하게 된다.",
                 "errors": schema_errors,
                 "warnings": [],
                 "checks": {},

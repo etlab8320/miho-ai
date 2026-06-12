@@ -18,16 +18,32 @@ Template structure (practical_reco_shell.html):
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 
 def _first_number(value: Any) -> float | None:
-    match = re.search(r"-?\d+(?:\.\d+)?", str(value or ""))
-    try:
-        return float(match.group()) if match else None
-    except ValueError:
-        return None
+    text = str(value or "")
+    n = len(text)
+    for i, ch in enumerate(text):
+        if not ch.isdigit():
+            continue
+        start = i - 1 if i > 0 and text[i - 1] == "-" else i
+        end = i
+        seen_dot = False
+        while end < n:
+            c = text[end]
+            if c.isdigit():
+                end += 1
+            elif c == "." and not seen_dot and end + 1 < n and text[end + 1].isdigit():
+                seen_dot = True
+                end += 1
+            else:
+                break
+        try:
+            return float(text[start:end])
+        except ValueError:
+            return None
+    return None
 
 from .hakjong_report_contract import (
     BANNED_PDF_TEXT,
