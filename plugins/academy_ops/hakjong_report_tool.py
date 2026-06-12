@@ -229,8 +229,19 @@ def _grounding_errors(
                 f"학생 과목 예: {sample}"
             )
 
-        # B. 당해 학년 세특 공백 — 미입력이면 채움 설계(gap_plan)가 리포트의 핵심이어야 한다.
+        # B. 단계-데이터 교차 검증 — 미호의 자기신고 stage가 생기부 데이터와
+        # 모순되면 리포트 모드 전체가 어긋난다 (사장님 단계별 설계 2026-06-12:
+        # 완성형 고3/N수=판단·등급, 세특공백 고3=1·2학년 기준 디벨롭,
+        # 고1·2=방향성, 생기부 없음=상담 기반 시작 설계).
         grade = _stage_grade(student_stage)
+        data_max_grade = max(note_grades) if note_grades else None
+        if grade is not None and data_max_grade is not None and data_max_grade > grade:
+            errors.append(
+                f"student_stage가 {grade}학년인데 생기부에 {data_max_grade}학년 기록이 있다 — "
+                f"단계를 다시 확인해라 (데이터상 {data_max_grade}학년 이상)."
+            )
+
+        # 당해 학년 세특 공백 — 미입력이면 채움 설계(gap_plan)가 리포트의 핵심이어야 한다.
         if grade is not None and grade not in note_grades:
             gap = (content.get("strategy_section") or {}).get("gap_plan")
             gap_subjects = (gap or {}).get("subjects") if isinstance(gap, dict) else None
@@ -250,6 +261,14 @@ def _grounding_errors(
                     "strategy_section.gap_plan{title, subjects[{subject, direction}] 3개 이상}을 채워라: "
                     "과목마다 어떤 탐구·활동 방향으로 세특을 만들어갈지, 지원 학과와 연결해 구체적으로."
                 )
+            if grade == 3:
+                prior = [str(g) + "학년" for g in sorted(note_grades)]
+                if prior and not all(p_ in text for p_ in prior):
+                    errors.append(
+                        "3학년 세특 미입력 학생의 판단 근거는 이전 학년 생기부다 — "
+                        f"본문에 {'·'.join(prior)} 기록을 미뤄봤을 때 이 학교가 가능한지를 명시하고, "
+                        "그 위에서 디벨롭 방향을 제시해라."
+                    )
 
     # C. 대학 전형 DB 수치 인용 — 모집인원이 DB에 있으면 본문에 반드시 등장해야 한다.
     university = content.get("university") or {}
@@ -526,7 +545,12 @@ def register_hakjong_report_tool(ctx: Any) -> None:
                     "type": "string",
                     "description": (
                         "학생 상태. grade1/grade2/grade3/graduate 또는 고1/고2/고3/N수생. "
-                        "단계별 섹션 필수 여부와 근거 도구 요건을 결정한다."
+                        "리포트의 목적이 단계마다 다르다 — "
+                        "①고3(세특 채워짐)·N수생: 완성 생기부로 이 학교 방향성이 맞는지 판단하고 등급(badge)을 매기는 평가형. "
+                        "②고3(당해 세특 미입력): 1·2학년 생기부를 미뤄봤을 때 가능한 학교인지 + 어떤 방향으로 디벨롭할지(gap_plan)가 중점. "
+                        "③고1 2학기·고2: 생기부를 보고 방향성을 잡아주는 설계형. "
+                        "④고1 1학기(생기부 없음): 상담 내용(관심사·장점·목표학교)을 근거로 생기부 시작 설계 — 상담 근거 없이 쓰지 마라. "
+                        "세특 유무는 도구가 DB로 검증하니 단계를 추측하지 말 것."
                     ),
                 },
                 "evidence_tools": {
