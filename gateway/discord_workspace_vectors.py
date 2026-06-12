@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
+
 import hashlib
 import json
 import logging
@@ -239,7 +241,12 @@ def _get_local_embedding_model() -> Any | None:
     try:
         from fastembed import TextEmbedding
 
-        model = TextEmbedding(name)
+        # 캐시는 영구 경로에 — 기본값(/var/folders tmp)은 macOS 임시 정리에 쓸려
+        # model.onnx_data가 깨지고, 그러면 모든 의도 분류가 조용히 ABSTAIN이 된다
+        # (2026-06-12 실사고: 로그인 라우팅 전멸 → 키워드 폴백 덧대는 우회 유발).
+        cache_dir = pathlib.Path("~/.miho/models/fastembed").expanduser()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        model = TextEmbedding(name, cache_dir=str(cache_dir))
     except Exception:
         _LOCAL_MODEL_DISABLED = True
         return None
