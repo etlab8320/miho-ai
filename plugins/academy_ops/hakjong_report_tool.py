@@ -274,6 +274,51 @@ def _grounding_errors(
                     f"전형 DB 수치가 본문에 없다 — {uni_name} 해당 전형 모집인원 '{quota_num}명'을 "
                     "리포트에 인용해라 (susi27_rule_lookup의 admission_meta·quota가 근거다)."
                 )
+            # 전형 구조(단계 배수·반영비율·수능최저)는 학종 DB의 공식 수치 그대로
+            # 전형핵심 표(track_section.rows의 official)에 박혀야 한다 — "서류와
+            # 면접 중심" 같은 뭉뚱그림 금지 (2026-06-12 실사고: 인천대 4배수,
+            # 70+30 구조가 리포트에 없었다).
+            meta = rows[0].get("admission_meta") or {}
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except (TypeError, ValueError):
+                    meta = {}
+            track_rows = (content.get("track_section") or {}).get("rows") or []
+            officials = " ".join(
+                f"{r.get('label') or ''} {r.get('official') or ''}"
+                for r in track_rows
+                if isinstance(r, dict)
+            )
+            official_facts: list[str] = []
+            stage1 = meta.get("stage1") if isinstance(meta.get("stage1"), dict) else {}
+            stage2 = meta.get("stage2") if isinstance(meta.get("stage2"), dict) else {}
+            multiple = "".join(ch for ch in str(stage1.get("multiple") or "") if ch.isdigit())
+            if multiple:
+                rec1 = "".join(ch for ch in str(stage1.get("student_record") or "") if ch.isdigit())
+                official_facts.append(
+                    f"1단계: 서류(학생부) {rec1 or '?'}% · {multiple}배수 선발"
+                )
+                if f"{multiple}배수" not in officials:
+                    errors.append(
+                        f"전형핵심 표에 1단계 선발 배수가 없다 — '{multiple}배수'를 official 값에 그대로 써라."
+                    )
+            interview = "".join(ch for ch in str(stage2.get("interview") or "") if ch.isdigit())
+            if interview and int(interview) > 0:
+                carry = "".join(ch for ch in str(stage2.get("other") or "") if ch.isdigit())
+                official_facts.append(f"2단계: 1단계 성적 {carry or '?'} + 면접 {interview}")
+                if interview not in officials or "면접" not in officials:
+                    errors.append(
+                        f"전형핵심 표에 2단계 면접 반영비율이 없다 — '면접 {interview}'을 official 값에 그대로 써라."
+                    )
+            csat = meta.get("minimum_csat") if isinstance(meta.get("minimum_csat"), dict) else {}
+            has_min = str(csat.get("has_minimum") or "").strip().lower()
+            if has_min in ("", "0", "false", "no", "없음", "n"):
+                official_facts.append("수능최저: 없음")
+            elif str(csat.get("detail") or "").strip():
+                official_facts.append(f"수능최저: {csat['detail']}")
+            if errors and official_facts:
+                errors.append("DB 공식 전형 구조 (이대로 인용하라): " + " / ".join(official_facts))
     return errors
 
 
