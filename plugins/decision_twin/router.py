@@ -23,7 +23,7 @@ class LlmRouteDecision:
     intent: str = ""
     required_tool: str = ""
     confidence: float = 0.0
-    region_in_text: bool | None = None
+    needs_region_question: bool | None = None
     evidence: tuple[str, ...] = field(default_factory=tuple)
     tool_instruction: str = ""
     user_message: str = ""
@@ -37,7 +37,7 @@ async def default_decision_resolver(messages: list[dict[str, str]]) -> Any:
         messages=messages,
         temperature=0,
         max_tokens=420,
-        timeout=18,
+        timeout=30,
         extra_body={"reasoning": {"effort": "low"}},
     )
 
@@ -59,7 +59,7 @@ def build_decision_messages(
             "intent": "semantic user job",
             "required_tool": "tool name when a tool/contract must be used",
             "confidence": "0.0-1.0",
-            "region_in_text": "true|false — required_tool이 susi27_recommend_candidates일 때만: 사용자 문장(또는 이번 turn_context)에 지역(광역명들 또는 '전국') 언급이 있는가",
+            "needs_region_question": "true|false — 사용자 요청이 학교 추천(수시/실기/교과 추천·선별)인데 문장과 turn_context 어디에도 지역(광역명들 또는 '전국') 언급이 없으면 true",
             "evidence": ["short reasons from text/context/memory"],
             "tool_instruction": "one concrete instruction for the body agent",
             "user_message": "Korean plain-language clarification only when action=clarify",
@@ -81,7 +81,7 @@ def parse_decision_payload(value: Any) -> LlmRouteDecision:
         intent=str(payload.get("intent") or "").strip(),
         required_tool=_clean_token(payload.get("required_tool")),
         confidence=_confidence(payload.get("confidence")),
-        region_in_text=_tri_bool(payload.get("region_in_text")),
+        needs_region_question=_tri_bool(payload.get("needs_region_question")),
         evidence=_evidence(payload.get("evidence")),
         tool_instruction=str(payload.get("tool_instruction") or "").strip(),
         user_message=str(payload.get("user_message") or "").strip(),

@@ -428,7 +428,7 @@ async def test_region_gate_asks_before_recommendation(monkeypatch):
             "required_tool": "susi27_recommend_candidates",
             "intent": "실기전형 추천",
             "confidence": 0.95,
-            "region_in_text": False,
+            "needs_region_question": True,
         }
 
     event = SimpleNamespace(text="종환이 실기전형 6개 추천해줘", source=object(), media_urls=[],
@@ -451,7 +451,7 @@ async def test_region_gate_passes_when_region_mentioned(monkeypatch):
             "required_tool": "susi27_recommend_candidates",
             "intent": "실기전형 추천",
             "confidence": 0.95,
-            "region_in_text": True,
+            "needs_region_question": False,
         }
 
     event = SimpleNamespace(text="종환이 실기전형 강원·경기로 추천해줘", source=object(), media_urls=[],

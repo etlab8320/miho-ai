@@ -43,23 +43,23 @@ async def _decision_twin_pre_gateway_dispatch(
         logger.info("decision twin resolver skipped: %s", exc)
         return {"action": "allow"}
     decision = parse_decision_payload(raw)
+    if decision.needs_region_question is True:
+        # 사장님 설계: 추천은 지역을 먼저 묻는다. 에이전트 단 지시는 4회 우회됐으므로
+        # (자가 region 채움 2회, 캐시 파일 재탕 2회) 현관에서 질문을 직접 보낸다.
+        # "추천 요청+지역 미언급" 판단은 라우터 LLM — 도구 선택과 무관하게 발동한다.
+        return {
+            "action": "respond",
+            "text": (
+                "추천 전에 하나만 정할게요 — 지역은 어디로 볼까요?\n"
+                "예: `강원, 경기, 서울, 인천` 처럼 광역 단위로 말씀해 주시거나, 전국이면 `전국`이라고 해주세요."
+            ),
+            "route": "decision_twin",
+            "reason": "region_gate",
+            "intent": decision.intent,
+            "confidence": decision.confidence,
+            "priority": _ROUTE_PRIORITY,
+        }
     if should_route_decision(decision):
-        if decision.required_tool == "susi27_recommend_candidates" and decision.region_in_text is False:
-            # 사장님 설계: 추천은 지역을 먼저 묻는다. 에이전트 단 지시는 4회 우회됐으므로
-            # (자가 region 채움 2회, 캐시 파일 재탕 2회) 현관에서 질문을 직접 보낸다.
-            # 지역 언급 여부 판단은 LLM(region_in_text) — 키워드 매칭 아님.
-            return {
-                "action": "respond",
-                "text": (
-                    "추천 전에 하나만 정할게요 — 지역은 어디로 볼까요?\n"
-                    "예: `강원, 경기, 서울, 인천` 처럼 광역 단위로 말씀해 주시거나, 전국이면 `전국`이라고 해주세요."
-                ),
-                "route": "decision_twin",
-                "reason": "region_gate",
-                "intent": decision.intent,
-                "confidence": decision.confidence,
-                "priority": _ROUTE_PRIORITY,
-            }
         return {
             "action": "rewrite",
             "text": annotate_result_text(text, decision),
@@ -135,7 +135,7 @@ def register(ctx: Any) -> None:
         key=DECISION_TWIN_TASK,
         display_name="Miho decision twin",
         description="LLM judge for gateway intent, context, and required tool routing",
-        defaults={"provider": "auto", "timeout": 18, "extra_body": {"reasoning": {"effort": "low"}}},
+        defaults={"provider": "auto", "timeout": 30, "extra_body": {"reasoning": {"effort": "low"}}},
     )
 
 
