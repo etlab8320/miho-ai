@@ -704,7 +704,7 @@ def recommend_candidates(
     ).fetchall()
 
     candidates = []
-    skipped = {"calc_failed": 0, "unreachable": 0}
+    skipped = {"calc_failed": 0, "unreachable": 0, "stage1_blocked": 0}
     for row in rule_rows:
         calc = calculate_score(row["university_id"], grades, {}, {})
         if calc.get("status") != "calculated":
@@ -784,6 +784,12 @@ def recommend_candidates(
                 "prev_winner_avg_grade": prev_winner_grade,
                 "student_avg_grade": student_grade,
             }
+            # 명백 미달(작년 합격자 평균 +1.0 초과)은 후보 진입 자체를 막는다 —
+            # 못 가는 학교는 경고 딸고 보여주는 게 아니라 아예 입에 안 올린다
+            # (사장님 2026-06-12: "얘기해봐야 학생이 아쉬워만 하는거지").
+            if student_grade is not None and prev_winner_grade is not None and student_grade > prev_winner_grade + 1.0:
+                skipped["stage1_blocked"] += 1
+                continue
             if student_grade is not None and prev_winner_grade is not None and student_grade > prev_winner_grade + 0.5:
                 stage1_info["warning"] = (
                     f"1단계 선발이 있는 전형 — 작년 최종합격자 평균등급 {prev_winner_grade:g}인데 "
