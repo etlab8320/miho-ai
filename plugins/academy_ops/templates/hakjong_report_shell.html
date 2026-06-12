@@ -334,6 +334,18 @@
       <div class="body">{{ data.strategy_section.final_judgment.body }}</div>
     </div>
 
+    {%- if data.strategy_section.gap_plan %}
+    {#- 세특 미입력 학생: 채움 설계가 체크리스트 자리를 대신한다 (페이지 1장 고정 보호) #}
+    <div class="checkBox">
+      <div class="title">{{ data.strategy_section.gap_plan.title }}</div>
+      <table class="table">
+        <tr><th style="width:28%">과목</th><th>세특 설계 방향</th></tr>
+        {% for row in data.strategy_section.gap_plan.subjects %}
+        <tr><td class="head">{{ row.subject }}</td><td>{{ row.direction }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    {%- else %}
     <div class="checkBox">
       <div class="title">{{ data.strategy_section.checklist.title }}</div>
       <ul>{% for b in data.strategy_section.checklist.bullets %}<li>{{ b }}</li>{% endfor %}</ul>
@@ -341,6 +353,7 @@
         {% for t in data.strategy_section.checklist.tags %}<span class="tag">{{ t }}</span>{% endfor %}
       </div>
     </div>
+    {%- endif %}
 
     {{ footer(brand_text ~ " · 학생부종합 지원전략 리포트", "3") }}
   </section>

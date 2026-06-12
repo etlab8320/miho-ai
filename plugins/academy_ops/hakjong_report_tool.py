@@ -148,6 +148,139 @@ def _university_names_from_content(content: dict[str, Any]) -> list[str]:
     return []
 
 
+
+# ── 내용 grounding 검증 ──────────────────────────────────────────────
+# 스키마는 구조만 본다. "템플릿만 띡 채운" 일반론 리포트(2026-06-12 실사고:
+# 인천대 DB 미인용, 3학년 1학기 세특 공백 무대응)를 막으려면 도구가 직접
+# 생기부·전형 DB를 읽고 본문이 실제 데이터에 발 딛고 있는지 확인해야 한다.
+_CENTRAL_LIFE_DB = Path("~/.miho/life_records/central.sqlite3").expanduser()
+
+
+def _content_text(content: dict[str, Any]) -> str:
+    parts: list[str] = []
+
+    def walk(obj: Any) -> None:
+        if isinstance(obj, str):
+            parts.append(obj)
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                walk(v)
+
+    walk(content)
+    return " ".join(parts)
+
+
+def _stage_grade(student_stage: str) -> int | None:
+    stage = student_stage.strip().lower()
+    for n in (1, 2, 3):
+        if stage in (f"grade{n}", f"고{n}"):
+            return n
+    return None
+
+
+def _grounding_errors(
+    student_name: str,
+    student_stage: str,
+    content: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    text = _content_text(content)
+
+    # A. 생기부 실제 과목 인용 — 학생을 못 찾으면 검증 불가이므로 건너뛴다.
+    subjects: set[str] = set()
+    note_grades: set[int] = set()
+    if _CENTRAL_LIFE_DB.exists():
+        import sqlite3
+
+        with sqlite3.connect(_CENTRAL_LIFE_DB) as db:
+            row = db.execute(
+                "SELECT id FROM students WHERE name = ? OR name LIKE ? LIMIT 1",
+                (student_name, f"%{student_name}%"),
+            ).fetchone()
+            if row:
+                sid = row[0]
+                for (subj,) in db.execute(
+                    "SELECT DISTINCT subject FROM central_grades WHERE student_id = ?"
+                    " UNION SELECT DISTINCT subject FROM central_notes WHERE student_id = ?",
+                    (sid, sid),
+                ):
+                    if subj and len(str(subj).strip()) >= 2:
+                        subjects.add(str(subj).strip())
+                for (g,) in db.execute(
+                    "SELECT DISTINCT grade FROM central_notes WHERE student_id = ?", (sid,)
+                ):
+                    if g is not None:
+                        note_grades.add(int(g))
+
+    if subjects:
+        cited = sorted(s for s in subjects if s in text)
+        need = min(3, len(subjects))
+        if len(cited) < need:
+            sample = ", ".join(sorted(subjects)[:8])
+            errors.append(
+                f"생기부 구체 근거가 부족하다 — 학생의 실제 과목·세특 과목을 {need}개 이상 본문에 "
+                f"인용해 일반론이 아닌 이 학생 이야기로 써라 (현재 {len(cited)}개 인용). "
+                f"학생 과목 예: {sample}"
+            )
+
+        # B. 당해 학년 세특 공백 — 미입력이면 채움 설계(gap_plan)가 리포트의 핵심이어야 한다.
+        grade = _stage_grade(student_stage)
+        if grade is not None and grade not in note_grades:
+            gap = (content.get("strategy_section") or {}).get("gap_plan")
+            gap_subjects = (gap or {}).get("subjects") if isinstance(gap, dict) else None
+            ok_gap = (
+                isinstance(gap, dict)
+                and _nonempty(gap.get("title"))
+                and isinstance(gap_subjects, list)
+                and len(gap_subjects) >= 3
+                and all(
+                    isinstance(r, dict) and _nonempty(r.get("subject")) and _nonempty(r.get("direction"))
+                    for r in gap_subjects
+                )
+            )
+            if not ok_gap:
+                errors.append(
+                    f"이 학생은 {grade}학년 세특이 아직 입력되지 않았다 — 공백을 채울 설계가 리포트의 핵심이다. "
+                    "strategy_section.gap_plan{title, subjects[{subject, direction}] 3개 이상}을 채워라: "
+                    "과목마다 어떤 탐구·활동 방향으로 세특을 만들어갈지, 지원 학과와 연결해 구체적으로."
+                )
+
+    # C. 대학 전형 DB 수치 인용 — 모집인원이 DB에 있으면 본문에 반드시 등장해야 한다.
+    university = content.get("university") or {}
+    uni_name = str(university.get("name") or "").strip()
+    if uni_name:
+        try:
+            from plugins.susi_ops.service import lookup_rules
+
+            track = str(university.get("track") or "").strip() or None
+            dept = str(university.get("department") or "").strip() or None
+            rows = lookup_rules(
+                university=uni_name, department=dept, admission_track=track, limit=1
+            ).get("rows") or []
+            if not rows and dept:
+                # 학과명 변경(예: 운동건강학부→스포츠의학부)으로 빗나가면 전형만으로 재조회
+                rows = lookup_rules(university=uni_name, admission_track=track, limit=1).get("rows") or []
+        except Exception:
+            rows = []
+        if rows:
+            quota = str(rows[0].get("quota") or "").strip()
+            quota_num = "".join(ch for ch in quota if ch.isdigit())
+            # "4" 같은 숫자 단독은 아무 데나 있다 — "4명"으로 인용됐는지 본다.
+            if quota_num and f"{quota_num}명" not in text:
+                errors.append(
+                    f"전형 DB 수치가 본문에 없다 — {uni_name} 해당 전형 모집인원 '{quota_num}명'을 "
+                    "리포트에 인용해라 (susi27_rule_lookup의 admission_meta·quota가 근거다)."
+                )
+    return errors
+
+
+def _nonempty(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     payload = args or {}
     student_name = str(payload.get("student_name") or "").strip()
@@ -181,6 +314,20 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
                 "ok": False,
                 "message": "학종 리포트 내용 검증 실패. 아래 항목을 수정한 뒤 다시 호출하라.",
                 "errors": schema_errors,
+                "warnings": [],
+                "checks": {},
+            },
+            ensure_ascii=False,
+        )
+
+    grounding = _grounding_errors(student_name, student_stage, content)
+    if grounding:
+        return json.dumps(
+            {
+                "ok": False,
+                "message": "학종 리포트 내용이 데이터에 발 딛고 있지 않다. 아래를 보강해 다시 호출하라. "
+                "terminal/execute_code로 PDF를 직접 만드는 것은 금지다.",
+                "errors": grounding,
                 "warnings": [],
                 "checks": {},
             },
@@ -322,7 +469,9 @@ def register_hakjong_report_tool(ctx: Any) -> None:
                         "diagnosis_section{heading, strength{headline,body}, risk{headline,body}, "
                         "rows[{area,record,interpretation,check}], gauges[{label,level,note,tone(orange|blue|red),percent}]x3, footnote} · "
                         "strategy_section{heading, actions[{title,body}]x4, interview_rows[{question,point}], "
-                        "final_judgment{body}, checklist{title,bullets[],tags[]}, footnote}. "
+                        "final_judgment{body}, checklist{title,bullets[],tags[]}, footnote, "
+                        "gap_plan{title, subjects[{subject,direction}]x≥3}(당해 학년 세특 미입력 학생 필수 — "
+                        "과목별로 어떤 탐구 방향으로 세특을 채울지 학과와 연결해 설계; 있으면 checklist 대신 렌더된다)}. "
                         "수치(전년도 컷·등급)는 susi27_rule_lookup의 admission_meta/admission_result_26과 생기부 성적에서 가져온 실제 값만 쓴다. "
                         "로고·푸터·브랜딩은 템플릿이 보장하므로 여기에 넣지 않는다."
                     ),

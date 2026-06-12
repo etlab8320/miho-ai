@@ -164,9 +164,12 @@ def _validate_structure(content: dict[str, Any], errors: list[str]) -> None:
         fj = strat.get("final_judgment")
         if not isinstance(fj, dict) or not _nonempty_str(fj.get("body")):
             errors.append("content.strategy_section.final_judgment.body가 비어 있다.")
-        cl = strat.get("checklist")
-        if not isinstance(cl, dict) or not _nonempty_str(cl.get("title")):
-            errors.append("content.strategy_section.checklist.title이 비어 있다.")
+        # 세특 공백 학생은 gap_plan(세특 설계)이 체크리스트 자리를 대신한다.
+        gap = strat.get("gap_plan")
+        if not isinstance(gap, dict):
+            cl = strat.get("checklist")
+            if not isinstance(cl, dict) or not _nonempty_str(cl.get("title")):
+                errors.append("content.strategy_section.checklist.title이 비어 있다.")
 
 
 def _validate_pointbox(box: Any, path: str, errors: list[str]) -> None:
