@@ -632,6 +632,27 @@ def _parse_regions(value: Any) -> list[str]:
     return [] if any(v in ("전국", "전체") for v in out) else out
 
 
+
+# 전년도 트랙별 컷 캐시 — 26 확정 합격자들의 종목 기록 슬롯 패턴으로 트랙을
+# 분리해 산출한 값 (수원대 실사고 2026-06-12: 전공/기초체력 컷이 한 줄로 섞여
+# 비교 왜곡). 기본 판단 트랙 = 측정이 가장 완전한(슬롯 多) 코호트, 인원 3명
+# 미만 코호트는 데이터 결손 노이즈로 무시.
+_TRACK_CUTS_PATH = pathlib.Path(os.path.expanduser("~/.miho/academy_ops/susi26_track_cuts.json"))
+_TRACK_CUTS: dict | None = None
+
+
+def _track_cuts(university_id: str) -> tuple[dict | None, list[dict]]:
+    global _TRACK_CUTS
+    if _TRACK_CUTS is None:
+        data = _json_loads(_TRACK_CUTS_PATH.read_text(encoding="utf-8") if _TRACK_CUTS_PATH.exists() else None, None)
+        _TRACK_CUTS = data if isinstance(data, dict) else {}
+    tracks = [t for t in (_TRACK_CUTS.get(str(university_id)) or []) if t.get("n_students", 0) >= 3]
+    if not tracks:
+        return None, []
+    default = max(tracks, key=lambda t: (t.get("slot_count", 0), t.get("n_students", 0)))
+    return default, tracks
+
+
 def recommend_candidates(
     student_query: str,
     university: str | None = None,
@@ -703,6 +724,25 @@ def recommend_candidates(
         if not vs:
             skipped["calc_failed"] += 1
             continue
+        # 트랙별 컷이 있으면 기본 판단 트랙(완전 측정) 컷으로 교체 — 혼합 컷 왜곡 방지
+        default_track, all_tracks = _track_cuts(row["university_id"])
+        track_note = None
+        if default_track and (default_track.get("final_cut_total") or default_track.get("first_cut_total")):
+            t_final = default_track.get("final_cut_total") or default_track.get("first_cut_total")
+            vs = dict(vs)
+            vs["prev_final_total"] = float(t_final)
+            if default_track.get("first_cut_total"):
+                vs["prev_first_total"] = float(default_track["first_cut_total"])
+            pm = _first_number(vs.get("practical_max")) or 0.0
+            rec_now = _first_number(calc.get("student_record_score")) or 0.0
+            vs["max_possible_total"] = round(rec_now + pm, 2)
+            vs["reachable_at_full_practical"] = vs["max_possible_total"] >= vs["prev_final_total"]
+            if len(all_tracks) > 1:
+                track_note = (
+                    f"전년도 컷은 실기 트랙 {len(all_tracks)}개로 분리 산출 — 기본 판단은 "
+                    f"완전 측정 트랙({', '.join(default_track.get('events', []))}, {default_track.get('n_students')}명) 기준. "
+                    "다른 트랙(전공 등)은 prev_tracks를 보고 따로 설명하라."
+                )
         if not vs.get("reachable_at_full_practical"):
             skipped["unreachable"] += 1
             continue
@@ -777,6 +817,8 @@ def recommend_candidates(
                 "student_avg_grade": student_grade,
                 "prev_winner_avg_grade": prev_winner_grade,
                 "stage1": stage1_info,
+                "prev_tracks": all_tracks if len(all_tracks) > 1 else None,
+                "track_note": track_note,
                 "margin_at_full_practical": margin,
                 "needed_practical_rate_pct": needed_practical_rate,
                 "prev_winner_practical_rate_pct": prev_winner_practical_rate,
