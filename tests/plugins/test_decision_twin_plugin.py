@@ -415,3 +415,48 @@ def test_domain_guard_module_absent() -> None:
 
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("plugins.decision_twin.domain_guard")
+
+
+@pytest.mark.asyncio
+async def test_region_gate_asks_before_recommendation(monkeypatch):
+    """추천 라우팅인데 지역 미언급이면 현관에서 지역 질문을 직접 보낸다."""
+    from plugins.decision_twin import _decision_twin_pre_gateway_dispatch
+
+    async def resolver(messages):
+        return {
+            "action": "route",
+            "required_tool": "susi27_recommend_candidates",
+            "intent": "실기전형 추천",
+            "confidence": 0.95,
+            "region_in_text": False,
+        }
+
+    event = SimpleNamespace(text="종환이 실기전형 6개 추천해줘", source=object(), media_urls=[],
+                            reply_to_text="", channel_context="", channel_prompt="")
+    gateway = SimpleNamespace(_is_user_authorized=lambda s: True)
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=event, gateway=gateway, resolver=resolver, owner_context_builder=lambda t: "")
+    assert result["action"] == "respond"
+    assert result["reason"] == "region_gate"
+    assert "지역" in result["text"]
+
+
+@pytest.mark.asyncio
+async def test_region_gate_passes_when_region_mentioned(monkeypatch):
+    from plugins.decision_twin import _decision_twin_pre_gateway_dispatch
+
+    async def resolver(messages):
+        return {
+            "action": "route",
+            "required_tool": "susi27_recommend_candidates",
+            "intent": "실기전형 추천",
+            "confidence": 0.95,
+            "region_in_text": True,
+        }
+
+    event = SimpleNamespace(text="종환이 실기전형 강원·경기로 추천해줘", source=object(), media_urls=[],
+                            reply_to_text="", channel_context="", channel_prompt="")
+    gateway = SimpleNamespace(_is_user_authorized=lambda s: True)
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=event, gateway=gateway, resolver=resolver, owner_context_builder=lambda t: "")
+    assert result["action"] == "rewrite"
