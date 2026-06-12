@@ -351,3 +351,20 @@ def test_recommend_candidates_requires_region():
     result = service.recommend_candidates("아무개")
     assert result.get("need_region") is True
     assert "지역" in result.get("message", "")
+
+
+def test_recommend_handler_blocks_same_turn_self_fill(monkeypatch):
+    from plugins import susi_ops
+
+    monkeypatch.setattr(susi_ops, "_current_message_id", lambda: "msg-77")
+    monkeypatch.setattr(susi_ops, "recommend_candidates", lambda **kw: {"need_region": True} if not kw.get("region") else {"total_feasible": 1, "candidates": []})
+    susi_ops._REGION_ASKED_MESSAGE_IDS.clear()
+
+    first = susi_ops._recommend_handler({"student_query": "종환"})
+    assert first.get("need_region") is True
+    second = susi_ops._recommend_handler({"student_query": "종환", "region": "전국"})
+    assert second.get("need_region") is True and "거부" in second.get("message", "")
+
+    monkeypatch.setattr(susi_ops, "_current_message_id", lambda: "msg-78")
+    third = susi_ops._recommend_handler({"student_query": "종환", "region": "전국"})
+    assert third.get("total_feasible") == 1
