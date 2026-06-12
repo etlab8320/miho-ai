@@ -32,6 +32,7 @@ def _recommend_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
         university=args.get("university"),
         department=args.get("department"),
         admission_track=args.get("admission_track"),
+        region=args.get("region"),
         max_candidates=int(args.get("max_candidates") or 30),
     )
 
@@ -138,6 +139,10 @@ def register(ctx: Any) -> None:
                 "university": {"type": "string", "description": "선택: 대학명 필터."},
                 "department": {"type": "string", "description": "선택: 학과명 필터."},
                 "admission_track": {"type": "string", "description": "선택: 전형명 필터. 예: 실기."},
+                "region": {
+                    "type": "string",
+                    "description": "광역 지역 (쉼표 구분, 예: '강원, 경기, 서울, 인천') 또는 '전국'. 없이 호출하면 결과 대신 '사용자에게 지역을 물어라' 지시가 돌아온다.",
+                },
                 "max_candidates": {"type": "integer", "default": 30, "minimum": 1, "maximum": 60},
             },
             "required": ["student_query"],
@@ -149,8 +154,11 @@ def register(ctx: Any) -> None:
             "학생 확정 성적 조회 → verified 룰 전체에 학교별 환산 → 실기 만점 도달성 판정"
             "(만점으로도 전년도 최종합 미달인 학교는 자동 제외) → 여유점수 순 정렬. "
             "반환 후보마다 내신환산·실기만점·만점합산·전년도 최초/최종·여유·suggested_verdict(적정/상향)· "
-            "실기 종목·정원이 들어있다. 추천 요청이 오면 룰/계산 도구를 따로 조립하지 말고 이걸 먼저 호출해라. "
-            "지역 제한 요청이면 결과에서 해당 지역 학교를 골라내면 된다. "
+            "실기 종목·정원·지역(region)이 들어있다. 추천 요청이 오면 룰/계산 도구를 따로 조립하지 말고 이걸 먼저 호출해라. "
+            "지역 플로우: 사용자가 지역을 말하지 않았으면 먼저 '지역은 어디로 볼까요? (예: 강원·경기·서울·인천, 또는 전국)'라고 묻고, "
+            "받은 답을 region 인자로 넣는다 (전국이면 '전국'). 임의로 지역을 정하지 마라. "
+            "지역 내 후보가 0건이면 그 사실을 알리고 전국으로 다시 볼지 물어라. "
+            "답변과 PDF에는 각 학교의 region을 항상 함께 표기한다. "
             "suggested_verdict는 제안 — 최종 선택(몇 개교, 상향/적정 배분)과 서사는 네 판단이고, "
             "발표 전 susi26_rule_lookup으로 전년도 전형 구조 변경 여부를 크로스체크해라."
         ),

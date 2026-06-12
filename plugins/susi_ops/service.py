@@ -647,6 +647,17 @@ def recommend_candidates(
             "생기부 인제스트/검수(life_record_confirm)가 끝난 학생만 추천 계산이 가능해."
         }
 
+    if region is None or str(region).strip() == "":
+        # 사장님 설계(2026-06-12): 지역은 도구가 요구한다 — 설명문 지시는 대화
+        # 관성에 밀려 무시되므로(실사고 2회) 코드에서 강제한다.
+        return {
+            "need_region": True,
+            "message": (
+                "지역을 먼저 정해야 해. 임의로 정하지 말고 사용자에게 이렇게 물어봐: "
+                "'지역은 어디로 볼까요? (예: 강원·경기·서울·인천, 또는 전국)' — "
+                "답을 받으면 region 인자에 그대로 넣어 다시 호출해 (전국이면 region='전국')."
+            ),
+        }
     wanted_regions = _parse_regions(region)
 
     conn = _connect()

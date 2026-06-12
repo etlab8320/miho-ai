@@ -297,7 +297,7 @@ def test_recommend_candidates_missing_student(monkeypatch, tmp_path):
     from plugins.susi_ops import service
 
     monkeypatch.setattr(service, "_CENTRAL_LIFE_DB", tmp_path / "none.sqlite3")
-    assert "error" in service.recommend_candidates("없는학생")
+    assert "error" in service.recommend_candidates("없는학생", region="전국")
 
 
 def test_recommend_candidates_filters_unreachable(monkeypatch):
@@ -338,8 +338,16 @@ def test_recommend_candidates_filters_unreachable(monkeypatch):
         return base
 
     monkeypatch.setattr(service, "calculate_score", fake_calc)
-    result = service.recommend_candidates("백종환")
+    result = service.recommend_candidates("백종환", region="전국")
     names = [c["university"] for c in result["candidates"]]
     assert "가능대" in names and "불가대" not in names
     assert result["skipped"]["unreachable"] == 1
     assert result["candidates"][0]["suggested_verdict"] == "적정"
+
+
+def test_recommend_candidates_requires_region():
+    from plugins.susi_ops import service
+
+    result = service.recommend_candidates("아무개")
+    assert result.get("need_region") is True
+    assert "지역" in result.get("message", "")
