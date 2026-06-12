@@ -58,11 +58,23 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "requires": ["student_name", "content"],
     },
+    "hakjong_qualitative_profile": {
+        "domain": "academy_ops",
+        "purpose": (
+            "학종(학생부종합) 정성 프로필 조회 — 학종 관련 모든 대화의 필수 첫 단계. "
+            "대학이 서류에서 중점적으로 보는 것(검토축·읽는 방식), 생기부에 박혀야 할 키워드, "
+            "과목별 노트, 면접/서류 방어 질문, 최근 입결 참고값을 반환한다. "
+            "학종 리포트든 채팅 상담이든 학종 질문이면 무조건 이 프로필을 먼저 보고 그 기준으로 말한다 — "
+            "프로필 없는 전형은 평가 중점을 추측하지 않는다고 밝힌다."
+        ),
+        "requires": ["university"],
+    },
     "academy_hakjong_report_package": {
         "domain": "academy_ops",
         "purpose": (
             "내용 JSON만 주면 껍데기(로고/푸터/브랜딩)는 고정 템플릿이 보장한다. "
-            "학교별 학종 패키지(susi27_rule_lookup)와 생기부(life_record_lookup/search/summary)를 "
+            "호출 전 hakjong_qualitative_profile로 해당 전형의 평가 기준(검토축·생기부 키워드)을 "
+            "반드시 먼저 확인하고, 전형 구조(susi27_rule_lookup)와 생기부(life_record_lookup/search/summary)를 "
             "근거로 섹션 내용을 작성하라. "
             "글쓰기 톤: 학원 선생님이 학생·학부모에게 상담하며 설명하는 따뜻하고 자연스러운 말투 — "
             "딱딱한 보고서체('~한다/~이다' 나열) 금지. "
