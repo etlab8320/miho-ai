@@ -251,12 +251,14 @@ def _student_record_brief(student_name: str) -> dict[str, list[str]]:
 
 
 def _record_brief_text(brief: dict[str, list[str]], **_: Any) -> str:
-    """학생 세특 brief를 반려 메시지용 텍스트로 펼친다 — 분야별 세특 전문을 모두 담아
-    미호가 표면이 아니라 탐구의 알맹이를 발굴하게 한다(사장님 2026-06-13: 깊이 읽기)."""
+    """학생 세특 brief를 반려 메시지용으로 압축한다 — 분야별 1~2건, 각 80자로 잘라
+    반려 메시지가 거대해져 미호 입력이 폭증·혼란하지 않게 한다(2026-06-13 실사고: 전문 6000자
+    주입 → 미호가 반려 반복하다 기존 PDF 재사용). 전문은 미호가 life_record로 직접 읽는다."""
     chunks: list[str] = []
     for field, items in brief.items():
-        chunks.append(f"[{field}] " + " | ".join(items))
-    return "\n".join(chunks)
+        sample = "; ".join(it[:80] for it in items[:2])
+        chunks.append(f"[{field}] {sample}")
+    return " / ".join(chunks)
 
 
 def _content_text(content: dict[str, Any]) -> str:
@@ -406,10 +408,10 @@ def _grounding_errors(
                     and len(str(r.get("school_direction") or "").strip()) >= 30
                     and isinstance(r.get("steps"), list)
                     and len(r.get("steps")) >= 3
-                    # 유료 컨설팅 전문성 — 분야당 본문 ~500자(사장님 2026-06-13). 각 단계 90자+.
-                    and all(_nonempty(s) and len(str(s).strip()) >= 90 for s in r.get("steps"))
-                    # 기대 효과 — 이 설계가 어느 평가요소에 어떻게 작용하는지(사장님 2026-06-13)
-                    and len(str(r.get("expected_effect") or "").strip()) >= 80
+                    # 전문성 하한 — 각 단계 70자+(미호가 통과 가능한 현실선). 500자 밀도는 description 권장으로
+                    # 유도하되 grounding은 통과 가능해야 한다(2026-06-13: 90자 강제 시 미호가 반려 반복→기존 재사용).
+                    and all(_nonempty(s) and len(str(s).strip()) >= 70 for s in r.get("steps"))
+                    and len(str(r.get("expected_effect") or "").strip()) >= 60
                     for r in gap_subjects
                 )
             )
