@@ -214,6 +214,8 @@
     .gapBlock.dir .lbl { color: var(--max-accent); }
     .gapBlock.steps { border-left: 4px solid #c2410c; background: var(--max-warm-soft); }
     .gapBlock.steps .lbl { color: #9a3412; }
+    .gapBlock.effect { border-left: 4px solid #7c3aed; background: #f5f3ff; }
+    .gapBlock.effect .lbl { color: #6d28d9; }
     .gapBlock ol { margin: 0; padding-left: 16px; }
     .gapBlock li { font-size: 11.6px; line-height: 1.7; color: var(--max-ink); margin: 2mm 0; font-weight: 600; }
     .axisBadge { align-self: flex-start; border: 1.5px solid var(--max-accent); color: var(--max-accent); border-radius: 999px; padding: 2mm 5mm; font-size: 11px; font-weight: 900; background: #ffffff; }
@@ -398,7 +400,17 @@
 
   {#- ───────── 04+ · 분야별 세특 설계 (재학생, 분야 수는 미호가 전공 닿는 만큼 자율) ───────── #}
   {%- if data.strategy_section.gap_plan %}
+  {#- 창체(활동)를 교과 세특보다 앞에 배치한다(사장님 2026-06-13). #}
+  {%- set _cre = [] %}
+  {%- set _sub = [] %}
   {%- for s in data.strategy_section.gap_plan.subjects %}
+    {%- if ('창체' in s.field) or ('동아리' in s.field) or ('자율' in s.field) or ('자치' in s.field) or ('진로' in s.field) or ('봉사' in s.field) or ('활동' in s.field) %}
+      {%- set _ = _cre.append(s) %}
+    {%- else %}
+      {%- set _ = _sub.append(s) %}
+    {%- endif %}
+  {%- endfor %}
+  {%- for s in (_cre + _sub) %}
   {#- 세특(세부능력 및 특기사항)은 교과 전용 용어다. 창체(자율·동아리·진로·봉사)는 '활동'으로 부른다(사장님 2026-06-13). #}
   {%- set _is_act = ('창체' in s.field) or ('동아리' in s.field) or ('자율' in s.field) or ('진로' in s.field) or ('봉사' in s.field) or ('활동' in s.field) %}
   {%- set _kind = '활동 설계' if _is_act else '세특 설계' %}
@@ -415,9 +427,15 @@
         <p>{{ s.school_direction }}</p>
       </div>
       <div class="gapBlock steps">
-        <div class="lbl">③ 3학년 탐구 설계 — 무엇을 어떤 방법으로</div>
+        <div class="lbl">③ 탐구·활동 설계 — 무엇을 어떤 방법으로</div>
         <ol>{% for st in s.steps %}<li>{{ st }}</li>{% endfor %}</ol>
       </div>
+      {%- if s.expected_effect %}
+      <div class="gapBlock effect">
+        <div class="lbl">④ 평가요소에 어떻게 작용하나 — 기대 효과</div>
+        <p>{{ s.expected_effect }}</p>
+      </div>
+      {%- endif %}
       {%- if s.eval_axis %}
       <div class="axisBadge">연결 평가요소 · {{ s.eval_axis }}</div>
       {%- endif %}
