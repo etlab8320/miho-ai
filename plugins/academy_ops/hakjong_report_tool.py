@@ -204,8 +204,12 @@ _FIELD_KEYWORDS: dict[str, tuple[str, ...]] = {
 
 
 def _field_of(subject: str) -> str:
-    """세부 과목명을 교과 분야로 묶는다 (예: 생활과 과학 → 과학, 운동과 건강 → 체육)."""
+    """세부 과목명을 교과 분야로 묶는다 (예: 생활과 과학 → 과학, 운동과 건강 → 체육).
+    창의적 체험활동(자율·동아리·진로·봉사)은 '창체: …' subject로 적재되므로 별도 '창체'
+    분야로 묶는다 — 학종에서 창체는 교과와 다른 평가 축이다."""
     s = str(subject or "")
+    if s.startswith("창체") or s.startswith("창의적"):
+        return "창체"
     for field, kws in _FIELD_KEYWORDS.items():
         if any(k in s for k in kws):
             return field

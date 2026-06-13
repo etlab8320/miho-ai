@@ -87,7 +87,10 @@ def test_neis_mhtml_tables_extract_full_name_and_rows(tmp_path) -> None:
     assert parsed.extraction["identity"]["class_no"] == "9"
     assert parsed.extraction["identity"]["student_no"] == "11"
     assert len(parsed.extraction["grades"]) == 4
-    assert len(parsed.extraction["notes"]) == 4
+    # 교과 세특 4 + 창의적 체험활동 1 (창체는 표 기반으로 추출돼 notes에 합쳐진다, 2026-06-13)
+    assert len(parsed.extraction["notes"]) == 5
+    creative = [n for n in parsed.extraction["notes"] if str(n["subject"]).startswith("창체:")]
+    assert creative and creative[0]["note_text"] == "스포츠 윤리를 탐구함."
     assert parsed.extraction["attendance"][0]["late_unexcused"] == 1
     assert parsed.extraction["attendance"][1]["late_disease"] == 1
     assert parsed.table_count >= 11
@@ -195,8 +198,9 @@ def test_mhtml_reingest_replaces_superseded_thread_and_central_rows(monkeypatch,
         central_notes = conn.execute("SELECT COUNT(*) FROM central_notes").fetchone()[0]
 
     assert [row[0] for row in documents] == [second_result["document_id"]]
-    assert notes == 4
-    assert central_notes == 4
+    # 교과 세특 4 + 창의적 체험활동 1 (창체 표 기반 추출 합류, 2026-06-13)
+    assert notes == 5
+    assert central_notes == 5
 
 
 def test_mhtml_reingest_removes_same_thread_transfer_duplicate(monkeypatch, tmp_path) -> None:

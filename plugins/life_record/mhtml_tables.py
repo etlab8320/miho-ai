@@ -29,7 +29,7 @@ def extract_neis_mhtml_tables(path: Path) -> NeisMhtmlTables:
         "identity": _extract_identity(raw_text, tables),
         "attendance": _extract_attendance(tables),
         "grades": _extract_grades(tables),
-        "notes": _extract_subject_notes(tables),
+        "notes": _extract_subject_notes(tables) + _extract_creative_activity(tables),
         "awards": [],
     }
     return NeisMhtmlTables(
@@ -273,6 +273,41 @@ def _split_subject_notes(body: str, grade: int) -> list[dict[str, Any]]:
         semester = _semester_prefix(subject)
         subject = re.sub(r"^\(([12])학기\)", "", subject).strip()
         rows.append({"grade": grade or None, "semester": semester, "subject": subject, "note_text": note})
+    return rows
+
+
+_CREATIVE_AREAS = ("자율활동", "자율·자치활동", "동아리활동", "진로활동", "봉사활동")
+
+
+def _extract_creative_activity(tables: list[list[list[str]]]) -> list[dict[str, Any]]:
+    """창의적 체험활동(자율·동아리·진로·봉사)을 표[학년·영역·시간·특기사항]에서 추출한다.
+
+    텍스트 정규식 분리(_extract_sections)는 NEIS mhtml 페이지 순서 꼬임에 취약해 창체 본문이
+    behavior로 뭉쳐 유실됐다(2026-06-13 실사고). 교과 세특처럼 표 기반으로 뽑아 notes에 합치면
+    기존 central_notes 적재 경로로 흘러간다. 학년은 첫 영역 행에만 있고(rowspan) 이후 행은
+    비므로 forward-fill 한다. subject는 '창체: {영역}'으로 교과 세특과 구분한다."""
+    rows: list[dict[str, Any]] = []
+    grade: int | None = None
+    for table in tables:
+        if not table or not table[0]:
+            continue
+        header = " ".join(str(c) for c in table[0])
+        if "영역" not in header or "특기사항" not in header:
+            continue
+        for row in table[1:]:
+            cells = [str(c).strip() for c in row]
+            if cells and cells[0].isdigit():  # 학년 칸이 있으면 갱신, 없으면 직전 학년 유지
+                grade = int(cells[0])
+                cells = cells[1:]
+            if len(cells) < 2:
+                continue
+            area = next((a for a in _CREATIVE_AREAS if a in cells[0]), None)
+            if not area:
+                continue
+            note = _clean(cells[-1])  # 마지막 칸 = 특기사항 (시간 칸은 버린다)
+            if len(note) < 3 or "당해학년도 학교생활기록은 제공하지 않습니다" in note:
+                continue
+            rows.append({"grade": grade, "semester": None, "subject": f"창체: {area}", "note_text": note})
     return rows
 
 
