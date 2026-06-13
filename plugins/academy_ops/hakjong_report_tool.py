@@ -213,10 +213,12 @@ def _field_of(subject: str) -> str:
 
 
 def _student_record_brief(student_name: str) -> dict[str, list[str]]:
-    """학생 생기부 세특을 분야별로 묶어 {분야: ["N학년 과목: 요지", ...]}로 반환한다.
+    """학생 생기부 세특을 분야별로 묶어 {분야: ["N학년 과목: note_text 전문", ...]}로 반환한다.
 
     gap_plan·강점의 일반론을 막는 상담 재료다 — 미호는 이 실제 기록을 출발점으로
     삼아야 한다(사장님 2026-06-13: "상담사처럼 학생을 분석하고 학교에 맞춰라").
+    세특을 48자로 자르면 앞부분 표면("체력측정 우수")만 보이고 알맹이("척주질환 예방법")가
+    잘려 미호가 못 본다(2026-06-13 실사고) — 전문을 그대로 넘겨 깊이 읽게 한다.
     학생을 못 찾으면 빈 dict."""
     if not _CENTRAL_LIFE_DB.exists():
         return {}
@@ -236,18 +238,18 @@ def _student_record_brief(student_name: str) -> dict[str, list[str]]:
         ):
             if not txt or not str(txt).strip():
                 continue
-            snippet = " ".join(str(txt).split())[:48]
-            by_field.setdefault(_field_of(subj), []).append(f"{g}학년 {subj}: {snippet}")
+            full = " ".join(str(txt).split())  # 절단 없음 — 전문을 깊이 읽어야 알맹이가 보인다.
+            by_field.setdefault(_field_of(subj), []).append(f"{g}학년 {subj}: {full}")
     return by_field
 
 
-def _record_brief_text(brief: dict[str, list[str]], *, per_field: int = 2) -> str:
-    """학생 세특 brief를 반려 메시지에 넣을 한 줄 요약으로 압축한다."""
+def _record_brief_text(brief: dict[str, list[str]], **_: Any) -> str:
+    """학생 세특 brief를 반려 메시지용 텍스트로 펼친다 — 분야별 세특 전문을 모두 담아
+    미호가 표면이 아니라 탐구의 알맹이를 발굴하게 한다(사장님 2026-06-13: 깊이 읽기)."""
     chunks: list[str] = []
     for field, items in brief.items():
-        sample = "; ".join(items[:per_field])
-        chunks.append(f"[{field}] {sample}")
-    return " / ".join(chunks)
+        chunks.append(f"[{field}] " + " | ".join(items))
+    return "\n".join(chunks)
 
 
 def _content_text(content: dict[str, Any]) -> str:
@@ -864,7 +866,10 @@ def register_hakjong_report_tool(ctx: Any) -> None:
         description=(
             "너는 입시 상담사다. 이 리포트는 일반 조언 출력기가 아니라 이 학생 한 명을 위한 맞춤 상담이다 — "
             "학생마다 답이 같으면 있으나 마나다. 작성 순서: "
-            "①학생 분석(life_record_lookup/search/summary로 실제 세특·창체·성적·적성을 분야별로 읽는다) → "
+            "①학생 분석 — life_record_lookup/search/summary로 세특 전문을 한 문항씩 끝까지 정독한다. "
+            "한 세특 안에도 활동이 여러 개고 진짜 알맹이는 뒷부분에 있을 수 있다(예: '체력측정 우수' 다음에 "
+            "'연령대별 척주질환 예방법 설계', 영어 세특 안에 '운동 데이터 분석 프로젝트'). 과목명·앞 문장 같은 "
+            "표면이 아니라 전공에 닿는 구체 활동을 끝까지 읽어 발굴하라 → "
             "②학교/학과 분석(hakjong_qualitative_profile로 평가축·그 학과가 원하는 세특 방향) → "
             "③강점 살리기(학생의 어느 실제 기록이 학과 어느 평가요소에 먹히는지 1:1로 짚는다) → "
             "④약점 보완(학과가 원하는 방향에 학생 기록이 이미 닿아 있으면 그걸 디벨롭하고, 닿은 게 없으면 그 분야에서 새 세특을 설계한다) → "
