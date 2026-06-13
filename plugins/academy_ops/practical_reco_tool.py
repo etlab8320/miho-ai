@@ -22,6 +22,7 @@ from miho_constants import get_miho_home
 
 from .brand_assets import academy_brand_logo_src
 from . import hakjong_report_contract as _contract
+from .pdf_autocorrect import autocorrect as _autocorrect
 from .hakjong_report_contract import BRAND_TEXT
 from .practical_reco_schema import validate_content
 from .report_fonts import report_font_css
@@ -169,6 +170,11 @@ def _practical_reco_package_tool_handler(args: dict[str, Any] | None = None, **_
             {"ok": False, "errors": ["content는 dict(또는 JSON 문자열)여야 한다. JSON 객체 형태로 다시 보내라."], "warnings": [], "checks": {}},
             ensure_ascii=False,
         )
+
+    # Step 0: 텍스트 길이 상한으로 페이지 잘림 자동 방지. comparison.rows/schools는
+    # 환산점수 핵심 데이터라 빈칸 행을 제거하지 않는다(빈칸=반려 유지). 학교 카드
+    # 본문 등 긴 서술만 절단된다.
+    content = _autocorrect(content, table_specs=[], char_limit=_contract.MAX_VISIBLE_TEXT_SEGMENT_CHARS)
 
     # Step 1: schema + quality validation
     ok, schema_errors = validate_content(content, evidence_tools=evidence_tools)
