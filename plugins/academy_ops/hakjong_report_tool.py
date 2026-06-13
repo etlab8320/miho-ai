@@ -40,8 +40,11 @@ def _kst_today() -> str:
     return datetime.now(_KST).date().isoformat()
 
 
-def _render_html(content: dict[str, Any]) -> str:
-    """Render the fixed shell template with the given content dict."""
+def _render_html(content: dict[str, Any], body_class: str = "") -> str:
+    """Render the fixed shell template with the given content dict.
+
+    body_class("compact1"/"compact2")는 한 섹션이 한 장을 넘칠 때 패딩·여백을 줄여
+    한 장에 맞추는 압축 단계다(footer는 하단 고정 유지)."""
     template_src = _TEMPLATE_PATH.read_text(encoding="utf-8")
     env = jinja2.Environment(
         loader=jinja2.BaseLoader(),
@@ -58,7 +61,29 @@ def _render_html(content: dict[str, Any]) -> str:
         brand_text=_BRAND_TEXT,
         report_date=_kst_today(),
         data=content,
+        body_class=body_class,
     )
+
+
+# 리포트 섹션 수 = 표지+전형+진단+전략 = 4페이지가 목표. 한 섹션이 넘쳐 페이지가
+# 늘면 compact 단계를 올려 한 장에 다시 맞춘다(사장님 2026-06-13: 넘치면 패딩 자동 축소).
+_REPORT_PAGE_TARGET = 4
+_COMPACT_STEPS = ("", "compact1", "compact2")
+
+
+def _render_pdf_fit(
+    content: dict[str, Any], packaged_html: Path, packaged_pdf: Path
+) -> str:
+    """페이지가 목표를 넘치면 compact를 올려 재렌더한다. 채택한 html을 반환한다."""
+    html = _render_html(content)
+    for body_class in _COMPACT_STEPS:
+        html = _render_html(content, body_class=body_class)
+        packaged_html.write_text(html, encoding="utf-8")
+        _chromium_print_to_pdf(packaged_html, packaged_pdf)
+        pages = _contract._pdf_info(packaged_pdf).get("pages")
+        if not pages or int(pages) <= _REPORT_PAGE_TARGET:
+            break
+    return html
 
 
 def _chromium_print_to_pdf(html_path: Path, pdf_path: Path) -> None:
@@ -711,10 +736,9 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
     # resolve collision
     packaged_html, packaged_pdf = _unique_pair(packaged_html, packaged_pdf)
 
-    packaged_html.write_text(html, encoding="utf-8")
-
     try:
-        _chromium_print_to_pdf(packaged_html, packaged_pdf)
+        # 페이지가 4장을 넘치면 compact 단계를 올려 한 장에 다시 맞춘다(footer는 하단 고정).
+        html = _render_pdf_fit(content, packaged_html, packaged_pdf)
     except RuntimeError as exc:
         packaged_html.unlink(missing_ok=True)
         return json.dumps(

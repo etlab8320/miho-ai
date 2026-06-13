@@ -65,22 +65,30 @@
       overflow-wrap: anywhere; word-break: keep-all;
     }
     .page {
-      width: 210mm;
-      /* block 흐름 + 자연 높이 — 내용이 한 장을 넘으면 다음 장으로 흐른다(사장님 2026-06-13:
-         내용 깊이를 페이지 수가 따라가게). min-height:297mm를 두면 4섹션이 정확히 4페이지를 채워
-         초과분이 경계에서 잘리므로 높이를 고정하지 않는다. flex column도 Chromium이 컨테이너를
-         단일 페이지로 묶어 분할을 막으므로 쓰지 않는다. 섹션은 page-break-after로 새 장에서 시작한다. */
+      width: 210mm; min-height: 297mm;
+      /* flex column + min-height — footer를 margin-top:auto로 페이지 하단에 고정한다.
+         한 섹션이 한 장을 넘치면 _render_html의 compact 단계(body.compact1/2)가 패딩·여백·폰트를
+         줄여 한 장에 맞춘다(사장님 2026-06-13: footer는 항상 하단, 넘치면 자동 압축). */
       padding: 14mm 16mm 12mm;
       page-break-after: always; break-after: page;
+      display: flex; flex-direction: column; gap: 6mm;
     }
     .page:last-child { page-break-after: auto; break-after: auto; }
-    /* flex gap을 대신하는 직계 자식 간격. */
-    .page > * + * { margin-top: 6mm; }
-    /* 흐름형 전환 시 표·카드가 페이지 경계에서 두 동강 나지 않게 한다. */
+    /* 표·카드가 페이지 경계에서 두 동강 나지 않게. */
     .table, tr, .actionCard, .gaugeCard, .pointBox, .keyJudgment, .finalBox,
     .checkBox, .gapMain, .identityCard, .infoCard, .diagCard {
       break-inside: avoid; page-break-inside: avoid;
     }
+    /* 내용이 한 장을 넘칠 때 도구가 단계적으로 적용하는 압축 — footer는 하단 유지. */
+    body.compact1 .page { padding: 10mm 14mm 10mm; gap: 4mm; }
+    body.compact1 .table th, body.compact1 .table td { padding: 2.3mm 2.6mm; }
+    body.compact1 .actionCard, body.compact1 .pointBox, body.compact1 .infoCard,
+    body.compact1 .metricCard, body.compact1 .gapMain { padding: 4mm; }
+    body.compact2 .page { padding: 8mm 12mm 9mm; gap: 3mm; }
+    body.compact2 .table th, body.compact2 .table td { padding: 1.8mm 2.2mm; font-size: 10px; }
+    body.compact2 p { font-size: 10.6px; }
+    body.compact2 .actionCard, body.compact2 .pointBox, body.compact2 .infoCard,
+    body.compact2 .metricCard, body.compact2 .gapMain, body.compact2 .keyJudgment { padding: 3.5mm; }
     .topbar {
       display: flex; align-items: center; justify-content: space-between;
       border-bottom: 1px solid var(--max-line); padding-bottom: 4mm;
@@ -215,7 +223,7 @@
 {%- macro footer(left_text, right_text) %}
     <div class="footer"><span>{{ left_text }}</span><span>{{ right_text }}</span></div>
 {%- endmacro %}
-<body class="maxReport">
+<body class="maxReport{% if body_class %} {{ body_class }}{% endif %}">
 
   {#- ───────── 표지 ───────── #}
   <section class="page">
