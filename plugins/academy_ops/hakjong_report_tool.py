@@ -162,6 +162,67 @@ _CENTRAL_LIFE_DB = Path("~/.miho/life_records/central.sqlite3").expanduser()
 
 _STAGE_KO = {"grade1": "고1", "grade2": "고2", "grade3": "고3", "graduate": "N수생/졸업"}
 
+# 교과 분야 — 생기부엔 학생이 앞으로 무슨 과목을 들을지 안 나온다(사장님 2026-06-13).
+# 그래서 세특 조언은 세부 과목이 아니라 분야 단위로 한다. 학생이 이미 기록을 가진
+# 세부 과목만 그 과목에서 디벨롭한다.
+_FIELD_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "국어": ("국어", "문학", "독서", "화법", "작문", "언어"),
+    "영어": ("영어", "영독", "영어권"),
+    "수학": ("수학", "미적", "확률", "통계", "기하", "대수"),
+    "과학": ("과학", "물리", "화학", "생명", "지구", "융합"),
+    "사회": ("사회", "지리", "역사", "한국사", "세계사", "정치", "법", "경제", "윤리", "사상", "문화", "탐구"),
+    "체육": ("체육", "운동", "스포츠"),
+    "예술": ("음악", "미술", "연주", "창작", "감상", "디자인", "연극"),
+    "기타": ("기술", "가정", "정보", "한문", "중국어", "일본어", "외국어", "교양", "진로", "보건"),
+}
+
+
+def _field_of(subject: str) -> str:
+    """세부 과목명을 교과 분야로 묶는다 (예: 생활과 과학 → 과학, 운동과 건강 → 체육)."""
+    s = str(subject or "")
+    for field, kws in _FIELD_KEYWORDS.items():
+        if any(k in s for k in kws):
+            return field
+    return "기타"
+
+
+def _student_record_brief(student_name: str) -> dict[str, list[str]]:
+    """학생 생기부 세특을 분야별로 묶어 {분야: ["N학년 과목: 요지", ...]}로 반환한다.
+
+    gap_plan·강점의 일반론을 막는 상담 재료다 — 미호는 이 실제 기록을 출발점으로
+    삼아야 한다(사장님 2026-06-13: "상담사처럼 학생을 분석하고 학교에 맞춰라").
+    학생을 못 찾으면 빈 dict."""
+    if not _CENTRAL_LIFE_DB.exists():
+        return {}
+    import sqlite3
+
+    by_field: dict[str, list[str]] = {}
+    with sqlite3.connect(_CENTRAL_LIFE_DB) as db:
+        row = db.execute(
+            "SELECT id FROM students WHERE name = ? OR name LIKE ? LIMIT 1",
+            (student_name, f"%{student_name}%"),
+        ).fetchone()
+        if not row:
+            return {}
+        for g, subj, txt in db.execute(
+            "SELECT grade, subject, note_text FROM central_notes WHERE student_id = ? ORDER BY grade",
+            (row[0],),
+        ):
+            if not txt or not str(txt).strip():
+                continue
+            snippet = " ".join(str(txt).split())[:48]
+            by_field.setdefault(_field_of(subj), []).append(f"{g}학년 {subj}: {snippet}")
+    return by_field
+
+
+def _record_brief_text(brief: dict[str, list[str]], *, per_field: int = 2) -> str:
+    """학생 세특 brief를 반려 메시지에 넣을 한 줄 요약으로 압축한다."""
+    chunks: list[str] = []
+    for field, items in brief.items():
+        sample = "; ".join(items[:per_field])
+        chunks.append(f"[{field}] {sample}")
+    return " / ".join(chunks)
+
 
 def _content_text(content: dict[str, Any]) -> str:
     parts: list[str] = []
@@ -234,6 +295,10 @@ def _grounding_errors(
 ) -> list[str]:
     errors: list[str] = []
     text = _content_text(content)
+    # 상담 재료 — 학생 실제 세특을 분야별로 읽어 두고, gap_plan·강점이 일반론이면
+    # 이 기록을 출발점으로 제시하며 반려한다(사장님 2026-06-13: "상담사처럼").
+    brief = _student_record_brief(student_name)
+    brief_text = _record_brief_text(brief) if brief else ""
 
     # A. 생기부 실제 과목 인용 — 학생을 못 찾으면 검증 불가이므로 건너뛴다.
     subjects: set[str] = set()
@@ -312,17 +377,22 @@ def _grounding_errors(
                 )
                 errors.append(
                     f"{_gap_lead} "
-                    "content.strategy_section.gap_plan.subjects(3개 이상)를 채우되, 각 direction은 "
-                    "hakjong_qualitative_profile의 subject_specific_notes(과목별 방향)와 학생의 실제 과목·기록을 "
-                    "연결해 '무엇을 어떤 방법으로'까지 40자 이상 구체적으로 써라(측정·분석·통계·그래프·탐구·설계 등 "
-                    "실행 방법어 포함). '탐구 연결'·'출결 정리' 같은 추상 한 줄은 반려된다. "
-                    "예: "
+                    "이건 일반 조언이 아니라 이 학생만의 맞춤 상담이어야 한다 — 학생마다 답이 같으면 의미가 없다. "
+                    "gap_plan.subjects(3개 이상)는 ①국어·영어·수학·과학·사회·체육 등 '분야' 단위로 잡되"
+                    "(생기부엔 학생이 앞으로 들을 세부 과목이 없으니 세부 과목명을 못박지 마라), "
+                    "②학생이 이미 기록을 가진 과목은 그 과목에서 디벨롭한다. "
+                    "각 direction은 그 학과(hakjong_qualitative_profile)가 원하는 방향과 학생의 실제 세특을 연결해 "
+                    "'무엇을 어떤 방법으로'까지 40자 이상 구체적으로 써라(측정·분석·통계·그래프·탐구·설계 등 실행 방법어 포함). "
+                    "학과가 원하는 방향에 학생 기록이 닿아 있으면 디벨롭, 닿은 게 없으면 그 분야에서 새로 설계한다. "
+                    "'탐구 연결'·'출결 정리' 같은 추상 한 줄은 반려된다. "
+                    + (f"이 학생의 실제 세특이다 — 반드시 출발점으로 써라: {brief_text}. " if brief_text else "")
+                    + "예: "
                     '{"gap_plan": {"title": "3학년 1학기 세특 설계", "subjects": ['
-                    '{"subject": "생명과학", "direction": "운동 후 회복 심박수와 피로도를 측정·기록해 확률과통계로 그래프화하고 '
-                    '염증·회복 단원과 연결해 운동생리 탐구로 발전시킨다"}, '
-                    '{"subject": "체육", "direction": "준비운동·재활 루틴을 동작 분석해 부상 위험 요인을 정리하고 또래 지도 '
-                    '기록으로 전공 적합성을 보강한다"}, '
-                    '{"subject": "사회문제탐구", "direction": "지역 생활체육 시설 접근성을 조사·비교해 개선안을 보고서로 정리하고 '
+                    '{"subject": "과학", "direction": "생활과 과학에서 보인 운동 역학 관심을 살려, 운동 후 회복 심박수를 측정·기록하고 '
+                    '그래프로 분석해 근골격계·에너지대사와 연결한 운동손상 탐구로 디벨롭한다"}, '
+                    '{"subject": "체육", "direction": "운동과 건강의 체력측정 우수 기록을 출발점으로 종목별 약점을 분석해 '
+                    '손상 예방 트레이닝을 설계한 보고서로 발전시킨다"}, '
+                    '{"subject": "사회", "direction": "지역 생활체육 시설 접근성을 조사·비교해 개선안을 보고서로 정리하고 '
                     '공동체역량과 연결한다"}]}}'
                 )
             if grade == 3 and not has_current:
@@ -466,6 +536,7 @@ def _grounding_errors(
                         "세특·창체 기록이 어느 평가요소의 근거가 되는지 1:1로 짚어라 "
                         "(예: '2학년 운동과 건강 세특의 마그누스 효과 탐구가 진로역량 근거가 된다'). "
                         f"이 대학 평가축: {sample}"
+                        + (f". 이 학생 실제 세특(이 중에서 골라 평가축에 연결하라): {brief_text}" if brief_text else "")
                     )
 
             ident = (uni_name, str(university.get("department") or ""), str(university.get("track") or ""))
@@ -766,6 +837,16 @@ def register_hakjong_report_tool(ctx: Any) -> None:
         },
         handler=_hakjong_report_package_tool_handler,
         description=(
+            "너는 입시 상담사다. 이 리포트는 일반 조언 출력기가 아니라 이 학생 한 명을 위한 맞춤 상담이다 — "
+            "학생마다 답이 같으면 있으나 마나다. 작성 순서: "
+            "①학생 분석(life_record_lookup/search/summary로 실제 세특·창체·성적·적성을 분야별로 읽는다) → "
+            "②학교/학과 분석(hakjong_qualitative_profile로 평가축·그 학과가 원하는 세특 방향) → "
+            "③강점 살리기(학생의 어느 실제 기록이 학과 어느 평가요소에 먹히는지 1:1로 짚는다) → "
+            "④약점 보완(학과가 원하는 방향에 학생 기록이 이미 닿아 있으면 그걸 디벨롭하고, 닿은 게 없으면 그 분야에서 새 세특을 설계한다) → "
+            "⑤학교에 맞춘다. "
+            "세특 조언은 세부 과목명이 아니라 국어·영어·수학·과학·사회·체육 등 분야 단위로 하되"
+            "(생기부엔 학생이 앞으로 들을 과목이 없으니 안 들을 수도 있는 과목을 못박지 마라), "
+            "이미 기록을 가진 과목만 그 과목에서 디벨롭한다. "
             "내용 JSON만 주면 껍데기(로고/푸터/브랜딩)는 고정 템플릿이 보장한다. "
             "학교별 학종 패키지(susi27_rule_lookup)와 생기부(life_record_lookup/search/summary)를 "
             "근거로 섹션 내용을 작성하라. "
