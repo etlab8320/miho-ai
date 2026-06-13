@@ -183,6 +183,9 @@
     }
     .finalBox .title { font-size: 13px; font-weight: 900; }
     .finalBox .body { font-size: 12.3px; font-weight: 800; line-height: 1.6; color: var(--max-ink); }
+    .gapMain { border: 1.5px solid var(--max-accent); border-radius: 14px; padding: 5mm; background: #f6faff; margin-bottom: 1mm; }
+    .gapTitle { font-size: 13.5px; font-weight: 900; color: var(--max-accent); margin-bottom: 2.5mm; }
+    .gapTable td { font-size: 10.8px; line-height: 1.5; }
     .checkBox { border: 1px solid var(--max-line); border-radius: 14px; padding: 5mm; background: #fbfcfe; }
     .checkBox .title { font-size: 12px; font-weight: 900; margin-bottom: 2mm; }
     .checkBox ul { margin: 0 0 2.5mm; padding-left: 15px; }
@@ -316,6 +319,19 @@
     {{ topbar("03 · 보완 전략") }}
     <h2>{{ data.strategy_section.heading }}</h2>
 
+    {%- if data.strategy_section.gap_plan %}
+    {#- 세특 설계 = 재학생 리포트의 핵심. 페이지 상단 메인 표로 크게 (사장님 2026-06-13). #}
+    <div class="gapMain">
+      <div class="gapTitle">{{ data.strategy_section.gap_plan.title }}</div>
+      <table class="table gapTable">
+        <tr><th style="width:20%">과목</th><th>남은 학기 세특 설계 — 무엇을 어떤 방법으로</th></tr>
+        {% for row in data.strategy_section.gap_plan.subjects %}
+        <tr><td class="head">{{ row.subject }}</td><td>{{ row.direction }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    {%- endif %}
+
     <div class="actionGrid">
       {% for a in data.strategy_section.actions %}
       <div class="actionCard"><div class="title">{{ loop.index }}. {{ a.title }}</div><p>{{ a.body }}</p></div>
@@ -334,18 +350,8 @@
       <div class="body">{{ data.strategy_section.final_judgment.body }}</div>
     </div>
 
-    {%- if data.strategy_section.gap_plan %}
-    {#- 세특 미입력 학생: 채움 설계가 체크리스트 자리를 대신한다 (페이지 1장 고정 보호) #}
-    <div class="checkBox">
-      <div class="title">{{ data.strategy_section.gap_plan.title }}</div>
-      <table class="table">
-        <tr><th style="width:28%">과목</th><th>세특 설계 방향</th></tr>
-        {% for row in data.strategy_section.gap_plan.subjects %}
-        <tr><td class="head">{{ row.subject }}</td><td>{{ row.direction }}</td></tr>
-        {% endfor %}
-      </table>
-    </div>
-    {%- else %}
+    {%- if not data.strategy_section.gap_plan %}
+    {#- N수생·졸업생: 세특 설계 대신 체크리스트 (gap_plan은 위에서 메인으로 렌더됨) #}
     <div class="checkBox">
       <div class="title">{{ data.strategy_section.checklist.title }}</div>
       <ul>{% for b in data.strategy_section.checklist.bullets %}<li>{{ b }}</li>{% endfor %}</ul>
