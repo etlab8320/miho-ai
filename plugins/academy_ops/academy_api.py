@@ -162,6 +162,42 @@ class AcademyApiClient:
         records = payload.get("records") if isinstance(payload, dict) else None
         return [item for item in records or [] if isinstance(item, dict)]
 
+    def request_path(
+        self,
+        http_method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        json_body: dict | None = None,
+    ) -> Any:
+        """API 지도(map call) 전용 generic 호출 — 화이트리스트 검증은 호출자 책임."""
+        url = f"{self._base_url}{path}"
+        headers = {"Authorization": f"Bearer {self._token}"}
+        try:
+            with httpx.Client(
+                timeout=self._timeout,
+                follow_redirects=True,
+                transport=self._transport,
+            ) as client:
+                response = client.request(
+                    http_method.upper(), url, params=params, json=json_body, headers=headers
+                )
+        except httpx.HTTPError as exc:
+            raise AcademyApiError("학원 서버에 연결하지 못했어. 잠시 후 다시 시도해줘.") from exc
+        if response.status_code in {401, 403}:
+            raise AcademyApiError("학원 계정 연결이 만료된 것 같아. `/academy login`으로 다시 연결해줘.")
+        if response.status_code == 404:
+            raise AcademyApiError(f"학원 서버에 {path} 경로가 없어. 지도(map_search)를 다시 확인해줘.")
+        if response.status_code == 409:
+            raise AcademyApiError(_conflict_message(response))
+        if response.status_code >= 500:
+            raise AcademyApiError("학원 서버가 잠시 불안정해. 잠시 후 다시 시도해줘.")
+        try:
+            response.raise_for_status()
+            return response.json() if response.content else {"ok": True}
+        except (httpx.HTTPError, ValueError) as exc:
+            raise AcademyApiError("학원 서버 응답을 확인하지 못했어. 잠시 후 다시 시도해줘.") from exc
+
     def _get(self, path: str, params: dict[str, str] | None = None) -> Any:
         url = f"{self._base_url}{path}"
         headers = {"Authorization": f"Bearer {self._token}"}
