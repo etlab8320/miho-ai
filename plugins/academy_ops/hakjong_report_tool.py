@@ -26,6 +26,7 @@ from . import hakjong_report_contract as _contract
 from .pdf_autocorrect import autocorrect as _autocorrect
 from .hakjong_report_contract import BRAND_TEXT
 from .hakjong_report_schema import validate_content
+from .hakjong_stage_contract import normalize_student_stage
 from .report_fonts import report_font_css
 from .student_card_capture import find_browser_executable
 
@@ -159,6 +160,8 @@ def _university_names_from_content(content: dict[str, Any]) -> list[str]:
 # 생기부·전형 DB를 읽고 본문이 실제 데이터에 발 딛고 있는지 확인해야 한다.
 _CENTRAL_LIFE_DB = Path("~/.miho/life_records/central.sqlite3").expanduser()
 
+_STAGE_KO = {"grade1": "고1", "grade2": "고2", "grade3": "고3", "graduate": "N수생/졸업"}
+
 
 def _content_text(content: dict[str, Any]) -> str:
     parts: list[str] = []
@@ -178,11 +181,50 @@ def _content_text(content: dict[str, Any]) -> str:
 
 
 def _stage_grade(student_stage: str) -> int | None:
-    stage = student_stage.strip().lower()
-    for n in (1, 2, 3):
-        if stage in (f"grade{n}", f"고{n}"):
-            return n
-    return None
+    # normalize_student_stage가 '3학년'·'고3'·'grade3' 등 정형 표기를 grade3로 모은다 —
+    # 직접 문자열 비교(과거 버그: '3학년'→None)를 대체한다.
+    norm = normalize_student_stage(student_stage)
+    grade = {"grade1": 1, "grade2": 2, "grade3": 3}.get(norm)
+    if grade or norm == "graduate":
+        return grade  # graduate는 None (재학 학년 없음)
+    # 자유표기 폴백: '고등학교 3학년' 등 alias에 없는 표현.
+    m = re.search(r"([1-3])\s*학년", student_stage)
+    return int(m.group(1)) if m else None
+
+
+def _infer_stage_from_birth(student_name: str) -> str | None:
+    """생기부 students.birth_masked(YYMMDD)와 현재 학년도로 학생 단계를 판정한다.
+
+    미호의 자기신고 stage는 추측이라 재학생을 N수로(또는 그 반대로) 오판할 수 있다
+    (사장님 2026-06-13: 서연을 graduate로 본 건 우연). 생년이 있으면 그게 단일
+    진실원이다 — 고3의 출생 코호트연도 = 현재 학년도 - 18. 빠른생일(1·2월생)은
+    한 해 위 코호트로 보정한다. 학생을 못 찾으면 None(미호 자기신고로 폴백)."""
+    if not _CENTRAL_LIFE_DB.exists():
+        return None
+    import sqlite3
+
+    with sqlite3.connect(_CENTRAL_LIFE_DB) as db:
+        row = db.execute(
+            "SELECT birth_masked FROM students WHERE name = ? OR name LIKE ? LIMIT 1",
+            (student_name, f"%{student_name}%"),
+        ).fetchone()
+    if not row or not row[0]:
+        return None
+    digits = "".join(ch for ch in str(row[0]) if ch.isdigit())
+    if len(digits) < 4:
+        return None
+    birth_year = 2000 + int(digits[:2])
+    month = int(digits[2:4])
+
+    now = datetime.now(_KST)
+    # 학년도는 3월 시작 — 1·2월은 아직 직전 학년도다.
+    school_year = now.year if now.month >= 3 else now.year - 1
+    # 빠른생일: 1·2월생은 한 해 빠른 입학 코호트에 속한다.
+    cohort_year = birth_year if month >= 3 else birth_year - 1
+    delta = (school_year - 18) - cohort_year  # 0=고3, -1=고2, -2=고1, ≥1=졸업
+    if delta >= 1:
+        return "graduate"
+    return {0: "grade3", -1: "grade2", -2: "grade1"}.get(delta)
 
 
 def _grounding_errors(
@@ -292,6 +334,30 @@ def _grounding_errors(
                         "그 위에서 디벨롭 방향을 제시해라."
                     )
 
+    # B-2. N수생/졸업생: 세특 설계 금지 (사장님 2026-06-13). 생기부가 완성돼 세특을
+    # 더 못 바꾸므로 gap_plan(세특 설계)과 '세특을 ~로 채워라' 류 미래 지시는 반려한다.
+    # 이 단계의 리포트는 ①이 학교 지원 가능성 판단 ②면접 방어, 이 둘만이다.
+    if normalize_student_stage(student_stage) == "graduate":
+        strat = content.get("strategy_section") or {}
+        gap = strat.get("gap_plan")
+        if isinstance(gap, dict) and gap:
+            errors.append(
+                "N수생/졸업생은 생기부가 완성돼 세특을 더 바꿀 수 없다 — "
+                "strategy_section.gap_plan(세특 설계)을 빼라. 대신 기존 세특·창체를 이 학교 평가 "
+                "언어로 재해석하고, 면접이 있으면 면접 방어 전략을 리포트의 중심에 둬라."
+            )
+        # 끝난 생기부를 미래에 바꾸라는 설계 언어만 잡는다(과거 기록 재해석은 허용).
+        m = re.search(
+            r"세특[을를]?\s*[^.。\n]{0,40}?(정리하|재구성|재정렬|채워|채우|설계|디벨롭|보강|발전시키|만들)",
+            _content_text(strat),
+        )
+        if m:
+            errors.append(
+                f"N수생 리포트에 세특을 바꾸라는 설계 언어가 있다(\"…{m.group(0)[:30]}…\") — "
+                "끝난 생기부는 못 고친다. '세특을 어떻게 채울지'가 아니라 '이미 있는 기록이 이 학교 "
+                "평가축에 어떻게 먹히는지'와 면접 답변으로 다시 써라."
+            )
+
     # C. 대학 전형 DB 수치 인용 — 모집인원이 DB에 있으면 본문에 반드시 등장해야 한다.
     university = content.get("university") or {}
     uni_name = str(university.get("name") or "").strip()
@@ -378,6 +444,30 @@ def _grounding_errors(
             prof_rows = []
         if prof_rows:
             prof = prof_rows[0]
+
+            # E. 강점-평가축 연결 (사장님 2026-06-13 ★최우선) — 강점 분석(강점 박스 +
+            # 전형 강점)이 이 대학 평가요소에 1:1로 걸려야 한다. 학생의 실제 세특·창체가
+            # 어느 역량(학업·진로·공동체·발전가능성)의 근거인지 짚지 않으면 추상 일반론이다.
+            # N수생·재학생 공통 (N수생도 '기존 강점이 이 학교에 어떻게 먹히는지'가 핵심).
+            axes = _evaluation_axes(prof.get("evaluation_elements"))
+            if axes:
+                diag = content.get("diagnosis_section") or {}
+                track = content.get("track_section") or {}
+                strength_text = (
+                    _content_text(diag.get("strength"))
+                    + " "
+                    + _content_text(track.get("strong_points"))
+                )
+                if not any(a in strength_text for a in axes):
+                    sample = ", ".join(sorted(axes))
+                    errors.append(
+                        f"강점 분석이 {uni_name}의 평가축에 연결돼 있지 않다 — "
+                        "diagnosis_section.strength와 track_section.strong_points에서 학생의 구체적 "
+                        "세특·창체 기록이 어느 평가요소의 근거가 되는지 1:1로 짚어라 "
+                        "(예: '2학년 운동과 건강 세특의 마그누스 효과 탐구가 진로역량 근거가 된다'). "
+                        f"이 대학 평가축: {sample}"
+                    )
+
             ident = (uni_name, str(university.get("department") or ""), str(university.get("track") or ""))
             keywords = [
                 str(k).strip()
@@ -417,10 +507,38 @@ def _is_specific_direction(value: Any) -> bool:
     return len(text) >= 40 and any(w in text for w in _METHOD_WORDS)
 
 
+def _evaluation_axes(elements: Any) -> set[str]:
+    """정성 프로필 evaluation_elements에서 평가요소 용어(○○역량·발전가능성)를 뽑는다."""
+    axes: set[str] = set()
+    if not isinstance(elements, list):
+        return axes
+    for el in elements:
+        ax = el.get("평가축") if isinstance(el, dict) else None
+        if not isinstance(ax, str):
+            continue
+        for word in re.findall(r"[가-힣]{2,}역량", ax):
+            axes.add(word)
+        if "발전가능성" in ax:
+            axes.add("발전가능성")
+    return axes
+
+
 def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     payload = args or {}
     student_name = str(payload.get("student_name") or "").strip()
     student_stage = str(payload.get("student_stage") or "").strip()
+
+    # 단계는 미호의 추측이 아니라 생기부 생년이 결정한다(사장님 2026-06-13).
+    # 생년으로 판정되면 그게 권위 있는 stage — 미호 자기신고를 덮어쓰고, 모순이면
+    # 경고를 남겨 미호가 stage 인자를 맞춰 재호출하게 한다.
+    inferred_stage = _infer_stage_from_birth(student_name)
+    stage_conflict: tuple[str, str] | None = None
+    if inferred_stage:
+        reported = normalize_student_stage(student_stage)
+        if reported and reported != inferred_stage:
+            stage_conflict = (reported, inferred_stage)
+        student_stage = inferred_stage
+
     content = payload.get("content")
     if isinstance(content, str):
         # LLM이 JSON 문자열로 보내는 경우가 흔하다 — 파싱해서 받아준다.
@@ -471,6 +589,16 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
         )
 
     grounding = _grounding_errors(student_name, student_stage, content)
+    if stage_conflict:
+        reported, inferred = stage_conflict
+        grounding.insert(
+            0,
+            f"학생 단계가 어긋난다 — 미호가 보낸 단계는 {_STAGE_KO.get(reported, reported)}인데 "
+            f"생기부 생년으로는 {_STAGE_KO.get(inferred, inferred)}다. 생년이 정답이니 "
+            f"student_stage를 '{inferred}'로 고치고, 그 단계에 맞는 내용으로 다시 호출하라"
+            + (" (N수생/졸업생은 세특 설계 금지 — 가능성 판단 + 면접 정리만)."
+               if inferred == "graduate" else ".")
+        )
     if grounding:
         return json.dumps(
             {
@@ -652,8 +780,14 @@ def register_hakjong_report_tool(ctx: Any) -> None:
             "생명과학 염증·회복 단원과 연결'. 통계·측정·실험·조사·탐구 같은 실행 방법을 명시한다. "
             "학년별로 내용이 달라야 한다: ①세특 채울 학기가 남은 학생(고1·고2·고3 1학기 전)은 "
             "이전 세특을 토대로 '남은 학기에 무엇을 어떻게 채울지'(strategy_section.gap_plan)가 리포트의 중심이다. "
-            "②고3 완성·N수생은 채울 세특이 없으니 기존 기록을 학교 평가 언어로 재해석하고 면접 방어 전략을 중심에 둔다. "
+            "②고3 완성·N수생/졸업생은 채울 세특이 없으니 gap_plan(세특 설계)을 절대 넣지 말고 "
+            "'세특을 ~로 채워라/정리해라' 류 미래 지시도 쓰지 마라 — 기존 세특·창체를 학교 평가 언어로 "
+            "재해석하고, 이 학교 지원 가능성 판단 + 면접 방어 전략을 리포트의 중심에 둔다. "
             "③고1 1학기(생기부 없음)는 상담 내용 기반 시작 설계. "
+            "★강점 분석(diagnosis_section.strength·track_section.strong_points)은 추상 칭찬이 아니라 "
+            "학생의 실제 세특·창체 기록을 인용해 그것이 이 대학 평가요소(학업역량·진로역량·공동체역량 등)의 "
+            "어느 근거가 되는지 1:1로 연결하고, 면접에서 그 활동을 어떻게 설명하면 강점이 되는지까지 짚어라. "
+            "단계(student_stage)는 추측하지 마라 — 도구가 생기부 생년으로 자동 판정해 덮어쓴다. "
             "검증 통과한 PDF만 ~/.miho/media_cache/susi_student_record/validated 로 승격하고 "
             "media_tag를 반환한다."
         ),
