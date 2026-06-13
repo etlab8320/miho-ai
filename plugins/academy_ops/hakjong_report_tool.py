@@ -258,8 +258,12 @@ def _grounding_errors(
             if not ok_gap:
                 errors.append(
                     f"이 학생은 {grade}학년 세특이 아직 입력되지 않았다 — 공백을 채울 설계가 리포트의 핵심이다. "
-                    "strategy_section.gap_plan{title, subjects[{subject, direction}] 3개 이상}을 채워라: "
-                    "과목마다 어떤 탐구·활동 방향으로 세특을 만들어갈지, 지원 학과와 연결해 구체적으로."
+                    "content.strategy_section.gap_plan을 아래 형태 그대로 채워라(subjects 3개 이상, "
+                    "각 항목의 subject·direction 모두 비우지 말 것): "
+                    '{"gap_plan": {"title": "3학년 1학기 세특 설계", "subjects": ['
+                    '{"subject": "생명과학", "direction": "운동 후 회복·피로도 탐구를 운동생리·재활로 연결"}, '
+                    '{"subject": "체육", "direction": "동작 분석·또래 지도 기록으로 전공 적합성 강화"}, '
+                    '{"subject": "사회문제탐구", "direction": "생활체육 접근성 조사로 공동체역량 연결"}]}}'
                 )
             if grade == 3:
                 prior = [str(g) + "학년" for g in sorted(note_grades)]
