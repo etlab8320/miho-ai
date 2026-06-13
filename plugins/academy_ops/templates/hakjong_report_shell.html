@@ -413,7 +413,8 @@
   {%- for s in (_cre + _sub) %}
   {#- 세특(세부능력 및 특기사항)은 교과 전용 용어다. 창체(자율·동아리·진로·봉사)는 '활동'으로 부른다(사장님 2026-06-13). #}
   {%- set _is_act = ('창체' in s.field) or ('동아리' in s.field) or ('자율' in s.field) or ('진로' in s.field) or ('봉사' in s.field) or ('활동' in s.field) %}
-  {%- set _kind = '활동 설계' if _is_act else '세특 설계' %}
+  {#- 고3·N수는 창체를 새로 설계 못 하고 기존 활동을 분석·면접에 쓴다 → '활동 활용 전략'(사장님 2026-06-13). #}
+  {%- set _kind = ('활동 활용 전략' if student_stage in ['grade3', 'graduate'] else '활동 설계') if _is_act else '세특 설계' %}
   <section class="page">
     {{ topbar(_kind ~ " · " ~ s.field) }}
     <h2>{{ s.field }} {{ _kind }}</h2>

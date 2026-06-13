@@ -40,11 +40,13 @@ def _kst_today() -> str:
     return datetime.now(_KST).date().isoformat()
 
 
-def _render_html(content: dict[str, Any], body_class: str = "") -> str:
+def _render_html(content: dict[str, Any], body_class: str = "", student_stage: str = "") -> str:
     """Render the fixed shell template with the given content dict.
 
     body_class("compact1"/"compact2")는 한 섹션이 한 장을 넘칠 때 패딩·여백을 줄여
-    한 장에 맞추는 압축 단계다(footer는 하단 고정 유지)."""
+    한 장에 맞추는 압축 단계다(footer는 하단 고정 유지).
+    student_stage(grade3/graduate)면 창체 페이지 제목을 '활동 설계'가 아니라 '활동 활용 전략'으로
+    바꾼다 — 고3·N수는 창체를 새로 설계하는 게 아니라 기존 활동을 분석·면접에 쓰기 때문이다."""
     template_src = _TEMPLATE_PATH.read_text(encoding="utf-8")
     env = jinja2.Environment(
         loader=jinja2.BaseLoader(),
@@ -62,6 +64,7 @@ def _render_html(content: dict[str, Any], body_class: str = "") -> str:
         report_date=_kst_today(),
         data=content,
         body_class=body_class,
+        student_stage=normalize_student_stage(student_stage),
     )
 
 
@@ -72,12 +75,12 @@ _COMPACT_STEPS = ("", "compact1", "compact2")
 
 
 def _render_pdf_fit(
-    content: dict[str, Any], packaged_html: Path, packaged_pdf: Path
+    content: dict[str, Any], packaged_html: Path, packaged_pdf: Path, student_stage: str = ""
 ) -> str:
     """페이지가 목표를 넘치면 compact를 올려 재렌더한다. 채택한 html을 반환한다."""
-    html = _render_html(content)
+    html = _render_html(content, student_stage=student_stage)
     for body_class in _COMPACT_STEPS:
-        html = _render_html(content, body_class=body_class)
+        html = _render_html(content, body_class=body_class, student_stage=student_stage)
         packaged_html.write_text(html, encoding="utf-8")
         _chromium_print_to_pdf(packaged_html, packaged_pdf)
         pages = _contract._pdf_info(packaged_pdf).get("pages")
@@ -776,7 +779,7 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
 
     try:
         # 페이지가 4장을 넘치면 compact 단계를 올려 한 장에 다시 맞춘다(footer는 하단 고정).
-        html = _render_pdf_fit(content, packaged_html, packaged_pdf)
+        html = _render_pdf_fit(content, packaged_html, packaged_pdf, student_stage=student_stage)
     except RuntimeError as exc:
         packaged_html.unlink(missing_ok=True)
         return json.dumps(
@@ -934,6 +937,8 @@ def register_hakjong_report_tool(ctx: Any) -> None:
             "★AI 티 나는 공허한 클리셰 금지: '스포츠과학 언어로 정렬', '전공 언어로 재구성', '○○ 관점에서 해석', "
             "'○○ 언어로 풀어낸다' 같은 메타·추상 표현을 쓰지 마라 — 무엇을 했고 무엇을 할지 구체 활동·방법·결과로만 말한다. "
             "(나쁜 예: '체육 기록을 스포츠과학 언어로 정렬한다' / 좋은 예: '운동과 건강의 체력측정 기록을 운동처방 데이터로 분석해 보고서로 남긴다') "
+            "또한 '새 활동을 만들지 말고', '서류에 없는 새 경험처럼 보이지 않도록' 같은 내부 지시·검증 톤을 본문에 노출하지 마라 — "
+            "학생이 할 행동을 긍정문으로만 쓴다(예: '기존 경기운영단 경험을 협업·돌발 대응 사례로 정리해 면접 답변으로 준비한다'). "
             "내부 판단 과정이나 배제 설명('OO 분야는 제외하고' 류)은 리포트에 쓰지 말고, "
             "요청받은 학교·학과에 대한 내용만 직접적으로 쓴다. "
             "★내용 깊이(가장 중요): 추상적 조언('출결 정리', '동기 재구성', '탐구 연결')은 금지다. "
