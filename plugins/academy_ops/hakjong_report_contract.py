@@ -147,12 +147,24 @@ def truncation_errors(content: Any, pdf_text: str, errors: list) -> None:
     (height:297mm + overflow:hidden)를 넘친 내용은 조용히 잘리므로(2026-06-12
     유가은 리포트 마지막 표 잘림) 기계로 감지해 분량 축소를 요구한다.
     공백 차이는 PDF 텍스트 추출 변형이라 제거 후 비교한다."""
+    import re
+
     haystack = "".join(str(pdf_text or "").split())
+
+    def _present(text: str) -> bool:
+        needle = "".join(text.split())
+        if needle in haystack:
+            return True
+        # 표 셀이 좁아 여러 줄로 렌더되면 pdftotext가 옆 열 텍스트를 줄 단위로 끼워 넣어
+        # 연속 매칭이 깨진다(2026-06-13 false positive: "…수렴," 다음 줄에 다른 열이 삽입).
+        # 구두점·공백으로 쪼갠 조각(4자+)이 모두 PDF에 있으면 인쇄된 것으로 본다.
+        frags = [f for f in re.split(r"[\s,.;:/()\[\]··]+", text) if len("".join(f.split())) >= 4]
+        return bool(frags) and all("".join(f.split()) in haystack for f in frags)
 
     def walk(obj: Any) -> None:
         if isinstance(obj, str):
             needle = "".join(obj.split())
-            if len(needle) >= 15 and needle not in haystack:
+            if len(needle) >= 15 and not _present(obj):
                 errors.append(
                     f"내용이 페이지를 넘쳐 잘렸다 — \"{obj.strip()[:40]}…\" 가 PDF에 인쇄되지 않았다. "
                     "해당 섹션 문단·행 분량을 줄여 한 페이지 안에 들어가게 하라."
