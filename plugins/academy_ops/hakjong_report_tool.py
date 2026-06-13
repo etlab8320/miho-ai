@@ -23,6 +23,7 @@ from miho_constants import get_miho_home
 
 from .brand_assets import academy_brand_logo_src
 from . import hakjong_report_contract as _contract
+from .pdf_autocorrect import autocorrect as _autocorrect
 from .hakjong_report_contract import BRAND_TEXT
 from .hakjong_report_schema import validate_content
 from .report_fonts import report_font_css
@@ -403,6 +404,20 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
             {"ok": False, "errors": ["content는 dict(또는 JSON 문자열)여야 한다. JSON 객체 형태로 다시 보내라."], "warnings": [], "checks": {}},
             ensure_ascii=False,
         )
+
+    # T3 step 0: 기계적 결함 자동 보정 — 빈 표 행 제거 + 텍스트 길이 상한.
+    # 빈칸/페이지 잘림으로 반려하던 왕복(2026-06-13 서연 5분+ 사고)을 없앤다.
+    content = _autocorrect(
+        content,
+        table_specs=[
+            ("track_section.rows", ("label", "official", "judgment")),
+            ("diagnosis_section.rows", ("area", "record", "interpretation", "check")),
+            ("diagnosis_section.gauges", ("label", "level", "note")),
+            ("strategy_section.interview_rows", ("question", "point")),
+            ("strategy_section.gap_plan.subjects", ("subject", "direction")),
+        ],
+        char_limit=_contract.MAX_VISIBLE_TEXT_SEGMENT_CHARS,
+    )
 
     # T3 step 1: schema + quality validation
     ok, schema_errors = validate_content(
