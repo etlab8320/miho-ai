@@ -403,15 +403,18 @@ def _grounding_errors(
                 and all(
                     isinstance(r, dict)
                     and _nonempty(r.get("field"))
-                    # 유료 컨설팅 수준 — 출발점·방향·각 단계가 충분히 구체적이어야 한다(사장님 2026-06-13).
-                    and len(str(r.get("current_record") or "").strip()) >= 50
-                    and len(str(r.get("school_direction") or "").strip()) >= 30
                     and isinstance(r.get("steps"), list)
                     and len(r.get("steps")) >= 3
-                    # 전문성 하한 — 각 단계 70자+(미호가 통과 가능한 현실선). 500자 밀도는 description 권장으로
-                    # 유도하되 grounding은 통과 가능해야 한다(2026-06-13: 90자 강제 시 미호가 반려 반복→기존 재사용).
-                    and all(_nonempty(s) and len(str(s).strip()) >= 70 for s in r.get("steps"))
-                    and len(str(r.get("expected_effect") or "").strip()) >= 60
+                    and all(_nonempty(s) and len(str(s).strip()) >= 30 for s in r.get("steps"))
+                    # 전문성은 개별 칼하한이 아니라 분야 본문 총합으로 본다(2026-06-13: 개별 70/90자 하한이
+                    # 1자 단위로 칼반려 → 미호가 경계에서 무한 보강하다 반려 반복→기존 PDF 재사용). 총합 350자면
+                    # 충실하고, 미호가 한두 단계를 길게 쓰면 통과하므로 반려 루프가 끊긴다.
+                    and (
+                        len(str(r.get("current_record") or "").strip())
+                        + len(str(r.get("school_direction") or "").strip())
+                        + len(str(r.get("expected_effect") or "").strip())
+                        + sum(len(str(s).strip()) for s in r.get("steps"))
+                    ) >= 350
                     for r in gap_subjects
                 )
             )
