@@ -252,19 +252,27 @@ def _grounding_errors(
                 and isinstance(gap_subjects, list)
                 and len(gap_subjects) >= 3
                 and all(
-                    isinstance(r, dict) and _nonempty(r.get("subject")) and _nonempty(r.get("direction"))
+                    isinstance(r, dict)
+                    and _nonempty(r.get("subject"))
+                    and _is_specific_direction(r.get("direction"))
                     for r in gap_subjects
                 )
             )
             if not ok_gap:
                 errors.append(
                     f"이 학생은 {grade}학년 세특이 아직 입력되지 않았다 — 공백을 채울 설계가 리포트의 핵심이다. "
-                    "content.strategy_section.gap_plan을 아래 형태 그대로 채워라(subjects 3개 이상, "
-                    "각 항목의 subject·direction 모두 비우지 말 것): "
+                    "content.strategy_section.gap_plan.subjects(3개 이상)를 채우되, 각 direction은 "
+                    "hakjong_qualitative_profile의 subject_specific_notes(과목별 방향)와 학생의 실제 과목·기록을 "
+                    "연결해 '무엇을 어떤 방법으로'까지 40자 이상 구체적으로 써라(측정·분석·통계·그래프·탐구·설계 등 "
+                    "실행 방법어 포함). '탐구 연결'·'출결 정리' 같은 추상 한 줄은 반려된다. "
+                    "예: "
                     '{"gap_plan": {"title": "3학년 1학기 세특 설계", "subjects": ['
-                    '{"subject": "생명과학", "direction": "운동 후 회복·피로도 탐구를 운동생리·재활로 연결"}, '
-                    '{"subject": "체육", "direction": "동작 분석·또래 지도 기록으로 전공 적합성 강화"}, '
-                    '{"subject": "사회문제탐구", "direction": "생활체육 접근성 조사로 공동체역량 연결"}]}}'
+                    '{"subject": "생명과학", "direction": "운동 후 회복 심박수와 피로도를 측정·기록해 확률과통계로 그래프화하고 '
+                    '염증·회복 단원과 연결해 운동생리 탐구로 발전시킨다"}, '
+                    '{"subject": "체육", "direction": "준비운동·재활 루틴을 동작 분석해 부상 위험 요인을 정리하고 또래 지도 '
+                    '기록으로 전공 적합성을 보강한다"}, '
+                    '{"subject": "사회문제탐구", "direction": "지역 생활체육 시설 접근성을 조사·비교해 개선안을 보고서로 정리하고 '
+                    '공동체역량과 연결한다"}]}}'
                 )
             if grade == 3:
                 prior = [str(g) + "학년" for g in sorted(note_grades)]
@@ -382,6 +390,22 @@ def _grounding_errors(
 
 def _nonempty(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+# 세특 설계 direction이 "무엇을 어떻게"까지 구체적인지. 추상 한 줄("탐구 연결",
+# "출결 정리") 반려용. 충분한 길이 + 실행 방법어가 있어야 통과 (사장님 2026-06-13:
+# "통계 내서 그래프로 결과를 어떻게 한다" 수준의 구체성 요구).
+_METHOD_WORDS = (
+    "측정", "분석", "조사", "실험", "통계", "그래프", "데이터", "탐구",
+    "설계", "비교", "기록", "관찰", "정리", "수집", "발표", "보고서",
+)
+
+
+def _is_specific_direction(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return len(text) >= 40 and any(w in text for w in _METHOD_WORDS)
 
 
 def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
@@ -612,6 +636,15 @@ def register_hakjong_report_tool(ctx: Any) -> None:
             "딱딱한 보고서체 나열 금지, 학생 이름을 부르며 말을 거는 문장으로. "
             "내부 판단 과정이나 배제 설명('OO 분야는 제외하고' 류)은 리포트에 쓰지 말고, "
             "요청받은 학교·학과에 대한 내용만 직접적으로 쓴다. "
+            "★내용 깊이(가장 중요): 추상적 조언('출결 정리', '동기 재구성', '탐구 연결')은 금지다. "
+            "hakjong_qualitative_profile의 subject_specific_notes(그 대학이 과목별로 원하는 방향)와 "
+            "학생의 실제 과목·성적·기록을 연결해, 보완 전략과 세특 설계를 '무엇을 어떤 방법으로'까지 "
+            "구체적으로 써라 — 예: '운동 후 회복 심박수를 측정·기록해 확률과통계로 그래프화하고 "
+            "생명과학 염증·회복 단원과 연결'. 통계·측정·실험·조사·탐구 같은 실행 방법을 명시한다. "
+            "학년별로 내용이 달라야 한다: ①세특 채울 학기가 남은 학생(고1·고2·고3 1학기 전)은 "
+            "이전 세특을 토대로 '남은 학기에 무엇을 어떻게 채울지'(strategy_section.gap_plan)가 리포트의 중심이다. "
+            "②고3 완성·N수생은 채울 세특이 없으니 기존 기록을 학교 평가 언어로 재해석하고 면접 방어 전략을 중심에 둔다. "
+            "③고1 1학기(생기부 없음)는 상담 내용 기반 시작 설계. "
             "검증 통과한 PDF만 ~/.miho/media_cache/susi_student_record/validated 로 승격하고 "
             "media_tag를 반환한다."
         ),
