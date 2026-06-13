@@ -200,9 +200,23 @@
     }
     .finalBox .title { font-size: 13px; font-weight: 900; }
     .finalBox .body { font-size: 12.3px; font-weight: 800; line-height: 1.6; color: var(--max-ink); }
-    .gapMain { border: 1.5px solid var(--max-accent); border-radius: 14px; padding: 5mm; background: #f6faff; margin-bottom: 1mm; }
-    .gapTitle { font-size: 13.5px; font-weight: 900; color: var(--max-accent); margin-bottom: 2.5mm; }
-    .gapTable td { font-size: 10.8px; line-height: 1.5; }
+    .gapLead { border-left: 4px solid var(--max-accent); background: var(--max-accent-soft); border-radius: 0 12px 12px 0; padding: 4mm 5mm; }
+    .gapTitle { font-size: 13.5px; font-weight: 900; color: var(--max-accent); margin-bottom: 1.5mm; }
+    .gapLead p { font-size: 11px; color: var(--max-soft); }
+    /* 분야별 세특 설계 페이지 */
+    .gapDesign { display: flex; flex-direction: column; gap: 5mm; }
+    .gapBlock { border: 1px solid var(--max-line); border-radius: 14px; padding: 5.5mm 6mm; background: #ffffff; }
+    .gapBlock .lbl { font-size: 12px; font-weight: 900; margin-bottom: 2.5mm; letter-spacing: -0.01em; }
+    .gapBlock p { font-size: 11.6px; line-height: 1.7; color: var(--max-soft); }
+    .gapBlock.start { border-left: 4px solid #15803d; background: var(--max-green-soft); }
+    .gapBlock.start .lbl { color: #15803d; }
+    .gapBlock.dir { border-left: 4px solid var(--max-accent); background: var(--max-accent-soft); }
+    .gapBlock.dir .lbl { color: var(--max-accent); }
+    .gapBlock.steps { border-left: 4px solid #c2410c; background: var(--max-warm-soft); }
+    .gapBlock.steps .lbl { color: #9a3412; }
+    .gapBlock ol { margin: 0; padding-left: 16px; }
+    .gapBlock li { font-size: 11.6px; line-height: 1.7; color: var(--max-ink); margin: 2mm 0; font-weight: 600; }
+    .axisBadge { align-self: flex-start; border: 1.5px solid var(--max-accent); color: var(--max-accent); border-radius: 999px; padding: 2mm 5mm; font-size: 11px; font-weight: 900; background: #ffffff; }
     .checkBox { border: 1px solid var(--max-line); border-radius: 14px; padding: 5mm; background: #fbfcfe; }
     .checkBox .title { font-size: 12px; font-weight: 900; margin-bottom: 2mm; }
     .checkBox ul { margin: 0 0 2.5mm; padding-left: 15px; }
@@ -337,15 +351,10 @@
     <h2>{{ data.strategy_section.heading }}</h2>
 
     {%- if data.strategy_section.gap_plan %}
-    {#- 세특 설계 = 재학생 리포트의 핵심. 페이지 상단 메인 표로 크게 (사장님 2026-06-13). #}
-    <div class="gapMain">
+    {#- 세특 설계는 분야별 1페이지 상세 섹션으로 별도 렌더(사장님 2026-06-13). 여기선 안내만. #}
+    <div class="gapLead">
       <div class="gapTitle">{{ data.strategy_section.gap_plan.title }}</div>
-      <table class="table gapTable">
-        <tr><th style="width:20%">과목</th><th>남은 학기 세특 설계 — 무엇을 어떤 방법으로</th></tr>
-        {% for row in data.strategy_section.gap_plan.subjects %}
-        <tr><td class="head">{{ row.subject }}</td><td>{{ row.direction }}</td></tr>
-        {% endfor %}
-      </table>
+      <p>아래 보완 전략에 이어 <b>분야별 세특 설계</b>를 다음 페이지부터 한 분야씩 상세히 제시합니다.</p>
     </div>
     {%- endif %}
 
@@ -386,5 +395,33 @@
 
     {{ footer(brand_text ~ " · 학생부종합 지원전략 리포트", "3") }}
   </section>
+
+  {#- ───────── 04+ · 분야별 세특 설계 (재학생, 분야 수는 미호가 전공 닿는 만큼 자율) ───────── #}
+  {%- if data.strategy_section.gap_plan %}
+  {%- for s in data.strategy_section.gap_plan.subjects %}
+  <section class="page">
+    {{ topbar("세특 설계 · " ~ s.field) }}
+    <h2>{{ s.field }} 세특 설계</h2>
+    <div class="gapDesign">
+      <div class="gapBlock start">
+        <div class="lbl">① 지금 가진 기록 (출발점)</div>
+        <p>{{ s.current_record }}</p>
+      </div>
+      <div class="gapBlock dir">
+        <div class="lbl">② 이 학과가 원하는 방향</div>
+        <p>{{ s.school_direction }}</p>
+      </div>
+      <div class="gapBlock steps">
+        <div class="lbl">③ 3학년 탐구 설계 — 무엇을 어떤 방법으로</div>
+        <ol>{% for st in s.steps %}<li>{{ st }}</li>{% endfor %}</ol>
+      </div>
+      {%- if s.eval_axis %}
+      <div class="axisBadge">연결 평가요소 · {{ s.eval_axis }}</div>
+      {%- endif %}
+    </div>
+    {{ footer(brand_text ~ " · 분야별 세특 설계", "") }}
+  </section>
+  {%- endfor %}
+  {%- endif %}
 </body>
 </html>

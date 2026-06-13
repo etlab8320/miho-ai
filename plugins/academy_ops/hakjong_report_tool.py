@@ -388,15 +388,21 @@ def _grounding_errors(
         if grade is not None and grade <= 3:
             gap = (content.get("strategy_section") or {}).get("gap_plan")
             gap_subjects = (gap or {}).get("subjects") if isinstance(gap, dict) else None
+            # 분야 개수는 강제하지 않는다 — 미호가 전공에 닿는 만큼 자율 판단(사장님 2026-06-13).
+            # 각 분야는 ①학생 실제 기록(출발점) ②학과 방향 ③탐구 단계(2개+)를 갖춘 1페이지 설계.
             ok_gap = (
                 isinstance(gap, dict)
                 and _nonempty(gap.get("title"))
                 and isinstance(gap_subjects, list)
-                and len(gap_subjects) >= 3
+                and len(gap_subjects) >= 1
                 and all(
                     isinstance(r, dict)
-                    and _nonempty(r.get("subject"))
-                    and _is_specific_direction(r.get("direction"))
+                    and _nonempty(r.get("field"))
+                    and _nonempty(r.get("current_record"))
+                    and _nonempty(r.get("school_direction"))
+                    and isinstance(r.get("steps"), list)
+                    and len(r.get("steps")) >= 2
+                    and all(_nonempty(s) and len(str(s).strip()) >= 20 for s in r.get("steps"))
                     for r in gap_subjects
                 )
             )
@@ -409,23 +415,23 @@ def _grounding_errors(
                 )
                 errors.append(
                     f"{_gap_lead} "
-                    "이건 일반 조언이 아니라 이 학생만의 맞춤 상담이어야 한다 — 학생마다 답이 같으면 의미가 없다. "
-                    "gap_plan.subjects(3개 이상)는 ①국어·영어·수학·과학·사회·체육 등 '분야' 단위로 잡되"
-                    "(생기부엔 학생이 앞으로 들을 세부 과목이 없으니 세부 과목명을 못박지 마라), "
-                    "②학생이 이미 기록을 가진 과목은 그 과목에서 디벨롭한다. "
-                    "각 direction은 그 학과(hakjong_qualitative_profile)가 원하는 방향과 학생의 실제 세특을 연결해 "
-                    "'무엇을 어떤 방법으로'까지 40자 이상 구체적으로 써라(측정·분석·통계·그래프·탐구·설계 등 실행 방법어 포함). "
-                    "학과가 원하는 방향에 학생 기록이 닿아 있으면 디벨롭, 닿은 게 없으면 그 분야에서 새로 설계한다. "
-                    "'탐구 연결'·'출결 정리' 같은 추상 한 줄은 반려된다. "
-                    + (f"이 학생의 실제 세특이다 — 반드시 출발점으로 써라: {brief_text}. " if brief_text else "")
+                    "이건 일반 조언이 아니라 이 학생만의 맞춤 상담 — 학생마다 답이 같으면 의미가 없다. "
+                    "strategy_section.gap_plan.subjects는 분야별 1페이지 상세 세특 설계다. 분야 개수는 정하지 말고 "
+                    "전공(이 학과)에 닿는 분야만큼만 잡아라(교과뿐 아니라 창체=동아리·진로·자율·봉사도 분야가 된다). "
+                    "각 분야는 다음 4개를 갖춘다: "
+                    "field(분야명) · current_record(이 학생의 실제 기록을 인용한 출발점) · "
+                    "school_direction(이 학과가 원하는 방향, hakjong_qualitative_profile 근거) · "
+                    "steps(탐구 단계 2개 이상, 각 20자+ '무엇을 어떤 방법으로'). "
+                    "학과 방향에 학생 기록이 닿아 있으면 디벨롭, 닿은 게 없으면 그 분야에서 새로 설계한다. "
+                    + (f"이 학생의 실제 세특·창체다 — 반드시 출발점으로 써라: {brief_text}. " if brief_text else "")
                     + "예: "
-                    '{"gap_plan": {"title": "3학년 1학기 세특 설계", "subjects": ['
-                    '{"subject": "과학", "direction": "생활과 과학에서 보인 운동 역학 관심을 살려, 운동 후 회복 심박수를 측정·기록하고 '
-                    '그래프로 분석해 근골격계·에너지대사와 연결한 운동손상 탐구로 디벨롭한다"}, '
-                    '{"subject": "체육", "direction": "운동과 건강의 체력측정 우수 기록을 출발점으로 종목별 약점을 분석해 '
-                    '손상 예방 트레이닝을 설계한 보고서로 발전시킨다"}, '
-                    '{"subject": "사회", "direction": "지역 생활체육 시설 접근성을 조사·비교해 개선안을 보고서로 정리하고 '
-                    '공동체역량과 연결한다"}]}}'
+                    '{"gap_plan": {"title": "3학년 1학기 분야별 세특 설계", "subjects": ['
+                    '{"field": "체육", '
+                    '"current_record": "1학년 동아리 필라테스반에서 모던리포머·레더바 등 재활 기구를 다뤘고 운동과 건강에서 척주질환 예방을 발표함", '
+                    '"school_direction": "스포츠의학과는 재활·운동처방·기능평가를 본다", '
+                    '"steps": ["필라테스 동작별 가동범위·통증 지표를 측정·기록한다", '
+                    '"측정 데이터를 그래프화해 척주질환 예방 운동처방 보고서로 정리한다"], '
+                    '"eval_axis": "진로역량"}]}}'
                 )
             if grade == 3 and not has_current:
                 prior = [str(g) + "학년" for g in sorted(note_grades)]
@@ -668,7 +674,8 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
             ("diagnosis_section.rows", ("area", "record", "interpretation", "check")),
             ("diagnosis_section.gauges", ("label", "level", "note")),
             ("strategy_section.interview_rows", ("question", "point")),
-            ("strategy_section.gap_plan.subjects", ("subject", "direction")),
+            # gap_plan.subjects는 분야별 1페이지 설계 구조(field/current_record/school_direction/steps)라
+            # 빈칸-행 autocorrect 대상이 아니다 — grounding이 구조를 직접 검증한다.
         ],
         char_limit=_contract.MAX_VISIBLE_TEXT_SEGMENT_CHARS,
     )
@@ -856,8 +863,12 @@ def register_hakjong_report_tool(ctx: Any) -> None:
                         "rows[{area,record,interpretation,check}], gauges[{label,level,note,tone(orange|blue|red),percent}]x3, footnote} · "
                         "strategy_section{heading, actions[{title,body}]x4, interview_rows[{question,point}], "
                         "final_judgment{body}, checklist{title,bullets[],tags[]}, footnote, "
-                        "gap_plan{title, subjects[{subject,direction}]x≥3}(당해 학년 세특 미입력 학생 필수 — "
-                        "과목별로 어떤 탐구 방향으로 세특을 채울지 학과와 연결해 설계; 있으면 checklist 대신 렌더된다)}. "
+                        "gap_plan{title, subjects[{field, current_record, school_direction, steps[](2개+), eval_axis}]}"
+                        "(재학생 필수, 분야별 1페이지 상세 세특 설계로 렌더된다; 있으면 checklist 대신). "
+                        "분야 개수는 정하지 말고 전공에 닿는 만큼만(교과+창체=동아리·진로·자율·봉사). 각 분야: "
+                        "field=분야명 · current_record=이 학생 실제 기록 인용 출발점 · school_direction=학과가 원하는 방향 · "
+                        "steps=탐구 단계 2개+('무엇을 어떤 방법으로') · eval_axis=연결 평가요소. "
+                        "학과 방향에 학생 기록이 닿으면 디벨롭, 없으면 그 분야에서 새로 설계}. "
                         "수치(전년도 컷·등급)는 susi27_rule_lookup의 admission_meta/admission_result_26과 생기부 성적에서 가져온 실제 값만 쓴다. "
                         "로고·푸터·브랜딩은 템플릿이 보장하므로 여기에 넣지 않는다."
                     ),
