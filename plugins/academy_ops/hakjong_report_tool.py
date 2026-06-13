@@ -242,8 +242,11 @@ def _grounding_errors(
                 f"단계를 다시 확인해라 (데이터상 {data_max_grade}학년 이상)."
             )
 
-        # 당해 학년 세특 공백 — 미입력이면 채움 설계(gap_plan)가 리포트의 핵심이어야 한다.
-        if grade is not None and grade not in note_grades:
+        # 재학생(고1~3)은 세특 설계가 리포트의 핵심 — 세특을 더 채우거나(공백) 기존
+        # 세특을 학교 평가 방향으로 보강·재서술할 학기가 남아 있다(사장님 2026-06-13:
+        # "세특 더 채울 학기 있으면 설계가 메인"). N수생/졸업만 재해석 모드(gap_plan 제외).
+        has_current = grade in note_grades  # 당해 세특 일부라도 있나
+        if grade is not None and grade <= 3:
             gap = (content.get("strategy_section") or {}).get("gap_plan")
             gap_subjects = (gap or {}).get("subjects") if isinstance(gap, dict) else None
             ok_gap = (
@@ -259,8 +262,14 @@ def _grounding_errors(
                 )
             )
             if not ok_gap:
+                _gap_lead = (
+                    f"이 학생은 {grade}학년 세특이 일부 입력돼 있다 — 남은 학기에 기존 세특을 학교 평가 방향으로 "
+                    "보강·재서술하고 추가 탐구를 얹는 '세특 설계'가 리포트의 핵심이다."
+                    if has_current else
+                    f"이 학생은 {grade}학년 세특이 아직 입력되지 않았다 — 공백을 채울 설계가 리포트의 핵심이다."
+                )
                 errors.append(
-                    f"이 학생은 {grade}학년 세특이 아직 입력되지 않았다 — 공백을 채울 설계가 리포트의 핵심이다. "
+                    f"{_gap_lead} "
                     "content.strategy_section.gap_plan.subjects(3개 이상)를 채우되, 각 direction은 "
                     "hakjong_qualitative_profile의 subject_specific_notes(과목별 방향)와 학생의 실제 과목·기록을 "
                     "연결해 '무엇을 어떤 방법으로'까지 40자 이상 구체적으로 써라(측정·분석·통계·그래프·탐구·설계 등 "
@@ -274,7 +283,7 @@ def _grounding_errors(
                     '{"subject": "사회문제탐구", "direction": "지역 생활체육 시설 접근성을 조사·비교해 개선안을 보고서로 정리하고 '
                     '공동체역량과 연결한다"}]}}'
                 )
-            if grade == 3:
+            if grade == 3 and not has_current:
                 prior = [str(g) + "학년" for g in sorted(note_grades)]
                 if prior and not all(p_ in text for p_ in prior):
                     errors.append(
