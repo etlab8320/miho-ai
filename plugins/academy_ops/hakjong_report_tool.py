@@ -398,11 +398,12 @@ def _grounding_errors(
                 and all(
                     isinstance(r, dict)
                     and _nonempty(r.get("field"))
-                    and _nonempty(r.get("current_record"))
-                    and _nonempty(r.get("school_direction"))
+                    # 유료 컨설팅 수준 — 출발점·방향·각 단계가 충분히 구체적이어야 한다(사장님 2026-06-13).
+                    and len(str(r.get("current_record") or "").strip()) >= 40
+                    and len(str(r.get("school_direction") or "").strip()) >= 25
                     and isinstance(r.get("steps"), list)
-                    and len(r.get("steps")) >= 2
-                    and all(_nonempty(s) and len(str(s).strip()) >= 20 for s in r.get("steps"))
+                    and len(r.get("steps")) >= 3
+                    and all(_nonempty(s) and len(str(s).strip()) >= 60 for s in r.get("steps"))
                     for r in gap_subjects
                 )
             )
@@ -418,10 +419,12 @@ def _grounding_errors(
                     "이건 일반 조언이 아니라 이 학생만의 맞춤 상담 — 학생마다 답이 같으면 의미가 없다. "
                     "strategy_section.gap_plan.subjects는 분야별 1페이지 상세 세특 설계다. 분야 개수는 정하지 말고 "
                     "전공(이 학과)에 닿는 분야만큼만 잡아라(교과뿐 아니라 창체=동아리·진로·자율·봉사도 분야가 된다). "
-                    "각 분야는 다음 4개를 갖춘다: "
-                    "field(분야명) · current_record(이 학생의 실제 기록을 인용한 출발점) · "
-                    "school_direction(이 학과가 원하는 방향, hakjong_qualitative_profile 근거) · "
-                    "steps(탐구 단계 2개 이상, 각 20자+ '무엇을 어떤 방법으로'). "
+                    "이건 유료 컨설팅 문서다 — 한 줄짜리 빈약한 조언은 반려된다. 각 분야는 다음을 갖춘다: "
+                    "field(분야명) · current_record(이 학생의 실제 기록을 구체 인용한 출발점, 40자+) · "
+                    "school_direction(이 학과가 원하는 방향, hakjong_qualitative_profile 근거, 25자+) · "
+                    "steps(탐구 단계 3개 이상, 각 '무엇을·어떤 방법으로·어떤 산출물/평가축 연결까지' 100자 내외로 "
+                    "구체적으로 — 최소 60자). 예를 들면 '체력측정 5종목을 재측정해 4주 전후 변화량을 종목별 그래프로 "
+                    "분석하고, 약점 종목 원인을 운동역학 관점에서 해석한 개선 보고서로 정리한다' 수준의 밀도. "
                     "학과 방향에 학생 기록이 닿아 있으면 디벨롭, 닿은 게 없으면 그 분야에서 새로 설계한다. "
                     + (f"이 학생의 실제 세특·창체다 — 반드시 출발점으로 써라: {brief_text}. " if brief_text else "")
                     + "예: "
@@ -429,8 +432,10 @@ def _grounding_errors(
                     '{"field": "체육", '
                     '"current_record": "1학년 동아리 필라테스반에서 모던리포머·레더바 등 재활 기구를 다뤘고 운동과 건강에서 척주질환 예방을 발표함", '
                     '"school_direction": "스포츠의학과는 재활·운동처방·기능평가를 본다", '
-                    '"steps": ["필라테스 동작별 가동범위·통증 지표를 측정·기록한다", '
-                    '"측정 데이터를 그래프화해 척주질환 예방 운동처방 보고서로 정리한다"], '
+                    '"steps": ['
+                    '"1학년 필라테스반에서 다룬 모던리포머·레더바 동작을 척주 안정화 관점에서 분류하고, 동작별 가동범위와 통증 지표를 주차별로 측정·기록한다", '
+                    '"측정 데이터를 그래프로 시각화해 척주질환 예방에 효과적인 동작을 통계로 가려내고, 강도·빈도를 담은 개인 운동처방 보고서로 완성한다", '
+                    '"운동과 건강의 척주질환 예방 발표와 연결해, 재활 운동의 원리를 근골격계 해부 지식으로 설명한 심화 탐구로 발전시킨다"], '
                     '"eval_axis": "진로역량"}]}}'
                 )
             if grade == 3 and not has_current:
@@ -867,7 +872,7 @@ def register_hakjong_report_tool(ctx: Any) -> None:
                         "(재학생 필수, 분야별 1페이지 상세 세특 설계로 렌더된다; 있으면 checklist 대신). "
                         "분야 개수는 정하지 말고 전공에 닿는 만큼만(교과+창체=동아리·진로·자율·봉사). 각 분야: "
                         "field=분야명 · current_record=이 학생 실제 기록 인용 출발점 · school_direction=학과가 원하는 방향 · "
-                        "steps=탐구 단계 2개+('무엇을 어떤 방법으로') · eval_axis=연결 평가요소. "
+                        "steps=탐구 단계 3개+(각 100자 내외 '무엇을·어떤 방법으로·어떤 산출물까지', 한 줄 빈약 X) · eval_axis=연결 평가요소. "
                         "학과 방향에 학생 기록이 닿으면 디벨롭, 없으면 그 분야에서 새로 설계}. "
                         "수치(전년도 컷·등급)는 susi27_rule_lookup의 admission_meta/admission_result_26과 생기부 성적에서 가져온 실제 값만 쓴다. "
                         "로고·푸터·브랜딩은 템플릿이 보장하므로 여기에 넣지 않는다."
