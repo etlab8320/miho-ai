@@ -16,6 +16,8 @@ from plugins.academy_ops.hakjong_report_tool import (
     _evaluation_axes,
     _infer_stage_from_birth,
     _grounding_errors,
+    _field_of,
+    _student_record_brief,
 )
 import plugins.academy_ops.hakjong_report_tool as report_tool
 import plugins.academy_ops.hakjong_report_contract as contract
@@ -452,6 +454,35 @@ def test_enrolled_grade3_gap_plan_not_blocked_as_graduate(monkeypatch, tmp_path)
     content["strategy_section"]["actions"][0]["body"] = "생명과학 세특을 운동생리 주제로 정리한다."
     errors = _grounding_errors("없는학생", "grade3", content)
     assert not any("설계 언어" in e for e in errors)
+
+
+def test_field_of_maps_subject_to_field() -> None:
+    assert _field_of("생활과 과학") == "과학"
+    assert _field_of("운동과 건강") == "체육"
+    assert _field_of("확률과 통계") == "수학"
+    assert _field_of("사회문제 탐구") == "사회"
+    assert _field_of("화법과 작문") == "국어"
+    assert _field_of("영어 독해와 작문") == "영어"
+
+
+def test_student_record_brief_groups_by_field(monkeypatch, tmp_path) -> None:
+    import sqlite3
+    db = tmp_path / "central.sqlite3"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT, birth_masked TEXT)")
+    conn.execute("CREATE TABLE central_notes (id INTEGER PRIMARY KEY, student_id INTEGER, grade INTEGER, subject TEXT, note_text TEXT)")
+    conn.execute("INSERT INTO students (id, name, birth_masked) VALUES (1, '테스트', '081010-1234567')")
+    conn.execute("INSERT INTO central_notes (student_id, grade, subject, note_text) VALUES (1, 2, '운동과 건강', '체력측정 모든 종목 우수')")
+    conn.execute("INSERT INTO central_notes (student_id, grade, subject, note_text) VALUES (1, 2, '생활과 과학', '야구의 마그누스 효과 탐구')")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(report_tool, "_CENTRAL_LIFE_DB", db)
+
+    brief = _student_record_brief("테스트")
+    assert "체육" in brief and "과학" in brief
+    assert any("체력측정" in s for s in brief["체육"])
+    assert any("마그누스" in s for s in brief["과학"])
+    assert _student_record_brief("없는학생") == {}
 
 
 def test_render_html_contains_brand_text() -> None:
