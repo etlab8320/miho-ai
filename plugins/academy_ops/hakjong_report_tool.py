@@ -402,13 +402,14 @@ def _grounding_errors(
                     isinstance(r, dict)
                     and _nonempty(r.get("field"))
                     # 유료 컨설팅 수준 — 출발점·방향·각 단계가 충분히 구체적이어야 한다(사장님 2026-06-13).
-                    and len(str(r.get("current_record") or "").strip()) >= 40
-                    and len(str(r.get("school_direction") or "").strip()) >= 25
+                    and len(str(r.get("current_record") or "").strip()) >= 50
+                    and len(str(r.get("school_direction") or "").strip()) >= 30
                     and isinstance(r.get("steps"), list)
                     and len(r.get("steps")) >= 3
-                    and all(_nonempty(s) and len(str(s).strip()) >= 60 for s in r.get("steps"))
+                    # 유료 컨설팅 전문성 — 분야당 본문 ~500자(사장님 2026-06-13). 각 단계 90자+.
+                    and all(_nonempty(s) and len(str(s).strip()) >= 90 for s in r.get("steps"))
                     # 기대 효과 — 이 설계가 어느 평가요소에 어떻게 작용하는지(사장님 2026-06-13)
-                    and len(str(r.get("expected_effect") or "").strip()) >= 50
+                    and len(str(r.get("expected_effect") or "").strip()) >= 80
                     for r in gap_subjects
                 )
             )
@@ -889,7 +890,7 @@ def register_hakjong_report_tool(ctx: Any) -> None:
                         "strong_points{title,bullets[]}, caution_points{title,bullets[]}, footnote} · "
                         "diagnosis_section{heading, strength{headline,body}, risk{headline,body}, "
                         "rows[{area,record,interpretation,check}], gauges[{label,level,note,tone(orange|blue|red),percent}]x3, footnote} · "
-                        "strategy_section{heading, actions[{title,body}]x4, interview_rows[{question,point}], "
+                        "strategy_section{heading, actions[{title,body}]x4(=전반 실행 로드맵·우선순위·일정·태도. 뒤의 분야별 세특/활동 설계 페이지와 중복되는 분야 미리보기로 쓰지 마라), interview_rows[{question,point}], "
                         "final_judgment{body}, checklist{title,bullets[],tags[]}, footnote, "
                         "gap_plan{title, subjects[{field, current_record, school_direction, steps[](2개+), eval_axis}]}"
                         "(재학생 필수, 분야별 1페이지 상세 세특 설계로 렌더된다; 있으면 checklist 대신). "
@@ -897,7 +898,8 @@ def register_hakjong_report_tool(ctx: Any) -> None:
                         "용어 주의: '세특(세부능력 및 특기사항)'은 교과 전용이다 — 창체(자율·동아리·진로·봉사)는 "
                         "'세특'이 아니라 '활동'이다. field를 창체로 잡으면 활동 설계로 쓴다. 각 분야: "
                         "field=분야명 · current_record=이 학생 실제 기록 인용 출발점 · school_direction=학과가 원하는 방향 · "
-                        "steps=탐구 단계 3개+(각 100자 내외 '무엇을·어떤 방법으로·어떤 산출물까지', 한 줄 빈약 X) · "
+                        "steps=탐구 단계 3개+(각 100자 내외, 한 줄 빈약 X — 분야 한 페이지가 본문 ~500자로 꽉 차게) · "
+                        "분야 간 내용이 겹치면 안 된다(체육·과학·수학·영어가 다 '운동 데이터 측정'이면 실패 — 각 분야는 다른 활동·다른 각도). · "
                         "eval_axis=연결 평가요소 · expected_effect=이 설계가 그 평가요소에 어떻게 작용하고 서류·면접에서 어떤 강점이 되는지(50자+). "
                         "★학년별 차등(생기부 기재는 교사가 하니 학생이 '할 활동'을 설계): 고1·2는 창체(자율·자치·동아리)를 "
                         "'어떤 분야를 어떻게 할지'까지 신규 설계가 핵심이다 / 고3 1학기는 창체를 새로 만들 시간이 없으니 "

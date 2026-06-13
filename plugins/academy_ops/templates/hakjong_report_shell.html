@@ -428,7 +428,7 @@
         <p>{{ s.school_direction }}</p>
       </div>
       <div class="gapBlock steps">
-        <div class="lbl">③ 탐구·활동 설계 — 무엇을 어떤 방법으로</div>
+        <div class="lbl">③ {{ '기존 활동 분석·면접 활용' if (_is_act and student_stage in ['grade3','graduate']) else ('활동 설계 — 무엇을 어떤 방법으로' if _is_act else '세특 탐구 설계 — 무엇을 어떤 방법으로') }}</div>
         <ol>{% for st in s.steps %}<li>{{ st }}</li>{% endfor %}</ol>
       </div>
       {%- if s.expected_effect %}
