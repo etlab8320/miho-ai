@@ -322,6 +322,91 @@ def _keyword_score(
     return (coverage * coverage_weight) + (precision * precision_weight)
 
 
+def _keyword_mode() -> str:
+    """검색 keyword 점수 방식. 'overlap'(기본, 기존 term 교집합) | 'bm25'.
+
+    BM25는 희귀어(학과명·전형명)에 IDF 가중을 줘 고유명사 검색을 강화한다.
+    기본 overlap이라 토글을 켜기 전엔 동작이 100% 동일하다 (안전 원칙).
+    env MIHO_KEYWORD_MODE 또는 config discord.workspace_rag.retrieval.keyword_mode.
+    """
+    val = os.getenv("MIHO_KEYWORD_MODE", "").strip().lower()
+    if not val:
+        try:
+            from miho_cli.config import load_config
+
+            cfg = load_config()
+            val = str(
+                cfg.get("discord", {}).get("workspace_rag", {}).get("retrieval", {}).get("keyword_mode")
+                or ""
+            ).strip().lower()
+        except Exception:
+            val = ""
+    return "bm25" if val == "bm25" else "overlap"
+
+
+def _term_freqs(text: str) -> dict[str, int]:
+    """_keyword_terms와 같은 term 공간(unigram+bigram)의 빈도."""
+    tokens = _tokens(text)
+    terms = list(tokens)
+    for left, right in zip(tokens, tokens[1:]):
+        if left and right:
+            terms.append(f"{left}{right}")
+    freqs: dict[str, int] = {}
+    for term in terms:
+        freqs[term] = freqs.get(term, 0) + 1
+    return freqs
+
+
+def _build_bm25_context(texts: list[str]) -> dict[str, Any]:
+    """후보 문서 집합에서 IDF와 평균 문서 길이를 1회 계산."""
+    doc_count = 0
+    total_len = 0
+    df: dict[str, int] = {}
+    for text in texts:
+        freqs = _term_freqs(text)
+        if not freqs:
+            continue
+        doc_count += 1
+        total_len += sum(freqs.values())
+        for term in freqs:
+            df[term] = df.get(term, 0) + 1
+    if doc_count == 0:
+        return {"idf": {}, "avgdl": 0.0}
+    idf = {
+        term: math.log(1 + (doc_count - n + 0.5) / (n + 0.5))
+        for term, n in df.items()
+    }
+    return {"idf": idf, "avgdl": total_len / doc_count}
+
+
+def _bm25_keyword_score(
+    query_terms: set[str],
+    doc_freqs: dict[str, int],
+    doc_len: int,
+    idf: dict[str, float],
+    avgdl: float,
+    *,
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> float:
+    """0~1로 정규화한 BM25. 정규화로 기존 semantic+keyword 결합 가중치 틀을 보존한다
+    (raw BM25는 0~∞라 그대로 넣으면 keyword가 semantic을 압도해 검색이 망가진다)."""
+    if not avgdl or not query_terms:
+        return 0.0
+    score = 0.0
+    ceil = 0.0
+    for term in query_terms:
+        weight = idf.get(term, 0.0)
+        if weight <= 0:
+            continue
+        tf = doc_freqs.get(term, 0)
+        denom = tf + k1 * (1 - b + b * doc_len / avgdl)
+        if denom:
+            score += weight * (tf * (k1 + 1)) / denom
+        ceil += weight * (k1 + 1)  # tf→∞ 일 때의 항별 상한
+    return min(1.0, score / ceil) if ceil > 0 else 0.0
+
+
 def _dedupe_key(item: dict[str, Any]) -> str:
     role = str(item.get("role") or "")
     text = _SPACE_RE.sub("", str(item.get("text") or "")).strip().lower()
@@ -425,6 +510,20 @@ def retrieve_rag_context(
     lines = _read_recent_vector_lines(vector_path, _max_scan_records())
     if not lines:
         return []
+    # BM25 모드면 후보 전체로 IDF를 1회 계산해둔다 (overlap 모드면 None).
+    bm25_ctx = None
+    query_terms_set: set[str] = set()
+    if _keyword_mode() == "bm25":
+        candidate_texts: list[str] = []
+        for raw in lines:
+            try:
+                obj = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict) and obj.get("text"):
+                candidate_texts.append(str(obj["text"]))
+        bm25_ctx = _build_bm25_context(candidate_texts)
+        query_terms_set = _keyword_terms(query)
     for line in lines:
         try:
             item = json.loads(line)
@@ -458,12 +557,21 @@ def retrieve_rag_context(
             if usable_semantic
             else 0.0
         )
-        keyword = _keyword_score(
-            query,
-            text,
-            tuning["keyword_coverage_weight"],
-            tuning["keyword_precision_weight"],
-        )
+        if bm25_ctx is not None:
+            keyword = _bm25_keyword_score(
+                query_terms_set,
+                _term_freqs(text),
+                len(_tokens(text)),
+                bm25_ctx["idf"],
+                bm25_ctx["avgdl"],
+            )
+        else:
+            keyword = _keyword_score(
+                query,
+                text,
+                tuning["keyword_coverage_weight"],
+                tuning["keyword_precision_weight"],
+            )
         if keyword == 0 and method == _HASH_METHOD:
             continue
         if keyword == 0 and semantic < tuning["min_semantic_no_keyword"]:

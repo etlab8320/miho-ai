@@ -6,7 +6,11 @@ from gateway.discord_workspace_vectors import embed_text, retrieve_rag_context
 
 
 def test_embed_text_uses_local_fallback_without_openai_key(monkeypatch):
+    # 키가 없고 on-device 모델(fastembed)도 꺼졌을 때만 비의미적 해시로 떨어진다.
+    # 로컬 모델이 설치/활성이면 그게 우선이므로(e5-large) 해시 폴백을 보려면 끈다.
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+    monkeypatch.setenv("MIHO_LOCAL_EMBEDDING", "0")
 
     vector, method = embed_text("Miho local fallback")
 
