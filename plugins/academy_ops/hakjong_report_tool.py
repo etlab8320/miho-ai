@@ -428,7 +428,7 @@ def _grounding_errors(
                     "학과 방향에 학생 기록이 닿아 있으면 디벨롭, 닿은 게 없으면 그 분야에서 새로 설계한다. "
                     + (f"이 학생의 실제 세특·창체다 — 반드시 출발점으로 써라: {brief_text}. " if brief_text else "")
                     + "예: "
-                    '{"gap_plan": {"title": "3학년 1학기 분야별 세특 설계", "subjects": ['
+                    '{"gap_plan": {"title": "3학년 1학기 분야별 세특·활동 설계", "subjects": ['
                     '{"field": "체육", '
                     '"current_record": "1학년 동아리 필라테스반에서 모던리포머·레더바 등 재활 기구를 다뤘고 운동과 건강에서 척주질환 예방을 발표함", '
                     '"school_direction": "스포츠의학과는 재활·운동처방·기능평가를 본다", '
@@ -870,7 +870,9 @@ def register_hakjong_report_tool(ctx: Any) -> None:
                         "final_judgment{body}, checklist{title,bullets[],tags[]}, footnote, "
                         "gap_plan{title, subjects[{field, current_record, school_direction, steps[](2개+), eval_axis}]}"
                         "(재학생 필수, 분야별 1페이지 상세 세특 설계로 렌더된다; 있으면 checklist 대신). "
-                        "분야 개수는 정하지 말고 전공에 닿는 만큼만(교과+창체=동아리·진로·자율·봉사). 각 분야: "
+                        "분야 개수는 정하지 말고 전공에 닿는 만큼만(교과+창체=동아리·진로·자율·봉사). "
+                        "용어 주의: '세특(세부능력 및 특기사항)'은 교과 전용이다 — 창체(자율·동아리·진로·봉사)는 "
+                        "'세특'이 아니라 '활동'이다. field를 창체로 잡으면 활동 설계로 쓴다. 각 분야: "
                         "field=분야명 · current_record=이 학생 실제 기록 인용 출발점 · school_direction=학과가 원하는 방향 · "
                         "steps=탐구 단계 3개+(각 100자 내외 '무엇을·어떤 방법으로·어떤 산출물까지', 한 줄 빈약 X) · eval_axis=연결 평가요소. "
                         "학과 방향에 학생 기록이 닿으면 디벨롭, 없으면 그 분야에서 새로 설계}. "

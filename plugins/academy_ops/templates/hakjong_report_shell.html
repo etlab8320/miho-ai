@@ -354,7 +354,7 @@
     {#- 세특 설계는 분야별 1페이지 상세 섹션으로 별도 렌더(사장님 2026-06-13). 여기선 안내만. #}
     <div class="gapLead">
       <div class="gapTitle">{{ data.strategy_section.gap_plan.title }}</div>
-      <p>아래 보완 전략에 이어 <b>분야별 세특 설계</b>를 다음 페이지부터 한 분야씩 상세히 제시합니다.</p>
+      <p>아래 보완 전략에 이어 <b>분야별 세특·활동 설계</b>(교과 세특 + 창체 활동)를 다음 페이지부터 한 분야씩 상세히 제시합니다.</p>
     </div>
     {%- endif %}
 
@@ -399,9 +399,12 @@
   {#- ───────── 04+ · 분야별 세특 설계 (재학생, 분야 수는 미호가 전공 닿는 만큼 자율) ───────── #}
   {%- if data.strategy_section.gap_plan %}
   {%- for s in data.strategy_section.gap_plan.subjects %}
+  {#- 세특(세부능력 및 특기사항)은 교과 전용 용어다. 창체(자율·동아리·진로·봉사)는 '활동'으로 부른다(사장님 2026-06-13). #}
+  {%- set _is_act = ('창체' in s.field) or ('동아리' in s.field) or ('자율' in s.field) or ('진로' in s.field) or ('봉사' in s.field) or ('활동' in s.field) %}
+  {%- set _kind = '활동 설계' if _is_act else '세특 설계' %}
   <section class="page">
-    {{ topbar("세특 설계 · " ~ s.field) }}
-    <h2>{{ s.field }} 세특 설계</h2>
+    {{ topbar(_kind ~ " · " ~ s.field) }}
+    <h2>{{ s.field }} {{ _kind }}</h2>
     <div class="gapDesign">
       <div class="gapBlock start">
         <div class="lbl">① 지금 가진 기록 (출발점)</div>
@@ -419,7 +422,7 @@
       <div class="axisBadge">연결 평가요소 · {{ s.eval_axis }}</div>
       {%- endif %}
     </div>
-    {{ footer(brand_text ~ " · 분야별 세특 설계", "") }}
+    {{ footer(brand_text ~ " · 분야별 세특·활동 설계", "") }}
   </section>
   {%- endfor %}
   {%- endif %}
