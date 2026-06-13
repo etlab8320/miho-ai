@@ -12,7 +12,12 @@ from plugins.academy_ops.hakjong_report_tool import (
     _safe_stem,
     _unique_pair,
     _contract,
+    _stage_grade,
+    _evaluation_axes,
+    _infer_stage_from_birth,
+    _grounding_errors,
 )
+import plugins.academy_ops.hakjong_report_tool as report_tool
 import plugins.academy_ops.hakjong_report_contract as contract
 
 
@@ -366,6 +371,87 @@ def test_unique_pair_increments_on_collision(tmp_path) -> None:
     new_html, new_pdf = _unique_pair(html, pdf)
     assert new_html != html
     assert new_pdf != pdf
+
+
+# ---------------------------------------------------------------------------
+# Stage inference + N수생 세특금지 + 강점 평가축 연결 (2026-06-13)
+# ---------------------------------------------------------------------------
+
+def test_stage_grade_parses_variants() -> None:
+    assert _stage_grade("grade3") == 3
+    assert _stage_grade("고3") == 3
+    assert _stage_grade("3학년") == 3
+    assert _stage_grade("고등학교 3학년") == 3  # 과거 버그: None이었다
+    assert _stage_grade("graduate") is None  # 졸업은 재학 학년 없음
+    assert _stage_grade("N수생") is None
+
+
+def test_evaluation_axes_extracts_competencies() -> None:
+    elements = [
+        {"평가축": "학업역량 40% (학업성취도 25 + 탐구력 15)"},
+        {"평가축": "진로역량 40%"},
+        {"평가축": "공동체역량 20%"},
+        {"평가축": "전공 연결 — 재활·운동처방"},  # 역량어 없음 → 추출 안 됨
+    ]
+    axes = _evaluation_axes(elements)
+    assert {"학업역량", "진로역량", "공동체역량"} <= axes
+    assert _evaluation_axes(None) == set()
+
+
+def test_infer_stage_from_birth(monkeypatch, tmp_path) -> None:
+    import sqlite3
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    school_year = now.year if now.month >= 3 else now.year - 1
+    g3_birth = school_year - 18  # 고3 출생연도
+    yy_g3 = f"{g3_birth % 100:02d}"
+    yy_grad = f"{(g3_birth - 1) % 100:02d}"  # 한 살 위 = N수/졸업
+
+    db = tmp_path / "central.sqlite3"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT, birth_masked TEXT)"
+    )
+    conn.execute("INSERT INTO students (name, birth_masked) VALUES (?, ?)", ("재학고삼", f"{yy_g3}1010-1234567"))
+    conn.execute("INSERT INTO students (name, birth_masked) VALUES (?, ?)", ("엔수생", f"{yy_grad}0614-1234567"))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(report_tool, "_CENTRAL_LIFE_DB", db)
+
+    assert _infer_stage_from_birth("재학고삼") == "grade3"
+    assert _infer_stage_from_birth("엔수생") == "graduate"
+    assert _infer_stage_from_birth("없는학생") is None
+
+
+def test_graduate_gap_plan_rejected(monkeypatch, tmp_path) -> None:
+    # central DB가 없는 환경이면 과목 인용 검증은 건너뛰고 N수생 세특금지만 본다.
+    monkeypatch.setattr(report_tool, "_CENTRAL_LIFE_DB", tmp_path / "nope.sqlite3")
+    content = _base_content()
+    content["strategy_section"]["gap_plan"] = {
+        "title": "3학년 1학기 세특 설계",
+        "subjects": [{"subject": "생명과학", "direction": "운동 후 회복 심박수를 측정·기록해 그래프화하고 탐구로 발전시킨다"}],
+    }
+    errors = _grounding_errors("없는학생", "graduate", content)
+    assert any("gap_plan" in e and "세특 설계" in e for e in errors)
+
+
+def test_graduate_setteuk_design_language_rejected(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(report_tool, "_CENTRAL_LIFE_DB", tmp_path / "nope.sqlite3")
+    content = _base_content()
+    content["strategy_section"]["actions"][0]["body"] = "생활과 과학 세특을 운동생리 주제로 정리하여 보완한다."
+    errors = _grounding_errors("없는학생", "graduate", content)
+    assert any("설계 언어" in e for e in errors)
+
+
+def test_enrolled_grade3_gap_plan_not_blocked_as_graduate(monkeypatch, tmp_path) -> None:
+    # 재학 고3에는 graduate 세특금지가 걸리면 안 된다.
+    monkeypatch.setattr(report_tool, "_CENTRAL_LIFE_DB", tmp_path / "nope.sqlite3")
+    content = _base_content()
+    content["strategy_section"]["actions"][0]["body"] = "생명과학 세특을 운동생리 주제로 정리한다."
+    errors = _grounding_errors("없는학생", "grade3", content)
+    assert not any("설계 언어" in e for e in errors)
 
 
 def test_render_html_contains_brand_text() -> None:
