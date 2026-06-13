@@ -441,6 +441,23 @@ def _grounding_errors(
                     '"eval_axis": "진로역량", '
                     '"expected_effect": "측정·분석·처방으로 이어지는 기능평가 구조가 스포츠의학과 진로역량 25점 항목에 직접 닿고, 면접에서 재활 관심을 데이터로 설명할 근거가 된다"}]}}'
                 )
+            # 고3 1학기 창체(자율·자치·동아리·진로)는 새로 못 만든다(편성 종료·9월 원서). steps에 신규
+            # 제작 언어가 있으면 반려 — 기존 활동의 '학과 유리성 분석 + 면접 활용'으로만 쓰게 강제(사장님 2026-06-13).
+            if grade == 3 and isinstance(gap_subjects, list):
+                for r in gap_subjects:
+                    if not isinstance(r, dict):
+                        continue
+                    if not any(k in str(r.get("field") or "") for k in ("창체", "동아리", "자율", "자치", "진로", "봉사", "활동")):
+                        continue
+                    steps_txt = " ".join(str(s) for s in (r.get("steps") or []))
+                    if re.search(r"제작|만든다|만들어|만들기|산출물|새로\s|체크리스트", steps_txt):
+                        errors.append(
+                            f"고3 창체 분야('{r.get('field')}')에 새 활동을 제작·실행하라는 설계가 있다 — 고3 1학기는 창체를 새로 못 만든다. "
+                            "steps를 '기존 활동(자율스포츠·경기운영단 등)이 이 학과 평가요소에 왜 유리한지 분석'과 "
+                            "'면접·서류에서 그 활동을 어떻게 설명·부각할지'로만 써라(제작·산출물·신규 활동 금지)."
+                        )
+                        break
+
             if grade == 3 and not has_current:
                 prior = [str(g) + "학년" for g in sorted(note_grades)]
                 if prior and not all(p_ in text for p_ in prior):
