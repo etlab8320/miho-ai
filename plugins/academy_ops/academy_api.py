@@ -192,11 +192,29 @@ class AcademyApiClient:
             raise AcademyApiError(_conflict_message(response))
         if response.status_code >= 500:
             raise AcademyApiError("학원 서버가 잠시 불안정해. 잠시 후 다시 시도해줘.")
+        # 4xx(파라미터 오류 등)는 백엔드 에러 메시지를 그대로 노출해 미호가 고쳐
+        # 도구로 재호출하게 한다. 불친절한 에러는 terminal 직접 호출 우회를 유발했다
+        # (2026-06-13 실사고: year_month vs year/month 파라미터 추측 실패 → terminal http).
+        if 400 <= response.status_code < 500:
+            try:
+                body = response.json()
+                detail = str(body.get("message") or body.get("error") or body)[:200]
+            except Exception:
+                detail = (response.text or "")[:200]
+            raise AcademyApiError(
+                f"학원 서버가 요청을 거부했어 ({response.status_code}): {detail} "
+                "— 쿼리 파라미터 이름·형식을 고쳐서 이 도구(method='call')로 다시 호출해. "
+                "terminal·execute_code로 직접 http 호출하지 마 (지도 화이트리스트 우회 금지)."
+            )
         try:
             response.raise_for_status()
             return response.json() if response.content else {"ok": True}
         except (httpx.HTTPError, ValueError) as exc:
-            raise AcademyApiError("학원 서버 응답을 확인하지 못했어. 잠시 후 다시 시도해줘.") from exc
+            body_preview = (response.text or "")[:200]
+            raise AcademyApiError(
+                f"학원 서버 응답을 파싱하지 못했어. 응답 일부: {body_preview} "
+                "— 이 도구로 다시 시도해 (terminal로 직접 호출하지 마)."
+            ) from exc
 
     def _get(self, path: str, params: dict[str, str] | None = None) -> Any:
         url = f"{self._base_url}{path}"
