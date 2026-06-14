@@ -34,6 +34,7 @@ from .academy_calendar_tool import (
     _consultation_schedule_range_tool_handler,
 )
 from .api_query_tool import register_api_query_tool
+from .expense_tools import register_expense_tools
 from .assignment_tool import _assignment_by_date_tool_handler
 from .attendance_calendar_tool import _student_attendance_calendar_image_tool_handler
 from .staff_attendance_tool import register_staff_attendance_tools
@@ -172,6 +173,7 @@ def register(ctx: Any) -> None:
     register_practical_reco_tool(ctx)
     register_hakjong_qualitative_tool(ctx)
     register_api_query_tool(ctx)
+    register_expense_tools(ctx)
     ctx.register_tool(
         name="academy_student_attendance_calendar_image",
         toolset="academy_ops",

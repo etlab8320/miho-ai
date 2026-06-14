@@ -162,6 +162,26 @@ class AcademyApiClient:
         records = payload.get("records") if isinstance(payload, dict) else None
         return [item for item in records or [] if isinstance(item, dict)]
 
+    def create_paca_expense(
+        self,
+        *,
+        category: str,
+        amount: int,
+        description: str,
+        expense_date: date,
+    ) -> dict[str, Any]:
+        payload = self.request_path(
+            "POST",
+            "/paca/expenses",
+            json_body={
+                "category": category,
+                "amount": amount,
+                "description": description,
+                "expense_date": expense_date.isoformat(),
+            },
+        )
+        return payload if isinstance(payload, dict) else {"result": payload}
+
     def request_path(
         self,
         http_method: str,
