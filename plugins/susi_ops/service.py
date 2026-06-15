@@ -689,7 +689,24 @@ def _region_map() -> dict[str, str]:
 # 캡틴이 직접 평가해 채운다(susi_school_tier.json). 미평가 학교는 기본 'C'.
 _SCHOOL_TIER_PATH = pathlib.Path(os.path.expanduser("~/.miho/academy_ops/susi_school_tier.json"))
 _SCHOOL_TIER: dict[str, str] | None = None
-_TIER_RANK = {"S": 0, "A": 1, "B": 2, "C": 3, "D": 4}
+_TIER_RANK = {"S": 0, "A": 1, "B": 2, "C": 3, "D": 4, "E": 5}
+
+# 학과 단위 티어 규칙 (사장님 기준 2026-06-15):
+#  서울 소재 = S · 가천대/동국대 = S · (비서울)체육교육과 = A · 경기권/거점국립·명문 = B · 지방 사립 = C~E.
+#  개별 보정은 susi_school_tier.json (university 또는 'university::학과' 키)이 규칙보다 우선.
+_S_TIER_SCHOOLS = {"가천대학교", "동국대학교"}
+_B_TIER_SCHOOLS = {
+    "단국대학교", "상명대학교", "울산대학교",
+    "부산대학교", "경북대학교", "전남대학교", "충북대학교", "경상국립대학교",
+    "부경대학교", "한국해양대학교", "강원대학교", "공주대학교", "제주대학교",
+    "한국교통대학교", "영남대학교", "조선대학교", "동아대학교", "원광대학교",
+}
+_D_TIER_SCHOOLS = {
+    "가톨릭관동대학교", "상지대학교", "나사렛대학교", "백석대학교", "서원대학교",
+    "경운대학교", "인제대학교", "창원대학교", "경남대학교", "신라대학교",
+    "동서대학교", "동명대학교", "극동대학교",
+}
+_E_TIER_SCHOOLS = {"경국대학교", "부산외국어대학교", "영산대학교"}
 
 
 def _school_tier_map() -> dict[str, str]:
@@ -703,9 +720,30 @@ def _school_tier_map() -> dict[str, str]:
     return _SCHOOL_TIER
 
 
-def _school_tier(university: str) -> str:
-    tier = _school_tier_map().get(str(university or "").strip(), "C")
-    return tier if tier in _TIER_RANK else "C"
+def _school_tier(university: str, department: str = "", region: str = "") -> str:
+    u = str(university or "").strip()
+    d = str(department or "").strip()
+    r = str(region or "").strip()
+    tmap = _school_tier_map()
+    # 1) 개별 예외 (학과 키 우선, 그다음 학교 키) — 규칙보다 우선
+    for key in (f"{u}::{d}", u):
+        t = tmap.get(key)
+        if t in _TIER_RANK:
+            return t
+    # 2) 규칙
+    if r == "서울":
+        return "S"
+    if u in _S_TIER_SCHOOLS:
+        return "S"
+    if "체육교육" in d:
+        return "A"
+    if r == "경기" or u in _B_TIER_SCHOOLS:
+        return "B"
+    if u in _E_TIER_SCHOOLS:
+        return "E"
+    if u in _D_TIER_SCHOOLS:
+        return "D"
+    return "C"
 
 
 _REGION_GROUPS = {
@@ -937,7 +975,7 @@ def recommend_candidates(
             {
                 "university_id": row["university_id"],
                 "region": cand_region,
-                "tier": _school_tier(row["university"]),
+                "tier": _school_tier(row["university"], row["department"], cand_region),
                 "university": row["university"],
                 "department": row["department"],
                 "admission_track": row["admission_track"],
