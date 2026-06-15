@@ -206,32 +206,85 @@ def _subject_allowed(row: dict[str, Any], subject_flags: dict[str, Any]) -> bool
     return str(subject_flags.get("기타") or "").upper() == "O"
 
 
+def _within_semester_limit(row: dict[str, Any], limit: Any) -> bool:
+    """semester_limit(예: '1학년 1학기~3학년 1학기(졸업생 포함)') 마지막 학년/학기까지만 반영."""
+    text = str(limit or "")
+    if not text:
+        return True
+    import re as _r
+
+    matches = _r.findall(r"(\d)\s*학년\s*(\d)\s*학기", text)
+    if not matches:
+        return True
+    end_yr, end_sem = int(matches[-1][0]), int(matches[-1][1])
+    try:
+        yr = int(row.get("학년"))
+        sem = int(row.get("학기"))
+    except (TypeError, ValueError):
+        return True
+    return yr < end_yr or (yr == end_yr and sem <= end_sem)
+
+
 def _weighted_average_grade(
     grades: list[dict[str, Any]],
     score_logic: dict[str, Any],
 ) -> tuple[float | None, int, float]:
+    # score_logic 산식 요소를 모두 반영한다 (2026-06-16, 관동대 실사고로 전면 재작성):
+    #  subject_groups(교과군 한정) · semester_limit(학기 제한) · 진로선택 성취도 변환 +
+    #  max_career_subjects(진로 최대 개수) · top_n(석차등급 우수 N과목) · credit_weighted(이수단위 가중).
     subject_flags = score_logic.get("subject_flags") or {}
+    groups = score_logic.get("subject_groups")
+    groups_set = set(groups) if isinstance(groups, list) and groups else None
+    top_n = score_logic.get("top_n")
+    max_career = score_logic.get("max_career_subjects")
+    semester_limit = score_logic.get("semester_limit")
+    credit_weighted = score_logic.get("credit_weighted")
+    credit_weighted = True if credit_weighted is None else bool(credit_weighted)
+    career_conv = score_logic.get("career_conversion") or {"A": 1.0, "B": 2.0, "C": 4.0}
     regular_only = str(score_logic.get("regular_subjects") or "").upper() == "O"
-    weighted_sum = 0.0
-    total_units = 0.0
-    used = 0
-    for grade_row in grades:
-        if not isinstance(grade_row, dict):
+
+    regular: list[tuple[float, float]] = []  # (석차등급, 이수단위) — 등급 있는 일반과목
+    career: list[tuple[float, float]] = []    # 진로선택(성취도 변환)
+    for row in grades:
+        if not isinstance(row, dict):
             continue
-        if regular_only and not _is_regular_subject(grade_row):
+        area = _norm_subject_area(
+            row.get("area") or row.get("교과") or row.get("subject_area") or row.get("과목군")
+        )
+        # 반영교과 필터: subject_groups가 있으면 그 교과군만, 없으면 subject_flags 규칙
+        if groups_set is not None:
+            if area not in groups_set:
+                continue
+        elif not _subject_allowed(row, subject_flags):
             continue
-        if not _subject_allowed(grade_row, subject_flags):
+        if not _within_semester_limit(row, semester_limit):
             continue
-        grade = _grade_value(grade_row)
-        if grade is None:
-            continue
-        unit = _unit_value(grade_row)
-        weighted_sum += grade * unit
-        total_units += unit
-        used += 1
-    if total_units <= 0:
-        return None, used, total_units
-    return weighted_sum / total_units, used, total_units
+        unit = _unit_value(row)
+        grade = _grade_value(row)
+        if grade is not None:
+            regular.append((grade, unit))
+        else:
+            ach = str(row.get("성취도") or row.get("achievement") or "").strip().upper()
+            gv = career_conv.get(ach)
+            if gv is not None:
+                career.append((float(gv), unit))
+    # 진로선택: regular_subjects=O이고 max_career 미지정이면 제외, max_career 명시면 우수순 그만큼만
+    if regular_only and max_career is None:
+        career = []
+    elif max_career is not None:
+        career = sorted(career, key=lambda x: (x[0], -x[1]))[: int(max_career)]
+    pool = regular + career
+    # top_n: 석차등급 우수(낮은 등급) 상위 N과목, 동점이면 이수단위 높은 과목 우선
+    if top_n:
+        pool = sorted(pool, key=lambda x: (x[0], -x[1]))[: int(top_n)]
+    if not pool:
+        return None, 0, 0.0
+    if credit_weighted:
+        tu = sum(u for _, u in pool)
+        if tu <= 0:
+            return None, len(pool), 0.0
+        return sum(g * u for g, u in pool) / tu, len(pool), tu
+    return sum(g for g, _ in pool) / len(pool), len(pool), sum(u for _, u in pool)
 
 
 def _score_from_grade_table(avg_grade: float, grade_points: dict[str, Any]) -> float | None:
