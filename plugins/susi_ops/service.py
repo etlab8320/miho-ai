@@ -861,6 +861,11 @@ def recommend_candidates(
     candidates = []
     skipped = {"calc_failed": 0, "unreachable": 0, "stage1_blocked": 0, "non_practical": 0}
     for row in rule_rows:
+        # 지역인재전형 제외 — 맥스 일산교육원(고양시·수도권) 학생은 지방대 지역인재 자격이 없다.
+        # (지역인재 전형은 전부 지방, 수도권 지역인재는 0개이므로 일괄 제외해도 안전 — 2026-06-16)
+        if "지역인재" in str(row["admission_track"] or ""):
+            skipped["jiyeok_blocked"] = skipped.get("jiyeok_blocked", 0) + 1
+            continue
         # 실기전형만 추천 대상 — 같은 학과의 비실기 전형(교과100/농어촌·종합 서류, 실기만점 0)을
         # 후보에서 제외한다. 실기 미반영 전형은 작년 결과·실기만점이 없어 빈칸을 만든다.
         ct = _json_loads(row["calculation_test_json"], {}) or {}
