@@ -971,7 +971,10 @@ def recommend_candidates(
                     f"1단계 선발이 있는 전형 — 작년 최종합격자 평균등급 {prev_winner_grade:g}인데 "
                     f"학생 평균등급이 {student_grade:g}라 1단계 통과 자체가 어렵다. 추천에서 빼거나 명시 경고 필수."
                 )
-        suggested = "적정" if (prev_final_record is not None and record >= prev_final_record) else "상향"
+        # 적정/상향은 작년 최종합격자 내신을 올해 산식으로 재환산한 값과 비교해야 정확하다
+        # (작년 원본 점수는 스케일이 달라 직접 비교 불가 — 2026-06-16).
+        prev_final_rec_rescaled = vs.get("prev_final_record_rescaled")
+        suggested = "적정" if (prev_final_rec_rescaled is not None and record >= prev_final_rec_rescaled) else "상향"
         margin = round(vs["max_possible_total"] - vs["prev_final_total"], 2)
         # 핵심 지표(사장님 피드백 2026-06-12): 만점 여유가 아니라 "합격에 필요한
         # 실기 득점률"이 진짜 난이도다. 작년 합격자의 실제 실기 득점률과 나란히 본다.
