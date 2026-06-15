@@ -685,6 +685,29 @@ def _region_map() -> dict[str, str]:
     return _REGION_MAP
 
 
+# 학교 평가 티어 (실기전형 입결 서열 + 지역·명성 종합) — 추천 정렬 1순위.
+# 캡틴이 직접 평가해 채운다(susi_school_tier.json). 미평가 학교는 기본 'C'.
+_SCHOOL_TIER_PATH = pathlib.Path(os.path.expanduser("~/.miho/academy_ops/susi_school_tier.json"))
+_SCHOOL_TIER: dict[str, str] | None = None
+_TIER_RANK = {"S": 0, "A": 1, "B": 2, "C": 3, "D": 4}
+
+
+def _school_tier_map() -> dict[str, str]:
+    global _SCHOOL_TIER
+    if _SCHOOL_TIER is not None:
+        return _SCHOOL_TIER
+    data = _json_loads(
+        _SCHOOL_TIER_PATH.read_text(encoding="utf-8") if _SCHOOL_TIER_PATH.exists() else None, None
+    )
+    _SCHOOL_TIER = data if isinstance(data, dict) else {}
+    return _SCHOOL_TIER
+
+
+def _school_tier(university: str) -> str:
+    tier = _school_tier_map().get(str(university or "").strip(), "C")
+    return tier if tier in _TIER_RANK else "C"
+
+
 _REGION_GROUPS = {
     "수도권": ["서울", "경기", "인천"],
     "충청": ["대전", "세종", "충남", "충북"],
@@ -914,6 +937,7 @@ def recommend_candidates(
             {
                 "university_id": row["university_id"],
                 "region": cand_region,
+                "tier": _school_tier(row["university"]),
                 "university": row["university"],
                 "department": row["department"],
                 "admission_track": row["admission_track"],
@@ -938,9 +962,11 @@ def recommend_candidates(
             }
         )
 
-    # 정렬: 필요 실기 득점률이 낮은 학교(현실적으로 쉬운 순)부터. 지표가 없으면 뒤로.
+    # 정렬: 학교 평가 티어(S>A>B>C>D) 1순위 — 도달 가능한 학교 중 평가 좋은 순.
+    # 동일 티어 안에서는 필요 실기 득점률이 낮은(현실적으로 쉬운) 순, 그다음 여유점수.
     candidates.sort(
         key=lambda c: (
+            _TIER_RANK.get(c.get("tier", "C"), 3),
             c["needed_practical_rate_pct"] if c["needed_practical_rate_pct"] is not None else 999.0,
             -c["margin_at_full_practical"],
         )

@@ -245,7 +245,7 @@ def _practical_reco_package_tool_handler(args: dict[str, Any] | None = None, **_
         )
 
     # Step 5: write manifest
-    school_names = [s.get("name", "") for s in (content.get("schools") or []) if isinstance(s, dict)]
+    school_names = [r.get("school", "") for r in ((content.get("comparison") or {}).get("rows") or []) if isinstance(r, dict)]
     manifest_path = packaged_pdf.with_suffix(".practical_reco_validation.json")
     manifest_path.write_text(
         json.dumps(
@@ -305,17 +305,16 @@ def register_practical_reco_tool(ctx: Any) -> None:
                 "content": {
                     "type": "object",
                     "description": (
-                        "리포트 내용 JSON. 추천 학교 N개를 한 부에 담는다. "
+                        "리포트 내용 JSON. 추천 학교 전체를 한 부(comparison.rows 단일 표)에 담는다. "
                         "필수 키: student{name, avg_grade, basis_label} · title_lines[] · "
                         "badge{line1, line2} · "
                         "cover{pills[], key_judgment{headline, body}, metrics[{label,value}]x3} · "
                         "comparison{note, rows[{school, department, track, converted, max_total, "
-                        "first_cut, final_cut, verdict(상향|적정)}]} · "
-                        "schools[{name, department, track, verdict, numbers[{label,value}], "
-                        "events[], rationale_paragraphs[], caution}] · "
+                        "first_cut, final_cut, verdict(상향|적정)}]} — 추천 학교 전체를 rows에 넣고 "
+                        "각 행에 내신환산(converted)·실기만점합산(max_total)·전년도 최초/최종합(first_cut/final_cut)을 반드시 채운다 · "
                         "final{cards[{title,body}], callout{title, paragraphs[]}, tags[]} · "
                         "footnote. "
-                        "schools 길이 == comparison.rows 길이. "
+                        "학교별 상세 페이지는 없다 — 전체를 comparison.rows 한 표로 보여주므로 schools 키는 불필요. "
                         "환산점수·전년도 수치는 susi27_score_calculate/susi27_rule_lookup 산출값만 사용. "
                         "로고·푸터·브랜딩은 템플릿이 보장하므로 여기에 넣지 않는다."
                     ),

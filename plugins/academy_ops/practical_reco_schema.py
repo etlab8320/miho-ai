@@ -154,19 +154,10 @@ def _validate_structure(content: dict[str, Any], errors: list[str]) -> None:
                         "수학적으로 불가능한 학교라 추천 목록에 실을 수 없다. 이 학교를 빼고 다시 호출하라."
                     )
 
-    # schools — length must equal comparison.rows length
+    # schools — 템플릿에서 학교별 상세 페이지를 제거해 더 이상 필수가 아니다.
+    # 제공되면 형식만 점검하고, 없으면 통과한다 (전체 학교는 comparison.rows 단일 표로 노출).
     schools = content.get("schools")
-    if not isinstance(schools, list) or not schools:
-        errors.append("content.schools는 1개 이상의 항목이어야 한다.")
-    else:
-        # Cross-check length with comparison rows (only when comparison is valid)
-        if isinstance(comparison, dict) and isinstance(comparison.get("rows"), list):
-            rows_len = len(comparison["rows"])
-            if len(schools) != rows_len:
-                errors.append(
-                    f"content.schools 길이({len(schools)})가 "
-                    f"content.comparison.rows 길이({rows_len})와 다르다."
-                )
+    if isinstance(schools, list) and schools:
         for i, school in enumerate(schools):
             if not isinstance(school, dict):
                 errors.append(f"content.schools[{i}]는 dict여야 한다.")

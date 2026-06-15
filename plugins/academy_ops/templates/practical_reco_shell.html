@@ -173,8 +173,6 @@
     <div class="footer"><span>{{ left_text }}</span><span>{{ right_text }}</span></div>
 {%- endmacro %}
 {%- macro verdict_pill(v) %}<span class="verdict {{ 'up' if v == '상향' else 'fit' }}">{{ v }}</span>{%- endmacro %}
-{#- 카드 3장은 A4 한 장을 넘쳐 푸터가 밀린다 — 페이지당 2장 고정 -#}
-{%- set school_pages = data.schools | batch(2) | list %}
 <body class="maxReport">
 
   {#- ───────── 표지 ───────── #}
@@ -242,43 +240,9 @@
     {{ footer(data.footnote, "1") }}
   </section>
 
-  {#- ───────── 02 · 학교별 상세 ───────── #}
-  {% for group in school_pages %}
+  {#- ───────── 02 · 최종 정리 ───────── #}
   <section class="page">
-    {{ topbar("02 · 학교별 상세 (" ~ loop.index ~ "/" ~ school_pages | length ~ ")") }}
-    {% if loop.first %}<h2>학교별 점수 비교와 추천 이유</h2>{% endif %}
-
-    {% for s in group %}
-    <div class="schoolCard">
-      <div class="head">
-        <div>
-          <div class="title">{{ s.name }} {{ s.department }}</div>
-          <div class="sub">{{ s.track }}</div>
-        </div>
-        {{ verdict_pill(s.verdict) }}
-      </div>
-      <div class="numRow">
-        {% for n in s.numbers %}
-        <div class="numBox"><div class="t">{{ n.label }}</div><div class="v">{{ n.value }}</div></div>
-        {% endfor %}
-      </div>
-      {% if s.events %}
-      <div class="eventrow">
-        {% for e in s.events %}<span class="event">{{ e }}</span>{% endfor %}
-      </div>
-      {% endif %}
-      {% for para in s.rationale_paragraphs %}<p>{{ para }}</p>{% endfor %}
-      {% if s.caution %}<div class="caution">{{ s.caution }}</div>{% endif %}
-    </div>
-    {% endfor %}
-
-    {{ footer(data.footnote, loop.index + 1) }}
-  </section>
-  {% endfor %}
-
-  {#- ───────── 03 · 최종 정리 ───────── #}
-  <section class="page">
-    {{ topbar("03 · 최종 정리") }}
+    {{ topbar("02 · 최종 정리") }}
     <h2>지원 전략 정리</h2>
 
     <div class="finalGrid">
@@ -296,7 +260,7 @@
       {% for t in data.final.tags %}<span class="tag">{{ t }}</span>{% endfor %}
     </div>
 
-    {{ footer(brand_text ~ " · 수시 실기전형 지원전략 리포트", school_pages | length + 2) }}
+    {{ footer(brand_text ~ " · 수시 실기전형 지원전략 리포트", "2") }}
   </section>
 </body>
 </html>
