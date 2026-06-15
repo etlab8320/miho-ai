@@ -410,11 +410,11 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
     score_logic = _json_loads(row["score_logic_json"], {}) or {}
     grade_points = score_logic.get("grade_points") if isinstance(score_logic, dict) else None
 
-    def _rescaled_cut(cut: Any) -> tuple[float | None, float | None]:
+    def _rescaled_cut(cut: Any) -> tuple[float | None, float | None, float | None]:
         # 작년 합격컷을 올해 산식 스케일로 재환산한다. 작년 점수 만점이 학교마다
         # 제각각(안양대 100점 vs 강원대 1600점)이라 직접 비교가 틀린다(2026-06-15 실사고).
         # 작년 합격자 평균등급을 올해 grade_points로 환산해 내신 재환산점을 얻고,
-        # (재환산점 / 작년내신점) 비율을 작년 총점에 곱해 올해 스케일 총점을 만든다.
+        # (재환산점 / 작년내신점) 비율(scale)을 작년 총점에 곱해 올해 스케일 총점을 만든다.
         cut = cut if isinstance(cut, dict) else {}
         total_raw = _first_number(cut.get("total_score"))
         record_raw = _first_number(cut.get("record_score"))
@@ -424,11 +424,11 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
             rec_olscale = _score_from_grade_table(grade, grade_points)
         if rec_olscale is not None and record_raw and record_raw > 0 and total_raw is not None:
             scale = rec_olscale / record_raw
-            return round(total_raw * scale, 2), rec_olscale
-        return total_raw, rec_olscale  # 등급/산식 없으면 원본 총점(스케일 일치 학교) 사용
+            return round(total_raw * scale, 2), rec_olscale, scale
+        return total_raw, rec_olscale, None  # 등급/산식 없으면 원본 총점(스케일 일치 학교) 사용
 
-    final_cut, prev_final_rec = _rescaled_cut(r26.get("final_pass_cutoff"))
-    first_cut, prev_first_rec = _rescaled_cut(r26.get("first_pass_cutoff"))
+    final_cut, prev_final_rec, prev_scale = _rescaled_cut(r26.get("final_pass_cutoff"))
+    first_cut, prev_first_rec, _ = _rescaled_cut(r26.get("first_pass_cutoff"))
     if practical_max is None or final_cut is None:
         return None
     max_total = round(record_score + practical_max, 2)
@@ -440,6 +440,7 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
         "prev_first_total": first_cut,
         "prev_final_record_rescaled": prev_final_rec,
         "prev_first_record_rescaled": prev_first_rec,
+        "prev_scale": prev_scale,
         "reachable_at_full_practical": reachable,
     }
     # 1단계(내신) 통과 가능성 — 작년 1단계 합격자 내신(올해 재환산) 기준 (사장님 룰 2026-06-15).
@@ -702,11 +703,11 @@ _B_TIER_SCHOOLS = {
     "한국교통대학교", "영남대학교", "조선대학교", "동아대학교", "원광대학교",
 }
 _D_TIER_SCHOOLS = {
-    "가톨릭관동대학교", "상지대학교", "나사렛대학교", "백석대학교", "서원대학교",
+    "가톨릭관동대학교", "상지대학교", "백석대학교",
     "경운대학교", "인제대학교", "창원대학교", "경남대학교", "신라대학교",
-    "동서대학교", "동명대학교", "극동대학교",
+    "동서대학교", "동명대학교",
 }
-_E_TIER_SCHOOLS = {"경국대학교", "부산외국어대학교", "영산대학교"}
+_E_TIER_SCHOOLS = {"경국대학교", "부산외국어대학교", "영산대학교", "극동대학교"}
 
 
 def _school_tier_map() -> dict[str, str]:
@@ -887,11 +888,14 @@ def recommend_candidates(
         default_track, all_tracks = _track_cuts(row["university_id"])
         track_note = None
         if default_track and (default_track.get("final_cut_total") or default_track.get("first_cut_total")):
-            t_final = default_track.get("final_cut_total") or default_track.get("first_cut_total")
+            # _track_cuts의 컷도 작년 raw 스케일이므로 _vs_prev_year가 구한 prev_scale로
+            # 올해 산식 스케일에 맞춘다 (안 그러면 안양대 등에서 스케일 불일치로 오판).
+            t_scale = vs.get("prev_scale") or 1.0
+            t_final = (default_track.get("final_cut_total") or default_track.get("first_cut_total")) * t_scale
             vs = dict(vs)
-            vs["prev_final_total"] = float(t_final)
+            vs["prev_final_total"] = round(float(t_final), 2)
             if default_track.get("first_cut_total"):
-                vs["prev_first_total"] = float(default_track["first_cut_total"])
+                vs["prev_first_total"] = round(float(default_track["first_cut_total"]) * t_scale, 2)
             pm = _first_number(vs.get("practical_max")) or 0.0
             rec_now = _first_number(calc.get("student_record_score")) or 0.0
             vs["max_possible_total"] = round(rec_now + pm, 2)
@@ -1009,6 +1013,16 @@ def recommend_candidates(
             -c["margin_at_full_practical"],
         )
     )
+    # 같은 대학·학과·전형이 여러 university_id로 중복되면 정렬상 최선 1개만 남긴다.
+    _seen: set = set()
+    _deduped = []
+    for c in candidates:
+        k = (c["university"], c["department"], c.get("admission_track"))
+        if k in _seen:
+            continue
+        _seen.add(k)
+        _deduped.append(c)
+    candidates = _deduped
     max_candidates = max(1, min(int(max_candidates or 30), 60))
     total = len(candidates)
     candidates = candidates[:max_candidates]
