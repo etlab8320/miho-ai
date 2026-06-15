@@ -385,7 +385,8 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
     보이지 않으므로(2026-06-12 강원대 상향 오추천 실사고), 판정을 데이터에 박는다."""
     try:
         row = conn.execute(
-            "SELECT c.admission_result_26_json, c.calculation_test_json, c.score_logic_json, d.raw_json "
+            "SELECT c.admission_result_26_json, c.calculation_test_json, c.score_logic_json, "
+            "c.admission_meta_json, d.raw_json "
             "FROM susi_calculation_rules c "
             "LEFT JOIN db_university_rows d ON d.university_id = c.university_id "
             "WHERE c.university_id = ?",
@@ -396,14 +397,13 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
     if row is None:
         return None
     raw = _json_loads(row["raw_json"], {})
+    ct = _json_loads(row["calculation_test_json"], {}) or {}
     practical_max = _first_number(raw.get("실기만점"))
-    if practical_max is None:
-        # raw.실기만점은 223/376 결손이지만 실기만점은 검증된 산식
-        # (calculation_test_json.plugin_practical_full_score)에 박혀 있다.
-        # 학생 record_score가 같은 산식으로 계산되므로 스케일이 일치한다.
-        ct = _json_loads(row["calculation_test_json"], {}) or {}
-        if isinstance(ct, dict):
-            practical_max = _first_number(ct.get("plugin_practical_full_score"))
+    if practical_max is None and isinstance(ct, dict):
+        # raw.실기만점 결손 시 검증 산식의 실기 만점 사용.
+        practical_max = _first_number(ct.get("plugin_practical_full_score"))
+    # 올해 총점 만점 — 작년 합격컷과 만점 스케일이 같은지 판정하는 기준.
+    full_total = _first_number(ct.get("plugin_full_practical_total")) if isinstance(ct, dict) else None
     r26 = _json_loads(row["admission_result_26_json"], {}) or {}
     if not isinstance(r26, dict):
         return None
@@ -422,9 +422,15 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
         rec_olscale = None
         if grade is not None and grade_points:
             rec_olscale = _score_from_grade_table(grade, grade_points)
-        if rec_olscale is not None and record_raw and record_raw > 0 and total_raw is not None:
-            scale = rec_olscale / record_raw
-            return round(total_raw * scale, 2), rec_olscale, scale
+        if total_raw is not None:
+            # 비율(만점 스케일) 판정: 작년 총점이 올해 총점 만점과 같은 스케일이면(비율 유사)
+            # 재환산하지 않고 작년 총점을 그대로 쓴다 (사장님 룰 2026-06-16: 무조건 재환산 금지).
+            # 명백히 다를 때만(안양대 작년 100점 vs 올해 1000점) grade 기반 재환산.
+            if full_total and full_total > 0 and 0.5 <= total_raw / full_total <= 1.2:
+                return total_raw, rec_olscale, 1.0
+            if rec_olscale is not None and record_raw and record_raw > 0:
+                scale = rec_olscale / record_raw
+                return round(total_raw * scale, 2), rec_olscale, scale
         return total_raw, rec_olscale, None  # 등급/산식 없으면 원본 총점(스케일 일치 학교) 사용
 
     final_cut, prev_final_rec, prev_scale = _rescaled_cut(r26.get("final_pass_cutoff"))
@@ -443,12 +449,15 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
         "prev_scale": prev_scale,
         "reachable_at_full_practical": reachable,
     }
-    # 1단계(내신) 통과 가능성 — 작년 1단계 합격자 내신(올해 재환산) 기준 (사장님 룰 2026-06-15).
-    # 단 1단계 내신 비중이 0/빈값인 전형(서경대형 1단계 실기100%)은 내신 무관이라 판정에서 뺀다.
-    stage_weights = score_logic.get("stage_weights") if isinstance(score_logic, dict) else None
-    stage1_rec_weight = _first_number((stage_weights or {}).get("stage1_student_record"))
-    info["stage1_uses_record"] = bool(stage1_rec_weight and stage1_rec_weight > 0)
-    if prev_first_rec is not None and info["stage1_uses_record"]:
+    # 1단계(배수 선발) 통과 가능성 (사장님 룰 2026-06-16).
+    # 1단계 판정 기준은 '배수(multiple)가 명시된 전형'뿐이다 — first_pass_cutoff 데이터 존재만으로
+    # 판정하면 일괄전형(인천대 스포츠과학·관동대 등)을 1단계로 오인해 잘못 거른다(실사고).
+    # 배수 선발이면 학생 내신환산이 작년 1단계 통과자 내신환산 이상이어야 1단계 통과 가능.
+    meta = _json_loads(row["admission_meta_json"], {}) or {}
+    stage1_meta = meta.get("stage1") if isinstance(meta.get("stage1"), dict) else {}
+    stage1_multiple = _first_number((stage1_meta or {}).get("multiple"))
+    info["stage1_uses_record"] = bool(stage1_multiple and stage1_multiple > 0) and (prev_first_rec is not None)
+    if info["stage1_uses_record"]:
         info["stage1_record_reachable"] = record_score >= prev_first_rec
     if not reachable:
         info["warning"] = (
@@ -736,6 +745,8 @@ def _school_tier(university: str, department: str = "", region: str = "") -> str
         return "S"
     if u in _S_TIER_SCHOOLS:
         return "S"
+    if "특수체육교육" in d:  # 특수체육교육과는 B (사장님 2026-06-15)
+        return "B"
     if "체육교육" in d:
         return "A"
     if r == "경기" or u in _B_TIER_SCHOOLS:
