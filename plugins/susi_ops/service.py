@@ -131,8 +131,31 @@ def lookup_rules(
 
 def _norm_subject_area(value: Any) -> str:
     text = str(value or "").strip()
-    aliases = {"국": "국어", "수": "수학", "영": "영어", "사": "사회", "과": "과학"}
-    return aliases.get(text, text)
+    short = {"국": "국어", "수": "수학", "영": "영어", "사": "사회", "과": "과학"}
+    if text in short:
+        return short[text]
+    # 생기부 교과군명(긴 형식: "사회(역사/도덕 포함)", "기술・가정/제2외국어/한문/교양" 등)을
+    # 산식 subject_flags 표준명(국어/수학/영어/과학/사회/한국사/체육/기타)으로 정규화.
+    # startswith 위주 — "제2외국어"의 "국어" 부분매칭 오류 방지.
+    if "한국사" in text:
+        return "한국사"
+    if text.startswith("국어"):
+        return "국어"
+    if text.startswith("수학"):
+        return "수학"
+    if text.startswith("영어"):
+        return "영어"
+    if text.startswith("과학"):
+        return "과학"
+    if text.startswith("사회") or "역사" in text or "도덕" in text:
+        return "사회"
+    if text.startswith("체육"):
+        return "체육"
+    if text.startswith("예술") or "음악" in text or "미술" in text:
+        return "예술"
+    if any(k in text for k in ("기술", "가정", "제2외국어", "한문", "교양", "정보", "진로")):
+        return "기타"
+    return text
 
 
 def _grade_value(row: dict[str, Any]) -> float | None:
@@ -175,6 +198,9 @@ def _subject_allowed(row: dict[str, Any], subject_flags: dict[str, Any]) -> bool
     )
     if not area:
         return True
+    # 한국사: 산식에 '한국사' 플래그가 따로 없으면 사회 교과로 판정 (사장님 룰 2026-06-15).
+    if area == "한국사" and "한국사" not in subject_flags:
+        area = "사회"
     if area in subject_flags:
         return str(subject_flags.get(area) or "").upper() == "O"
     return str(subject_flags.get("기타") or "").upper() == "O"
@@ -359,7 +385,7 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
     보이지 않으므로(2026-06-12 강원대 상향 오추천 실사고), 판정을 데이터에 박는다."""
     try:
         row = conn.execute(
-            "SELECT c.admission_result_26_json, d.raw_json "
+            "SELECT c.admission_result_26_json, c.calculation_test_json, c.score_logic_json, d.raw_json "
             "FROM susi_calculation_rules c "
             "LEFT JOIN db_university_rows d ON d.university_id = c.university_id "
             "WHERE c.university_id = ?",
@@ -371,11 +397,38 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
         return None
     raw = _json_loads(row["raw_json"], {})
     practical_max = _first_number(raw.get("실기만점"))
+    if practical_max is None:
+        # raw.실기만점은 223/376 결손이지만 실기만점은 검증된 산식
+        # (calculation_test_json.plugin_practical_full_score)에 박혀 있다.
+        # 학생 record_score가 같은 산식으로 계산되므로 스케일이 일치한다.
+        ct = _json_loads(row["calculation_test_json"], {}) or {}
+        if isinstance(ct, dict):
+            practical_max = _first_number(ct.get("plugin_practical_full_score"))
     r26 = _json_loads(row["admission_result_26_json"], {}) or {}
     if not isinstance(r26, dict):
         return None
-    final_cut = _first_number((r26.get("final_pass_cutoff") or {}).get("total_score"))
-    first_cut = _first_number((r26.get("first_pass_cutoff") or {}).get("total_score"))
+    score_logic = _json_loads(row["score_logic_json"], {}) or {}
+    grade_points = score_logic.get("grade_points") if isinstance(score_logic, dict) else None
+
+    def _rescaled_cut(cut: Any) -> tuple[float | None, float | None]:
+        # 작년 합격컷을 올해 산식 스케일로 재환산한다. 작년 점수 만점이 학교마다
+        # 제각각(안양대 100점 vs 강원대 1600점)이라 직접 비교가 틀린다(2026-06-15 실사고).
+        # 작년 합격자 평균등급을 올해 grade_points로 환산해 내신 재환산점을 얻고,
+        # (재환산점 / 작년내신점) 비율을 작년 총점에 곱해 올해 스케일 총점을 만든다.
+        cut = cut if isinstance(cut, dict) else {}
+        total_raw = _first_number(cut.get("total_score"))
+        record_raw = _first_number(cut.get("record_score"))
+        grade = _first_number(cut.get("grade"))
+        rec_olscale = None
+        if grade is not None and grade_points:
+            rec_olscale = _score_from_grade_table(grade, grade_points)
+        if rec_olscale is not None and record_raw and record_raw > 0 and total_raw is not None:
+            scale = rec_olscale / record_raw
+            return round(total_raw * scale, 2), rec_olscale
+        return total_raw, rec_olscale  # 등급/산식 없으면 원본 총점(스케일 일치 학교) 사용
+
+    final_cut, prev_final_rec = _rescaled_cut(r26.get("final_pass_cutoff"))
+    first_cut, prev_first_rec = _rescaled_cut(r26.get("first_pass_cutoff"))
     if practical_max is None or final_cut is None:
         return None
     max_total = round(record_score + practical_max, 2)
@@ -385,12 +438,21 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
         "max_possible_total": max_total,
         "prev_final_total": final_cut,
         "prev_first_total": first_cut,
+        "prev_final_record_rescaled": prev_final_rec,
+        "prev_first_record_rescaled": prev_first_rec,
         "reachable_at_full_practical": reachable,
     }
+    # 1단계(내신) 통과 가능성 — 작년 1단계 합격자 내신(올해 재환산) 기준 (사장님 룰 2026-06-15).
+    # 단 1단계 내신 비중이 0/빈값인 전형(서경대형 1단계 실기100%)은 내신 무관이라 판정에서 뺀다.
+    stage_weights = score_logic.get("stage_weights") if isinstance(score_logic, dict) else None
+    stage1_rec_weight = _first_number((stage_weights or {}).get("stage1_student_record"))
+    info["stage1_uses_record"] = bool(stage1_rec_weight and stage1_rec_weight > 0)
+    if prev_first_rec is not None and info["stage1_uses_record"]:
+        info["stage1_record_reachable"] = record_score >= prev_first_rec
     if not reachable:
         info["warning"] = (
             f"실기 만점({practical_max:g})을 받아도 합산 {max_total:g}점이 전년도 최종합 "
-            f"{final_cut:g}점에 미달 — 이 학교는 상향으로도 추천 금지."
+            f"{final_cut:g}점(올해 산식 환산)에 미달 — 이 학교는 상향으로도 추천 금지."
         )
     return info
 
@@ -623,13 +685,33 @@ def _region_map() -> dict[str, str]:
     return _REGION_MAP
 
 
+_REGION_GROUPS = {
+    "수도권": ["서울", "경기", "인천"],
+    "충청": ["대전", "세종", "충남", "충북"],
+    "강원": ["강원"],
+    "영남": ["부산", "대구", "울산", "경남", "경북"],
+    "경상": ["부산", "대구", "울산", "경남", "경북"],
+    "호남": ["광주", "전남", "전북"],
+    "전라": ["광주", "전남", "전북"],
+    "제주": ["제주"],
+}
+
+
 def _parse_regions(value: Any) -> list[str]:
     if isinstance(value, (list, tuple)):
         items = value
     else:
         items = _re.split(r"[,/·\s]+", str(value or ""))
     out = [str(v).strip() for v in items if str(v).strip()]
-    return [] if any(v in ("전국", "전체") for v in out) else out
+    if any(v in ("전국", "전체") for v in out):
+        return []
+    # 광역권명("수도권/충청권/강원권"...)을 region_map의 시도명으로 확장한다.
+    # 입력이 이미 시도명("충남" 등)이면 그대로 둔다.
+    expanded: list[str] = []
+    for v in out:
+        grp = _REGION_GROUPS.get(v) or _REGION_GROUPS.get(v.rstrip("권"))
+        expanded.extend(grp if grp else [v])
+    return list(dict.fromkeys(expanded))
 
 
 
@@ -696,7 +778,7 @@ def recommend_candidates(
             params.append(f"%{clean}%")
     rule_rows = conn.execute(
         f"SELECT c.university_id, c.university, c.department, c.admission_track, "
-        f"c.practical_events_json, d.raw_json "
+        f"c.practical_events_json, c.calculation_test_json, d.raw_json "
         f"FROM susi_calculation_rules c "
         f"LEFT JOIN db_university_rows d ON d.university_id = c.university_id "
         f"WHERE {' AND '.join(conds)}",
@@ -704,8 +786,21 @@ def recommend_candidates(
     ).fetchall()
 
     candidates = []
-    skipped = {"calc_failed": 0, "unreachable": 0, "stage1_blocked": 0}
+    skipped = {"calc_failed": 0, "unreachable": 0, "stage1_blocked": 0, "non_practical": 0}
     for row in rule_rows:
+        # 실기전형만 추천 대상 — 같은 학과의 비실기 전형(교과100/농어촌·종합 서류, 실기만점 0)을
+        # 후보에서 제외한다. 실기 미반영 전형은 작년 결과·실기만점이 없어 빈칸을 만든다.
+        ct = _json_loads(row["calculation_test_json"], {}) or {}
+        practical_full = _first_number(ct.get("plugin_practical_full_score")) if isinstance(ct, dict) else None
+        if practical_full is None:
+            practical_full = _first_number(_json_loads(row["raw_json"], {}).get("실기만점"))
+        if not practical_full or practical_full <= 0:
+            # 실기만점 데이터가 없어도 실기종목이 등록돼 있으면 실기전형으로 인정 (누락 방지).
+            _ev = _json_loads(row["practical_events_json"], None)
+            _events = _ev.get("events") if isinstance(_ev, dict) else _ev
+            if not _events:
+                skipped["non_practical"] += 1
+                continue
         calc = calculate_score(row["university_id"], grades, {}, {})
         if calc.get("status") != "calculated":
             raw_for_formula = _json_loads(row["raw_json"], {})
@@ -746,6 +841,11 @@ def recommend_candidates(
                     f"완전 측정 트랙({', '.join(default_track.get('events', []))}, {default_track.get('n_students')}명) 기준. "
                     "다른 트랙(전공 등)은 prev_tracks를 보고 따로 설명하라."
                 )
+        # 1단계 내신 미달 제외 — 1단계가 내신을 반영하는 전형만 (사장님 룰 2026-06-15).
+        # 서경대형(1단계 실기100%, stage1_uses_record=False)은 내신 무관이라 예외.
+        if vs.get("stage1_uses_record") and vs.get("stage1_record_reachable") is False:
+            skipped["stage1_blocked"] += 1
+            continue
         if not vs.get("reachable_at_full_practical"):
             skipped["unreachable"] += 1
             continue
