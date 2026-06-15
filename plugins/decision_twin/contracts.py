@@ -48,6 +48,8 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
     "academy_practical_reco_package": {
         "domain": "academy_ops",
         "purpose": (
+            "수시 실기전형 추천·내신환산 산출물(표/재계산표/리포트 무엇이든)은 반드시 이 도구로 만든다 — "
+            "academy_render_image/academy_report_image로 표를 직접 그리지 말 것(로고·푸터 누락, 메타 노출, A4 잘림 발생). "
             "수시 실기전형 추천 결과를 고정 템플릿 PDF로 만든다. "
             "환산점수·전년도 수치는 susi27_score_calculate/susi27_rule_lookup 산출값만 사용. "
             "상향은 (내신환산+실기만점) ≥ 전년도 최종합 학교만 — 만점으로도 못 닿는 학교는 절대 싣지 않는다. "
@@ -89,7 +91,8 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         "domain": "academy_ops",
         "purpose": (
             "학원 데이터/리포트/표를 Discord 전달용 PNG로 렌더링한다. "
-            "전용 이미지 도구가 정확히 맞지 않을 때만 HTML 기반으로 사용한다."
+            "전용 이미지 도구가 정확히 맞지 않을 때만 HTML 기반으로 사용한다. "
+            "수시 실기전형 추천·내신환산 결과는 여기서 표로 만들지 말고 academy_practical_reco_package(고정 PDF)를 쓴다."
         ),
         "requires": ["safe html body"],
     },
@@ -97,7 +100,8 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         "domain": "academy_ops",
         "purpose": (
             "고정된 표 형식의 학원 리포트를 PNG로 렌더링한다. "
-            "열과 행이 명확한 표/기록표/명단형 자료에만 사용한다."
+            "열과 행이 명확한 표/기록표/명단형 자료에만 사용한다. "
+            "수시 실기전형 추천·내신환산 결과는 여기서 만들지 말고 academy_practical_reco_package(고정 PDF)를 쓴다."
         ),
         "requires": ["columns", "rows"],
     },
