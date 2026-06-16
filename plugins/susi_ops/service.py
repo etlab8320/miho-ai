@@ -972,8 +972,9 @@ def recommend_candidates(
     skipped = {"calc_failed": 0, "unreachable": 0, "stage1_blocked": 0, "non_practical": 0}
     for row in rule_rows:
         # 지역인재전형 제외 — 맥스 일산교육원(고양시·수도권) 학생은 지방대 지역인재 자격이 없다.
-        # (지역인재 전형은 전부 지방, 수도권 지역인재는 0개이므로 일괄 제외해도 안전 — 2026-06-16)
-        if "지역인재" in str(row["admission_track"] or ""):
+        # 체육특기자(특기자)전형 제외 — 운동선수 특별전형이라 일반 학생 지원 대상이 아니다. (2026-06-17)
+        _trk = str(row["admission_track"] or "")
+        if "지역인재" in _trk or "특기자" in _trk:
             skipped["jiyeok_blocked"] = skipped.get("jiyeok_blocked", 0) + 1
             continue
         # 실기전형만 추천 대상 — 같은 학과의 비실기 전형(교과100/농어촌·종합 서류, 실기만점 0)을
