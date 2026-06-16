@@ -243,8 +243,8 @@ def _weighted_average_grade(
     career_conv = score_logic.get("career_conversion") or {"A": 1.0, "B": 2.0, "C": 4.0}
     regular_only = str(score_logic.get("regular_subjects") or "").upper() == "O"
 
-    regular: list[tuple[float, float]] = []  # (석차등급, 이수단위) — 등급 있는 일반과목
-    career: list[tuple[float, float]] = []    # 진로선택(성취도 변환)
+    regular: list[tuple[float, float, str]] = []  # (석차등급, 이수단위, 교과) — 등급 있는 일반과목
+    career: list[tuple[float, float, str]] = []    # 진로선택(성취도 변환)
     for row in grades:
         if not isinstance(row, dict):
             continue
@@ -262,23 +262,39 @@ def _weighted_average_grade(
         unit = _unit_value(row)
         grade = _grade_value(row)
         if grade is not None:
-            regular.append((grade, unit))
+            regular.append((grade, unit, area))
         else:
             ach = str(row.get("성취도") or row.get("achievement") or "").strip().upper()
             gv = career_conv.get(ach)
             if gv is not None:
-                career.append((float(gv), unit))
+                career.append((float(gv), unit, area))
     # 진로선택: regular_subjects=O이고 max_career 미지정이면 제외, max_career 명시면 우수순 그만큼만
     max_career_limit = _optional_positive_int(max_career)
     if regular_only and max_career_limit is None:
         career = []
     elif max_career_limit is not None:
         career = sorted(career, key=lambda x: (x[0], -x[1]))[:max_career_limit]
-    pool = regular + career
-    # top_n: 석차등급 우수(낮은 등급) 상위 N과목, 동점이면 이수단위 높은 과목 우선
+    # top_n: 석차등급 우수(낮은 등급) 상위 N과목, 동점이면 이수단위 높은 과목 우선.
+    #  top_n_scope="per_subject_group"이면 반영교과(subject_groups)별로 각각 상위 N과목을
+    #  뽑아 합친다 — 예: 한국교통대 국·영·수·사 교과별 상위 3 = 총 12과목.
+    #  기본(미지정)은 전체 풀에서 상위 N. 이 둘을 혼동하면 등급 낮은 학생도 상위 몇 과목만
+    #  잡혀 과대평가된다(2026-06-16 조선대·한국교통대 실사고).
     top_n_limit = _optional_positive_int(top_n)
-    if top_n_limit is not None:
-        pool = sorted(pool, key=lambda x: (x[0], -x[1]))[:top_n_limit]
+    top_n_scope = str(score_logic.get("top_n_scope") or "").strip().lower()
+    per_group = top_n_scope in ("per_subject_group", "per_group", "교과별")
+    if top_n_limit is not None and per_group and groups_set:
+        by_group: dict[str, list[tuple[float, float, str]]] = {}
+        for item in regular:
+            by_group.setdefault(item[2], []).append(item)
+        selected: list[tuple[float, float, str]] = []
+        for items in by_group.values():
+            selected.extend(sorted(items, key=lambda x: (x[0], -x[1]))[:top_n_limit])
+        pool = [(g, u) for g, u, _ in selected] + [(g, u) for g, u, _ in career]
+    elif top_n_limit is not None:
+        merged = [(g, u) for g, u, _ in regular] + [(g, u) for g, u, _ in career]
+        pool = sorted(merged, key=lambda x: (x[0], -x[1]))[:top_n_limit]
+    else:
+        pool = [(g, u) for g, u, _ in regular] + [(g, u) for g, u, _ in career]
     if not pool:
         return None, 0, 0.0
     if credit_weighted:
