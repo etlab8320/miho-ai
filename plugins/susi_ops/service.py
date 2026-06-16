@@ -269,14 +269,16 @@ def _weighted_average_grade(
             if gv is not None:
                 career.append((float(gv), unit))
     # 진로선택: regular_subjects=O이고 max_career 미지정이면 제외, max_career 명시면 우수순 그만큼만
-    if regular_only and max_career is None:
+    max_career_limit = _optional_positive_int(max_career)
+    if regular_only and max_career_limit is None:
         career = []
-    elif max_career is not None:
-        career = sorted(career, key=lambda x: (x[0], -x[1]))[: int(max_career)]
+    elif max_career_limit is not None:
+        career = sorted(career, key=lambda x: (x[0], -x[1]))[:max_career_limit]
     pool = regular + career
     # top_n: 석차등급 우수(낮은 등급) 상위 N과목, 동점이면 이수단위 높은 과목 우선
-    if top_n:
-        pool = sorted(pool, key=lambda x: (x[0], -x[1]))[: int(top_n)]
+    top_n_limit = _optional_positive_int(top_n)
+    if top_n_limit is not None:
+        pool = sorted(pool, key=lambda x: (x[0], -x[1]))[:top_n_limit]
     if not pool:
         return None, 0, 0.0
     if credit_weighted:
@@ -430,6 +432,22 @@ def _first_number(value: Any) -> float | None:
         return float(match.group()) if match else None
     except ValueError:
         return None
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    """Return a positive integer if value is numeric; otherwise None.
+
+    Some imported 2027 rule rows use prose such as "PDF 미명시(상한 없음)" for
+    fields like max_career_subjects. Treat those as an unspecified cap instead
+    of crashing the recommendation engine.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        number = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: float) -> dict[str, Any] | None:
