@@ -298,7 +298,14 @@ def _weighted_average_grade(
     top_n_limit = _optional_positive_int(top_n)
     top_n_scope = str(score_logic.get("top_n_scope") or "").strip().lower()
     per_group = top_n_scope in ("per_subject_group", "per_group", "교과별")
-    if top_n_limit is not None and per_group and groups_set:
+    # regular_top_n: 일반과목만 상위 N (진로선택은 위 max_career로 별도 제한). PDF가
+    #  '일반 상위 15과목 + 진로선택 상위 3과목'처럼 일반/진로를 따로 세는 학교용
+    #  (예: 백석대 15+3, 목원대 5+3). 통합 top_n과 구분된다.
+    regular_top_n_limit = _optional_positive_int(score_logic.get("regular_top_n"))
+    if regular_top_n_limit is not None:
+        regular = sorted(regular, key=lambda x: (x[0], -x[1]))[:regular_top_n_limit]
+        pool = [(g, u) for g, u, _ in regular] + [(g, u) for g, u, _ in career]
+    elif top_n_limit is not None and per_group and groups_set:
         by_group: dict[str, list[tuple[float, float, str]]] = {}
         for item in regular:
             by_group.setdefault(item[2], []).append(item)
