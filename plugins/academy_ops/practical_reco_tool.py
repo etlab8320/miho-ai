@@ -24,7 +24,7 @@ from .brand_assets import academy_brand_logo_src
 from . import hakjong_report_contract as _contract
 from .pdf_autocorrect import autocorrect as _autocorrect
 from .hakjong_report_contract import BRAND_TEXT
-from .practical_reco_schema import validate_content
+from .practical_reco_schema import validate_content, _first_number
 from .report_fonts import report_font_css
 from .student_card_capture import find_browser_executable
 
@@ -282,7 +282,148 @@ def _practical_reco_package_tool_handler(args: dict[str, Any] | None = None, **_
     )
 
 
+_NATIONWIDE_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "practical_reco_nationwide_shell.html"
+_REGION_ORDER = ["수도권", "충청", "강원", "영남", "호남", "제주"]
+_TIER_RANK = {"S": 0, "A": 1, "B": 2, "C": 3, "D": 4, "E": 5}
+
+
+def _num_or_dash(value: Any) -> str:
+    n = _first_number(value)
+    return f"{n:g}" if n is not None else "-"
+
+
+def _sido_to_region(sido: Any) -> str | None:
+    from ..susi_ops.service import _REGION_GROUPS
+    s = str(sido or "").strip()
+    for region in _REGION_ORDER:
+        if s in _REGION_GROUPS.get(region, []):
+            return region
+    return None
+
+
+def build_nationwide_content(student_name: str) -> dict[str, Any]:
+    """전국 실기전형 추천을 권역·티어순으로 묶어 템플릿 content를 코드가 직접 구성한다.
+    LLM이 content를 만지지 않으므로 환각·우회가 없다 — 도구 산출값만 사용."""
+    from ..susi_ops.service import recommend_candidates
+    res = recommend_candidates(student_name, region="전국", max_candidates=400)
+    cands = res.get("candidates") or []
+    by_region: dict[str, list[dict[str, Any]]] = {r: [] for r in _REGION_ORDER}
+    for c in cands:
+        reg = _sido_to_region(c.get("region"))
+        if reg is not None:
+            by_region[reg].append(c)
+    regions: list[dict[str, Any]] = []
+    tier_cnt: dict[str, int] = {}
+    for reg in _REGION_ORDER:
+        raw = by_region[reg]
+        if not raw:
+            continue
+        raw.sort(key=lambda c: (_TIER_RANK.get(c.get("tier"), 9), _first_number(c.get("needed_practical_rate_pct")) or 999.0))
+        rows: list[dict[str, Any]] = []
+        for c in raw:
+            tier = c.get("tier") or "C"
+            tier_cnt[tier] = tier_cnt.get(tier, 0) + 1
+            ev = c.get("practical_events")
+            ev_str = ", ".join(str(e) for e in ev) if isinstance(ev, list) else (str(ev) if ev else "-")
+            rows.append({
+                "tier": tier,
+                "school": c.get("university") or "",
+                "department": c.get("department") or "",
+                "track": c.get("admission_track") or "",
+                "events": (ev_str[:38] or "-"),
+                "converted": _num_or_dash(c.get("student_record_score")),
+                "max_total": _num_or_dash(c.get("max_possible_total")),
+                "first_cut": _num_or_dash(c.get("prev_first_total")),
+                "final_cut": _num_or_dash(c.get("prev_final_total")),
+                "verdict": c.get("suggested_verdict") or "상향",
+            })
+        regions.append({"name": reg, "rows": rows})
+    total = sum(len(r["rows"]) for r in regions)
+    tier_counts = [{"tier": t, "count": tier_cnt[t]} for t in ["S", "A", "B", "C", "D", "E"] if tier_cnt.get(t)]
+    region_counts = [{"name": r["name"], "count": len(r["rows"])} for r in regions]
+    return {
+        "student": {
+            "name": student_name,
+            # 학교마다 반영교과(교과별/전과목/우수N교과)가 달라 학생 단일 평균등급이 없다 — 표기 생략.
+            "avg_grade": "",
+            "basis_label": "생기부 내신 기준",
+        },
+        "summary": {
+            "total": total,
+            "reachable_note": "실기 만점을 기준으로 전년도 최종합격선에 도달 가능한 전국 실기전형을 권역·티어순으로 정리했습니다.",
+            "tier_counts": tier_counts,
+            "region_counts": region_counts,
+        },
+        "regions": regions,
+        "footnote": "산출 근거: 맥스 수시엔진 검증 룰 · 전년도 입시결과",
+    }
+
+
+def _render_nationwide(content: dict[str, Any]) -> str:
+    template_src = _NATIONWIDE_TEMPLATE_PATH.read_text(encoding="utf-8")
+    env = jinja2.Environment(
+        loader=jinja2.BaseLoader(),
+        autoescape=jinja2.select_autoescape(["html"]),
+        undefined=jinja2.ChainableUndefined,
+    )
+    template = env.from_string(template_src)
+    return template.render(
+        font_css=report_font_css(),
+        logo_src=academy_brand_logo_src() or "",
+        brand_text=_BRAND_TEXT,
+        report_date=_kst_today(),
+        data=content,
+    )
+
+
+def _nationwide_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
+    args = args or {}
+    student_name = str(args.get("student_name") or "").strip()
+    if not student_name:
+        return json.dumps({"ok": False, "error": "student_name이 필요하다."}, ensure_ascii=False)
+    try:
+        content = build_nationwide_content(student_name)
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"ok": False, "error": f"전국 추천 데이터 구성 실패: {exc}"}, ensure_ascii=False)
+    if content["summary"]["total"] == 0:
+        return json.dumps({"ok": False, "error": f"{student_name} 학생의 도달 가능 실기전형이 없다."}, ensure_ascii=False)
+    out_dir = get_miho_home() / "media_cache" / "susi_student_record" / "validated"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = _safe_stem(student_name, "전국실기전형")
+    html_path, pdf_path = _unique_pair(out_dir / f"{stem}.html", out_dir / f"{stem}.pdf")
+    html_path.write_text(_render_nationwide(content), encoding="utf-8")
+    try:
+        _chromium_print_to_pdf(html_path, pdf_path)
+    except RuntimeError as exc:
+        html_path.unlink(missing_ok=True)
+        return json.dumps({"ok": False, "error": f"PDF 생성 실패: {exc}"}, ensure_ascii=False)
+    return json.dumps({
+        "ok": True, "student": student_name, "total": content["summary"]["total"],
+        "regions": [{"name": r["name"], "count": len(r["rows"])} for r in content["regions"]],
+        "pdf_path": str(pdf_path), "html_path": str(html_path),
+    }, ensure_ascii=False)
+
+
 def register_practical_reco_tool(ctx: Any) -> None:
+    ctx.register_tool(
+        name="academy_practical_reco_nationwide",
+        toolset="academy_ops",
+        schema={
+            "type": "object",
+            "properties": {
+                "student_name": {"type": "string", "description": "학생명. 코드가 전국 추천을 직접 산출해 PDF를 만든다 (content 불필요)."},
+            },
+            "required": ["student_name"],
+            "additionalProperties": False,
+        },
+        handler=_nationwide_tool_handler,
+        description=(
+            "한 학생의 전국 실기전형 지원 가능 대학을 개수 제한 없이 권역(수도권·충청·강원·영남·호남·제주)별 "
+            "섹션 + 각 권역 티어순으로 한 PDF에 싣는다. 각 행에 내신환산·실기만점합·전년도 최초/최종합·실기종목·판정 표기. "
+            "환산·전년도 수치는 모두 코드 산출값(susi 엔진)이라 LLM이 데이터를 만들지 않는다. "
+            "도달 가능(실기만점≥전년도 최종합) 학교만 실린다. 학생명만 넘기면 된다."
+        ),
+    )
     ctx.register_tool(
         name="academy_practical_reco_package",
         toolset="academy_ops",
