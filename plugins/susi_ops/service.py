@@ -268,6 +268,22 @@ def _weighted_average_grade(
             gv = career_conv.get(ach)
             if gv is not None:
                 career.append((float(gv), unit, area))
+    # top_groups: 반영교과(subject_groups) 중 평균이 우수한 N개 교과만 골라 그 교과 '전 과목'을
+    #  반영한다(예: 나사렛 국·수·영·사·과 중 우수 3개 교과별 전 과목). 과목 단위 top_n과 다른
+    #  층위 — 교과군을 먼저 추린 뒤 그 안에서 max_career/top_n을 적용한다.
+    top_groups_limit = _optional_positive_int(score_logic.get("top_groups"))
+    if top_groups_limit is not None and groups_set:
+        grp: dict[str, list[tuple[float, float]]] = {}
+        for grade, unit, ar in regular:
+            grp.setdefault(ar, []).append((grade, unit))
+        group_avg: dict[str, float] = {}
+        for ar, items in grp.items():
+            tu = sum(u for _, u in items)
+            if tu > 0:
+                group_avg[ar] = sum(gr * u for gr, u in items) / tu
+        best_groups = set(sorted(group_avg, key=lambda a: group_avg[a])[:top_groups_limit])
+        regular = [r for r in regular if r[2] in best_groups]
+        career = [c for c in career if c[2] in best_groups]
     # 진로선택: regular_subjects=O이고 max_career 미지정이면 제외, max_career 명시면 우수순 그만큼만
     max_career_limit = _optional_positive_int(max_career)
     if regular_only and max_career_limit is None:
