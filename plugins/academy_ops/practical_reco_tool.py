@@ -350,7 +350,7 @@ def build_nationwide_content(student_name: str) -> dict[str, Any]:
         },
         "summary": {
             "total": total,
-            "reachable_note": "실기 만점을 기준으로 전년도 최종합격선에 도달 가능한 전국 실기전형을 권역·티어순으로 정리했습니다.",
+            "reachable_note": "실기 만점을 기준으로 전년도 최종합격선에 도달 가능한 전국 실기전형을 권역별로 정리했습니다.",
             "tier_counts": tier_counts,
             "region_counts": region_counts,
         },

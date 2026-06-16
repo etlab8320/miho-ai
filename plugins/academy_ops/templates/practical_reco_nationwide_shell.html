@@ -127,12 +127,11 @@
 {%- macro reco_table(rows) %}
     <table class="ntable">
       <tr>
-        <th>티어</th><th>대학 · 학과</th><th>전형</th><th>실기종목</th>
+        <th>대학 · 학과</th><th>전형</th><th>실기종목</th>
         <th>내신환산</th><th>실기만점합</th><th>작년최초</th><th>작년최종</th><th>판정</th>
       </tr>
       {% for r in rows %}
       <tr>
-        <td><span class="tier {{ r.tier }}">{{ r.tier }}</span></td>
         <td class="head">{{ r.school }} {{ r.department }}</td>
         <td>{{ r.track }}</td>
         <td class="ev">{{ r.events }}</td>
@@ -155,7 +154,7 @@
       <h1>{{ data.student.name }} 학생<br/>전국 실기전형 지원 가능 대학</h1>
     </div>
     <div class="identityCard">
-      <div class="label">{{ data.student.name }} 학생을 위한 전국 실기전형 추천 (권역별 · 티어순)</div>
+      <div class="label">{{ data.student.name }} 학생을 위한 전국 실기전형 추천 (권역별)</div>
       <div class="name">{{ data.student.name }} 학생</div>
       <div class="target">{{ data.student.basis_label }}{% if data.student.avg_grade %} · 평균등급 {{ data.student.avg_grade }}{% endif %}</div>
     </div>
@@ -164,15 +163,11 @@
       <p>{{ data.summary.reachable_note }}</p>
     </div>
     <div class="chips">
-      {% for t in data.summary.tier_counts %}<span class="chip"><span class="tier {{ t.tier }}">{{ t.tier }}</span> {{ t.count }}개</span>{% endfor %}
-    </div>
-    <div class="chips">
       {% for rc in data.summary.region_counts %}<span class="chip">{{ rc.name }} <b>{{ rc.count }}</b></span>{% endfor %}
     </div>
     <div class="legend">
       <b>판정 기준</b> · <span class="verdict fit">적정</span> 내신환산이 전년도 최종합격선 부근 이상 ·
-      <span class="verdict up">상향</span> 실기 상위 득점 시 전년도 최종합격선 도달 가능 ·
-      <b>티어</b> S(상위)~E(하위) 대학 평가 등급.
+      <span class="verdict up">상향</span> 실기에서 상위 득점하면 전년도 최종합격선에 도달할 수 있는 학교.
     </div>
     {{ footer(brand_text, "학생·학부모 확인용 · " ~ report_date) }}
   </section>
