@@ -162,6 +162,17 @@ def _patch_pdf_tools(monkeypatch, *, width: float = 594.96, height: float = 841.
     )
 
 
+def _patch_recalc_ok(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "plugins.academy_ops.practical_reco_tool.validate_recalculated_scores",
+        lambda _student_name, content: (
+            True,
+            [],
+            {"recalculated_rows": len(((content.get("comparison") or {}).get("rows") or []))},
+        ),
+    )
+
+
 def _fake_chromium(html_path: Path, pdf_path: Path) -> None:
     """Write a minimal valid PDF so physical checks don't error on missing file."""
     pdf_content = (
@@ -297,6 +308,7 @@ def test_banned_wording_fails() -> None:
 def test_valid_content_returns_media_tag(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
     _patch_pdf_tools(monkeypatch, content=_base_args()["content"])
+    _patch_recalc_ok(monkeypatch)
 
     with patch(
         "plugins.academy_ops.practical_reco_tool._chromium_print_to_pdf",
@@ -313,6 +325,7 @@ def test_valid_content_returns_media_tag(monkeypatch, tmp_path) -> None:
 def test_manifest_written_on_success(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
     _patch_pdf_tools(monkeypatch, content=_base_args()["content"])
+    _patch_recalc_ok(monkeypatch)
 
     with patch(
         "plugins.academy_ops.practical_reco_tool._chromium_print_to_pdf",
@@ -329,6 +342,7 @@ def test_manifest_written_on_success(monkeypatch, tmp_path) -> None:
 def test_no_susi_evidence_yields_warning(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
     _patch_pdf_tools(monkeypatch, content=_base_args()["content"])
+    _patch_recalc_ok(monkeypatch)
 
     args = _base_args()
     args["evidence_tools"] = []  # 수시 산출 도구 없음
@@ -345,6 +359,26 @@ def test_no_susi_evidence_yields_warning(monkeypatch, tmp_path) -> None:
     assert any("susi27" in w for w in result["warnings"])
 
 
+def test_recalc_mismatch_rejected_before_pdf_generation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "plugins.academy_ops.practical_reco_tool.validate_recalculated_scores",
+        lambda _student_name, _content: (
+            False,
+            ["comparison.rows[0]: 내신환산(converted)이 공식 산출값과 다르다."],
+            {"recalculated_rows": 1},
+        ),
+    )
+    with patch(
+        "plugins.academy_ops.practical_reco_tool._chromium_print_to_pdf",
+        side_effect=AssertionError("PDF 생성 전에 차단되어야 한다."),
+    ):
+        result = json.loads(_practical_reco_package_tool_handler(_base_args()))
+
+    assert result["ok"] is False
+    assert any("내신환산" in e for e in result["errors"])
+    assert result["checks"]["recalculated_rows"] == 1
+
+
 # ---------------------------------------------------------------------------
 # Tool: 브랜드 누락 반려
 # ---------------------------------------------------------------------------
@@ -352,6 +386,7 @@ def test_no_susi_evidence_yields_warning(monkeypatch, tmp_path) -> None:
 def test_missing_brand_text_in_pdf_rejected(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
     _patch_pdf_tools(monkeypatch)
+    _patch_recalc_ok(monkeypatch)
     monkeypatch.setattr(
         contract,
         "_pdf_text",
@@ -374,6 +409,7 @@ def test_missing_brand_text_in_pdf_rejected(monkeypatch, tmp_path) -> None:
 
 def test_chromium_failure_returns_error(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
+    _patch_recalc_ok(monkeypatch)
 
     with patch(
         "plugins.academy_ops.practical_reco_tool._chromium_print_to_pdf",

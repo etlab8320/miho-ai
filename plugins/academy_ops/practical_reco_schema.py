@@ -158,6 +158,9 @@ def _validate_structure(content: dict[str, Any], errors: list[str]) -> None:
     # 제공되면 형식만 점검하고, 없으면 통과한다 (전체 학교는 comparison.rows 단일 표로 노출).
     schools = content.get("schools")
     if isinstance(schools, list) and schools:
+        rows = ((content.get("comparison") or {}).get("rows") or [])
+        if isinstance(rows, list) and len(schools) != len(rows):
+            errors.append("content.schools와 content.comparison.rows의 길이가 다르다.")
         for i, school in enumerate(schools):
             if not isinstance(school, dict):
                 errors.append(f"content.schools[{i}]는 dict여야 한다.")
