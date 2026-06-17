@@ -48,6 +48,7 @@ def _calculate_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
         grades=args.get("grades") or [],
         attendance=args.get("attendance") or {},
         practical_records=args.get("practical_records") or {},
+        student_context=args.get("student_context") or {},
     )
 
 
@@ -101,6 +102,10 @@ def register(ctx: Any) -> None:
                 "grades": {"type": "array", "items": {"type": "object"}, "description": "학생 교과 성적 rows."},
                 "attendance": {"type": "object", "description": "출결 정보."},
                 "practical_records": {"type": "object", "description": "실기 종목별 기록."},
+                "student_context": {
+                    "type": "object",
+                    "description": "졸업예정자/졸업자 등 학기 반영 범위 판정에 필요한 학생 상태.",
+                },
             },
             "required": ["university_id"],
             "additionalProperties": False,

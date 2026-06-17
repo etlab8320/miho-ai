@@ -13,6 +13,14 @@ import pathlib
 import sqlite3
 from typing import Any
 
+from . import student_records as _student_records
+from .score_adjustments import (
+    achievement_ratio_grade,
+    apply_unit_shortfall_adjustment,
+    uses_achievement_ratio_grade,
+)
+from .semester_rules import is_graduate_context, within_semester_limit
+
 
 DEFAULT_DB = pathlib.Path(
     "/Users/etlab/.miho/discord/guilds/1507988396235296778/channels/10___1508422955460198420/threads/thread__1513557600497565696/work/susi27_pipeline/susi27_staging.sqlite3"
@@ -43,6 +51,25 @@ def _json_loads(value: str | None, default: Any) -> Any:
         return json.loads(value)
     except Exception:
         return default
+
+
+def _minimum_csat(score_logic: dict[str, Any], admission_meta_json: str | None = None) -> dict[str, Any]:
+    meta = _json_loads(admission_meta_json, {}) or {}
+    raw = {}
+    if isinstance(meta, dict):
+        raw = meta.get("minimum_csat") or {}
+    if not raw and isinstance(score_logic, dict):
+        raw = score_logic.get("minimum_csat") or {}
+    if not isinstance(raw, dict):
+        return {"has_minimum": False, "detail": "없음"}
+    value = raw.get("has_minimum")
+    if isinstance(value, bool):
+        has_minimum = value
+    else:
+        text = str(value or "").strip().upper()
+        has_minimum = text in {"O", "Y", "YES", "TRUE", "1", "있음", "적용"}
+    detail = raw.get("detail") or ("있음(세부기준 요강 확인)" if has_minimum else "없음")
+    return {"has_minimum": has_minimum, "detail": detail}
 
 
 def lookup_rules(
@@ -198,36 +225,35 @@ def _subject_allowed(row: dict[str, Any], subject_flags: dict[str, Any]) -> bool
     )
     if not area:
         return True
-    # 한국사: 산식에 '한국사' 플래그가 따로 없으면 사회 교과로 판정 (사장님 룰 2026-06-15).
-    if area == "한국사" and "한국사" not in subject_flags:
-        area = "사회"
+    # 한국사 처리 (사장님 룰 2026-06-15 + 2026-06-17 확장):
+    #  subject_flags의 한국사 값이 추출 과정에서 'O'가 아니라 '사회에 포함', 'O(사회 교과에
+    #  포함)', '포함(사회)' 같은 설명문으로 들어오는 학교가 많다(경상국립·나사렛·남서울·전주 등).
+    #  이를 != 'O'로 보고 제외하면 한국사가 반영교과인데도 빠져 평균등급이 왜곡된다(세명대 실사고).
+    #  → 명시적 미반영(X/제외)만 거르고, 그 외(키 없음/반영 의도 문자열)는 사회 교과로 흡수한다.
+    if area == "한국사":
+        hs = str(subject_flags.get("한국사") or "").strip().upper()
+        if hs.startswith("X") or hs in ("미반영", "제외", "반영안함"):
+            return False
+        if hs != "O":
+            area = "사회"
     if area in subject_flags:
         return str(subject_flags.get(area) or "").upper() == "O"
     return str(subject_flags.get("기타") or "").upper() == "O"
 
 
-def _within_semester_limit(row: dict[str, Any], limit: Any) -> bool:
+def _within_semester_limit(
+    row: dict[str, Any],
+    limit: Any,
+    student_context: dict[str, Any] | None = None,
+) -> bool:
     """semester_limit(예: '1학년 1학기~3학년 1학기(졸업생 포함)') 마지막 학년/학기까지만 반영."""
-    text = str(limit or "")
-    if not text:
-        return True
-    import re as _r
-
-    matches = _r.findall(r"(\d)\s*학년\s*(\d)\s*학기", text)
-    if not matches:
-        return True
-    end_yr, end_sem = int(matches[-1][0]), int(matches[-1][1])
-    try:
-        yr = int(row.get("학년"))
-        sem = int(row.get("학기"))
-    except (TypeError, ValueError):
-        return True
-    return yr < end_yr or (yr == end_yr and sem <= end_sem)
+    return within_semester_limit(row, limit, student_context)
 
 
 def _weighted_average_grade(
     grades: list[dict[str, Any]],
     score_logic: dict[str, Any],
+    student_context: dict[str, Any] | None = None,
 ) -> tuple[float | None, int, float]:
     # score_logic 산식 요소를 모두 반영한다 (2026-06-16, 관동대 실사고로 전면 재작성):
     #  subject_groups(교과군 한정) · semester_limit(학기 제한) · 진로선택 성취도 변환 +
@@ -257,15 +283,25 @@ def _weighted_average_grade(
                 continue
         elif not _subject_allowed(row, subject_flags):
             continue
-        if not _within_semester_limit(row, semester_limit):
+        if not _within_semester_limit(row, semester_limit, student_context):
             continue
         unit = _unit_value(row)
         grade = _grade_value(row)
         if grade is not None:
             regular.append((grade, unit, area))
         else:
+            # 석차등급 없는 과목: 진로선택만 성취도→등급 환산해 반영한다(대학 요강 표준).
+            # 과학탐구실험·사회탐구실험 등 '일반선택 성취도평가' 과목은 석차등급이 없으므로
+            # 반영하지 않는다(2026-06-17 강남대 실사고 — 진로 오분류). course_type으로 구분하며,
+            # 구 데이터(course_type 미지정 NULL)는 하위호환으로 기존처럼 성취도 환산한다.
+            ctype = str(row.get("과목구분") or row.get("course_type") or "").strip()
+            if ctype in ("일반선택", "공통", "공통과목", "일반"):
+                continue
             ach = str(row.get("성취도") or row.get("achievement") or "").strip().upper()
-            gv = career_conv.get(ach)
+            if uses_achievement_ratio_grade(score_logic):
+                gv = achievement_ratio_grade(row, ach)
+            else:
+                gv = career_conv.get(ach)
             if gv is not None:
                 career.append((float(gv), unit, area))
     # top_groups: 반영교과(subject_groups) 중 평균이 우수한 N개 교과만 골라 그 교과 '전 과목'을
@@ -302,7 +338,37 @@ def _weighted_average_grade(
     #  '일반 상위 15과목 + 진로선택 상위 3과목'처럼 일반/진로를 따로 세는 학교용
     #  (예: 백석대 15+3, 목원대 5+3). 통합 top_n과 구분된다.
     regular_top_n_limit = _optional_positive_int(score_logic.get("regular_top_n"))
-    if regular_top_n_limit is not None:
+    # group_top_n: 교과군별로 '다른' 상위 N (요강대로). 예) 경운대 국영수 상위6 + 사과한 상위3,
+    #  경국대 국영수 상위7 + 사과한 상위2. {"국어,영어,수학": 6, "사회,과학,한국사": 3}.
+    #  각 교과군에서 진로선택 포함 통합 상위 N을 뽑아 합친다.
+    group_top_n = score_logic.get("group_top_n")
+    if isinstance(group_top_n, dict) and group_top_n:
+        # 각 교과군에서 상위 N을 뽑되, '_remainder'/'전체'/'모든과목' 키는 아직 안 뽑힌
+        # 잔여 과목 풀에서 추가 상위 N (예: 경국대 국영수7 + 사과한2 + 모든과목3 = 12).
+        pool_all = [(g, u, a) for g, u, a in regular] + [(g, u, a) for g, u, a in career]
+        used = [False] * len(pool_all)
+        selected_g: list[tuple[float, float]] = []
+        remainder_n = None
+        for grp_key, gn in group_top_n.items():
+            if str(grp_key) in ("_remainder", "전체", "모든과목", "나머지"):
+                remainder_n = _optional_positive_int(gn)
+                continue
+            gn_i = _optional_positive_int(gn)
+            if gn_i is None:
+                continue
+            grp_areas = {a.strip() for a in str(grp_key).split(",")}
+            idxs = [i for i, (g, u, a) in enumerate(pool_all) if a in grp_areas and not used[i]]
+            idxs.sort(key=lambda i: (pool_all[i][0], -pool_all[i][1]))
+            for i in idxs[:gn_i]:
+                used[i] = True
+                selected_g.append((pool_all[i][0], pool_all[i][1]))
+        if remainder_n is not None:
+            idxs = [i for i in range(len(pool_all)) if not used[i]]
+            idxs.sort(key=lambda i: (pool_all[i][0], -pool_all[i][1]))
+            for i in idxs[:remainder_n]:
+                selected_g.append((pool_all[i][0], pool_all[i][1]))
+        pool = selected_g
+    elif regular_top_n_limit is not None:
         regular = sorted(regular, key=lambda x: (x[0], -x[1]))[:regular_top_n_limit]
         pool = [(g, u) for g, u, _ in regular] + [(g, u) for g, u, _ in career]
     elif top_n_limit is not None and per_group and groups_set:
@@ -319,13 +385,13 @@ def _weighted_average_grade(
     else:
         pool = [(g, u) for g, u, _ in regular] + [(g, u) for g, u, _ in career]
     if not pool:
-        return None, 0, 0.0
+        return None, 0, 0.0, []
     if credit_weighted:
         tu = sum(u for _, u in pool)
         if tu <= 0:
-            return None, len(pool), 0.0
-        return sum(g * u for g, u in pool) / tu, len(pool), tu
-    return sum(g for g, _ in pool) / len(pool), len(pool), sum(u for _, u in pool)
+            return None, len(pool), 0.0, pool
+        return sum(g * u for g, u in pool) / tu, len(pool), tu, pool
+    return sum(g for g, _ in pool) / len(pool), len(pool), sum(u for _, u in pool), pool
 
 
 def _score_from_grade_table(avg_grade: float, grade_points: dict[str, Any]) -> float | None:
@@ -356,18 +422,77 @@ def _score_from_grade_table(avg_grade: float, grade_points: dict[str, Any]) -> f
     return points[lower] + (points[upper] - points[lower]) * ratio
 
 
+def _missing_achievement_ratio_inputs(
+    grades: list[dict[str, Any]],
+    score_logic: dict[str, Any],
+    student_context: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    if not uses_achievement_ratio_grade(score_logic):
+        return []
 
-# confidence 라벨은 검증 파이프라인이 진화하며 15종으로 늘었다 (verified,
-# official_verified, official_pdf_codex_verified, ...). "verified"를 포함하되
-# 계산 불가 표식(non_calc/non_auto/absent/not_in_guide)이 붙은 건 제외한다.
+    subject_flags = score_logic.get("subject_flags") or {}
+    groups = score_logic.get("subject_groups")
+    groups_set = set(groups) if isinstance(groups, list) and groups else None
+    semester_limit = score_logic.get("semester_limit")
+    missing: list[dict[str, Any]] = []
+
+    for grade_row in grades:
+        if not isinstance(grade_row, dict):
+            continue
+        area = _norm_subject_area(
+            grade_row.get("area")
+            or grade_row.get("교과")
+            or grade_row.get("subject_area")
+            or grade_row.get("과목군")
+        )
+        if groups_set is not None:
+            if area not in groups_set:
+                continue
+        elif not _subject_allowed(grade_row, subject_flags):
+            continue
+        if not _within_semester_limit(grade_row, semester_limit, student_context):
+            continue
+        if _grade_value(grade_row) is not None:
+            continue
+        ctype = str(grade_row.get("과목구분") or grade_row.get("course_type") or "").strip()
+        if ctype in ("일반선택", "공통", "공통과목", "일반"):
+            continue
+        ach = str(grade_row.get("성취도") or grade_row.get("achievement") or "").strip().upper()
+        if ach not in {"B", "C"}:
+            continue
+        if achievement_ratio_grade(grade_row, ach) is not None:
+            continue
+        missing.append(
+            {
+                "grade": grade_row.get("학년") or grade_row.get("grade"),
+                "semester": grade_row.get("학기") or grade_row.get("semester"),
+                "subject": grade_row.get("과목") or grade_row.get("subject"),
+                "achievement": ach,
+            }
+        )
+    return missing
+
+
+
+# confidence 라벨은 검증 파이프라인이 진화하며 15종 이상으로 늘었다 (verified,
+# official_verified, official_pdf_codex_verified, high, ...). 계산 가능 신뢰도는
+# "verified" 포함 또는 "high"(검증 완료 high-confidence 룰)이며, 계산 불가 표식
+# (non_calc/non_auto/absent/not_in_guide)이 붙은 건 제외한다. (2026-06-17 계명대 등
+# high 신뢰 실기룰 29개가 계산 차단되던 것 수정.)
 _NON_CALC_MARKERS = ("non_calc", "non_auto", "absent", "not_in_guide")
+_CALC_OK_LABELS = ("verified", "high")
 
 
 def _is_calculable_confidence(confidence: str | None) -> bool:
     text = str(confidence or "").lower()
-    if "verified" not in text:
+    if not any(label in text for label in _CALC_OK_LABELS):
         return False
     return not any(marker in text for marker in _NON_CALC_MARKERS)
+
+
+def _is_verified_confidence(confidence: str | None) -> bool:
+    text = str(confidence or "").lower()
+    return any(label in text for label in _CALC_OK_LABELS)
 
 
 def calculate_score(
@@ -375,6 +500,7 @@ def calculate_score(
     grades: list[dict[str, Any]],
     attendance: dict[str, Any],
     practical_records: dict[str, Any],
+    student_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     conn = _connect()
     row = conn.execute(
@@ -392,7 +518,41 @@ def calculate_score(
     confidence = row["confidence"] or "unverified"
     score_logic = _json_loads(row["score_logic_json"], None)
 
-    if not _is_calculable_confidence(confidence) or not isinstance(score_logic, dict):
+    if not isinstance(score_logic, dict):
+        return {
+            "university_id": university_id,
+            "status": "unverified_rule",
+            "confidence": confidence,
+            "message": "검증 완료된 산식이 아니어서 계산을 중단했어. 추측 계산은 하지 않음.",
+        }
+
+    readiness_text = str(score_logic.get("calculation_readiness") or "").lower()
+    scope_text = str(score_logic.get("calculation_scope") or "").lower()
+    confidence_verified = _is_verified_confidence(confidence)
+    confidence_calculable = _is_calculable_confidence(confidence)
+    has_formula_key = bool(score_logic.get("formula_key"))
+    is_non_calculation_scope = (
+        "non_calculation_track" in {readiness_text, scope_text}
+        or "non_calculation_track" in readiness_text
+        or "not_in_2027_official_guide" in {readiness_text, scope_text}
+    )
+    if is_non_calculation_scope and confidence_verified and not has_formula_key:
+        return {
+            "university_id": university_id,
+            "status": "non_calculation_track",
+            "confidence": confidence,
+            "strategy": "non_calculation_rule",
+            "formula_key": score_logic.get("formula_key") or score_logic.get("official_formula_key"),
+            "message": "원문상 정량 교과 환산 대상이 아닌 전형이어서 계산하지 않음.",
+            "stage_weights": score_logic.get("stage_weights") or {},
+            "subject_flags": score_logic.get("subject_flags") or {},
+            "semester_weights": score_logic.get("semester_weights") or {},
+            "minimum_csat": _minimum_csat(score_logic, row["admission_meta_json"]),
+            "attendance_seen": bool(attendance),
+            "practical_records_seen": sorted(practical_records.keys()),
+        }
+
+    if not confidence_calculable and not has_formula_key:
         return {
             "university_id": university_id,
             "status": "unverified_rule",
@@ -401,6 +561,96 @@ def calculate_score(
         }
 
     strategy = score_logic.get("strategy") or "weighted_grade_table"
+
+    if score_logic.get("formula_key"):
+        raw_row = conn.execute(
+            "SELECT raw_json, source_status FROM db_university_rows WHERE university_id = ?",
+            (university_id,),
+        ).fetchone()
+        raw_for_formula = _json_loads(raw_row["raw_json"] if raw_row else None, {}) or {}
+        raw_for_formula["admission_track"] = row["admission_track"]
+        raw_for_formula["department"] = row["department"]
+        raw_for_formula["source_status"] = raw_row["source_status"] if raw_row else ""
+        raw_for_formula["score_logic_json"] = row["score_logic_json"]
+        raw_for_formula["admission_meta_json"] = row["admission_meta_json"]
+        raw_for_formula["attendance_logic_json"] = row["attendance_logic_json"]
+        raw_for_formula["practical_events_json"] = row["practical_events_json"]
+        formula_context = dict(attendance or {})
+        if is_graduate_context(student_context):
+            formula_context["is_graduate"] = True
+            formula_context["include_grade3_semester2"] = True
+        formula = _formula_calculate(row["university"], dict(raw_for_formula), grades, formula_context)
+        if formula is not None and formula.get("status") == "ready":
+            selected = formula.get("selected_subjects") or []
+            academic_selected = _official_selected_academic_subjects(selected)
+            record_score = float(formula["record_score"])
+            result = {
+                "university_id": university_id,
+                "status": "calculated",
+                "confidence": confidence,
+                "strategy": "official_formula_plugin",
+                "formula_key": formula.get("formula_key") or score_logic.get("formula_key"),
+                "average_grade": formula.get("reflected_average_grade"),
+                "used_subjects": len(academic_selected),
+                "total_units": round(sum(float(s.get("credit") or 0.0) for s in academic_selected), 2),
+                "student_record_score": round(record_score, 4),
+                "record_full_score": _first_number(formula.get("record_full_score")),
+                "practical_full_score": _first_number(formula.get("practical_full_score")),
+                "full_practical_total": _first_number(formula.get("full_practical_total")),
+                "stage_weights": score_logic.get("stage_weights") or {},
+                "subject_flags": score_logic.get("subject_flags") or {},
+                "semester_weights": score_logic.get("semester_weights") or {},
+                "minimum_csat": _minimum_csat(score_logic, row["admission_meta_json"]),
+                "attendance_seen": bool(attendance),
+                "practical_records_seen": sorted(practical_records.keys()),
+            }
+            vs_prev = _vs_prev_year(conn, university_id, record_score)
+            if vs_prev:
+                plugin_total = _first_number(formula.get("full_practical_total"))
+                if plugin_total is not None:
+                    vs_prev["max_possible_total"] = round(plugin_total, 2)
+                    plugin_non_record_max = _first_number(formula.get("practical_full_score"))
+                    if plugin_non_record_max is not None:
+                        vs_prev["practical_max"] = round(plugin_non_record_max, 2)
+                    final_total = _first_number(vs_prev.get("prev_final_total"))
+                    if final_total is not None:
+                        vs_prev["reachable_at_full_practical"] = plugin_total >= final_total
+                        if plugin_total < final_total:
+                            practical_max = plugin_non_record_max
+                            if practical_max is None:
+                                practical_max = _first_number(vs_prev.get("practical_max")) or 0.0
+                            vs_prev["warning"] = (
+                                f"실기 만점({practical_max:g})을 받아도 합산 {plugin_total:g}점이 전년도 최종합 "
+                                f"{final_total:g}점(올해 산식 환산)에 미달 — 이 학교는 상향으로도 추천 금지."
+                            )
+                        else:
+                            vs_prev.pop("warning", None)
+                result["vs_prev_year"] = vs_prev
+            return result
+        if formula is not None:
+            return {
+                "university_id": university_id,
+                "status": formula.get("status") or "strategy_not_implemented",
+                "confidence": confidence,
+                "strategy": "official_formula_plugin",
+                "formula_key": formula.get("formula_key") or score_logic.get("formula_key"),
+                "message": "원문상 정량 교과 환산 대상이 아닌 전형이어서 계산하지 않음.",
+                "stage_weights": score_logic.get("stage_weights") or {},
+                "subject_flags": score_logic.get("subject_flags") or {},
+                "semester_weights": score_logic.get("semester_weights") or {},
+                "minimum_csat": _minimum_csat(score_logic, row["admission_meta_json"]),
+                "attendance_seen": bool(attendance),
+                "practical_records_seen": sorted(practical_records.keys()),
+            }
+        if not confidence_calculable:
+            return {
+                "university_id": university_id,
+                "status": "unverified_rule",
+                "confidence": confidence,
+                "strategy": "official_formula_plugin",
+                "formula_key": score_logic.get("formula_key"),
+                "message": "공식 산식 키는 있지만 실행 가능한 플러그인 결과가 없어 계산을 중단했어.",
+            }
 
     if strategy != "weighted_grade_table":
         return {
@@ -415,7 +665,20 @@ def calculate_score(
             },
         }
 
-    average_grade, used_subjects, total_units = _weighted_average_grade(grades, score_logic)
+    missing_ratio_inputs = _missing_achievement_ratio_inputs(grades, score_logic, student_context)
+    if missing_ratio_inputs:
+        return {
+            "university_id": university_id,
+            "status": "missing_career_ratio_inputs",
+            "confidence": confidence,
+            "strategy": strategy,
+            "message": "진로선택 B/C 성취도는 모집요강상 학생비율로 등급을 산출해야 해서 성취도별 학생비율 입력이 필요해.",
+            "missing_subjects": missing_ratio_inputs,
+        }
+
+    average_grade, used_subjects, total_units, used_pool = _weighted_average_grade(
+        grades, score_logic, student_context
+    )
 
     if average_grade is None:
         return {
@@ -427,10 +690,48 @@ def calculate_score(
             "input_rows": len(grades),
         }
 
-    record_score = _score_from_grade_table(
-        average_grade,
-        score_logic.get("grade_points") or {},
-    )
+    # 환산점수는 '과목별로 등급→점수 환산한 뒤 (단위)평균'한다 — 한국 대학 요강 표준
+    # 산식(Σ 과목점수×단위 / Σ 단위). 비선형 점수표에서는 '평균등급→보간'과 결과가
+    # 달라지므로(2026-06-17 한국해양대 실사고, 비선형 88개교 영향) 과목별 환산이 정답이다.
+    # 선형 점수표 학교는 두 방식이 수학적으로 동일해 회귀 영향이 없다.
+    # 단위가중/단순평균 여부는 학교마다 다르므로(한국해양대=단위가중, 세명대·청주대=단순)
+    # credit_weighted 플래그를 그대로 따른다.
+    grade_points = score_logic.get("grade_points") or {}
+    _cw = score_logic.get("credit_weighted")
+    _cw = True if _cw is None else bool(_cw)
+    # band_score: 평균등급(단순)을 '구간→고정점수' 표에 매핑하는 학교(광주대 등).
+    #  과목별 환산이 아니라 평균석차등급을 구간표에 대입한다. band_score는
+    #  [{"max":1.00,"score":270},{"max":1.50,"score":240},...] 형식(max 이하 구간).
+    band_score = score_logic.get("band_score")
+    if isinstance(band_score, list) and band_score:
+        bands = sorted(
+            ({"max": _first_number(b.get("max")), "score": _first_number(b.get("score"))}
+             for b in band_score if isinstance(b, dict)),
+            key=lambda b: (b["max"] if b["max"] is not None else 99),
+        )
+        record_score = None
+        for b in bands:
+            if b["max"] is not None and average_grade <= b["max"] + 1e-9:
+                record_score = b["score"]
+                break
+        if record_score is None and bands:
+            record_score = bands[-1]["score"]
+    else:
+        _per_subject = []
+        for _g, _u in used_pool:
+            _s = _score_from_grade_table(_g, grade_points)
+            if _s is None:
+                _per_subject = None
+                break
+            _per_subject.append((_s, _u))
+        if _per_subject:
+            if _cw:
+                _tu = sum(u for _, u in _per_subject)
+                record_score = (sum(s * u for s, u in _per_subject) / _tu) if _tu > 0 else None
+            else:
+                record_score = sum(s for s, _ in _per_subject) / len(_per_subject)
+        else:
+            record_score = None
 
     if record_score is None:
         return {
@@ -440,7 +741,11 @@ def calculate_score(
             "strategy": strategy,
             "message": "평균등급은 계산했지만 등급별 환산점수표가 없어 최종 환산점수를 산출하지 못했어.",
             "average_grade": round(average_grade, 4),
+            "minimum_csat": _minimum_csat(score_logic, row["admission_meta_json"]),
         }
+
+    adjusted_score = apply_unit_shortfall_adjustment(record_score, total_units, score_logic)
+    record_score = adjusted_score
 
     result = {
         "university_id": university_id,
@@ -454,6 +759,7 @@ def calculate_score(
         "stage_weights": score_logic.get("stage_weights") or {},
         "subject_flags": score_logic.get("subject_flags") or {},
         "semester_weights": score_logic.get("semester_weights") or {},
+        "minimum_csat": _minimum_csat(score_logic, row["admission_meta_json"]),
         "attendance_seen": bool(attendance),
         "practical_records_seen": sorted(practical_records.keys()),
     }
@@ -466,7 +772,9 @@ def calculate_score(
 def _first_number(value: Any) -> float | None:
     import re
 
-    match = re.search(r"-?\d+(?:\.\d+)?", str(value or ""))
+    if value is None:
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", str(value))
     try:
         return float(match.group()) if match else None
     except ValueError:
@@ -489,7 +797,7 @@ def _optional_positive_int(value: Any) -> int | None:
     return number if number > 0 else None
 
 
-def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: float) -> dict[str, Any] | None:
+def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: float, record_only: bool = False) -> dict[str, Any] | None:
     """추측 금지 원칙의 코드판: (내신환산 + 실기만점)이 전년도 최종합 총점에
     닿는지 판정해 숫자와 함께 돌려준다. 설명문 룰은 도구를 안 부르는 턴에는
     보이지 않으므로(2026-06-12 강원대 상향 오추천 실사고), 판정을 데이터에 박는다."""
@@ -512,6 +820,10 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
     if practical_max is None and isinstance(ct, dict):
         # raw.실기만점 결손 시 검증 산식의 실기 만점 사용.
         practical_max = _first_number(ct.get("plugin_practical_full_score"))
+    if record_only and (practical_max is None or practical_max <= 0):
+        # 실기 없는 교과전형 — 내신 환산점수가 곧 총점이다. 실기 0으로 두고
+        # record가 작년 교과 합격선에 닿는지 직접 비교한다 (2026-06-17 교과전형 포함).
+        practical_max = 0.0
     # 올해 총점 만점 — 작년 합격컷과 만점 스케일이 같은지 판정하는 기준.
     full_total = _first_number(ct.get("plugin_full_practical_total")) if isinstance(ct, dict) else None
     r26 = _json_loads(row["admission_result_26_json"], {}) or {}
@@ -675,36 +987,16 @@ def lookup_prev_year(
 # 도구를 더듬어 조립하느라 10분+ 배회 — 오케스트레이션 자체가 기계적인 일은
 # 코드가 한다. LLM은 이 결과에서 학교를 고르고 서사만 쓴다.
 
-_CENTRAL_LIFE_DB = pathlib.Path(os.path.expanduser("~/.miho/life_records/central.sqlite3"))
+_CENTRAL_LIFE_DB = _student_records.CENTRAL_LIFE_DB
 
 
 def _student_grades_from_central(student_query: str) -> tuple[str | None, list[dict[str, Any]]]:
-    if not _CENTRAL_LIFE_DB.exists():
-        return None, []
-    conn = sqlite3.connect(_CENTRAL_LIFE_DB)
-    conn.row_factory = sqlite3.Row
+    original_db = _student_records.CENTRAL_LIFE_DB
+    _student_records.CENTRAL_LIFE_DB = _CENTRAL_LIFE_DB
     try:
-        student = conn.execute(
-            "SELECT id, name FROM students WHERE name LIKE ? ORDER BY id DESC LIMIT 1",
-            (f"%{str(student_query or '').strip()}%",),
-        ).fetchone()
-        if student is None:
-            return None, []
-        rows = conn.execute(
-            "SELECT grade, semester, category, subject, credits, rank_grade, achievement FROM central_grades WHERE student_id = ?",
-            (student["id"],),
-        ).fetchall()
-        grades = [
-            {
-                "교과": r["category"], "과목": r["subject"], "이수단위": r["credits"],
-                "등급": r["rank_grade"], "학년": r["grade"], "학기": r["semester"],
-                "성취도": r["achievement"],
-            }
-            for r in rows
-        ]
-        return student["name"], grades
+        return _student_records.student_grades_from_central(student_query)
     finally:
-        conn.close()
+        _student_records.CENTRAL_LIFE_DB = original_db
 
 
 # ---------------------------------------------------------------------------
@@ -751,13 +1043,34 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
-def _formula_calculate(university: str, merged_row: dict[str, Any], grades: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _formula_calculate(
+    university: str,
+    merged_row: dict[str, Any],
+    grades: list[dict[str, Any]],
+    attendance: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     module = _formula_module()
     if module is None:
         return None
     fn = (getattr(module, "REGISTRY", None) or {}).get(university)
     if fn is None:
         return None
+    # 대학 요강 표준: 진로선택과목만 성취도(A/B/C)→등급 환산해 반영하고, 일반선택
+    # 성취도평가 과목(과학탐구실험·사회탐구실험 등)은 석차등급이 없으면 반영하지 않는다
+    # (2026-06-17 원광대 실사고: plugin이 course_type 구분 없이 achievement만 보고 일반선택
+    # 성취도과목을 진로로 오반영 → car_avg 왜곡). 일반선택 성취도과목은 achievement를
+    # plugin에 넘기지 않아(None) 진로 환산 풀에서 빼고, 석차등급으로만 반영되게 한다.
+    def _ach_for_plugin(g: dict[str, Any]) -> str | None:
+        ach = g.get("성취도")
+        if not ach:
+            return None
+        ctype = str(g.get("과목구분") or g.get("course_type") or "").strip()
+        area = _norm_subject_area(g.get("교과") or g.get("area") or g.get("subject_area"))
+        if ctype == "일반선택" and not _int_or_none(g.get("등급")):
+            if university == "강원대학교" and area == "체육":
+                return str(ach)
+            return None
+        return str(ach)
     transcript = [
         module.SubjectRecord(
             grade=_int_or_none(g.get("학년")) or 0,
@@ -766,19 +1079,57 @@ def _formula_calculate(university: str, merged_row: dict[str, Any], grades: list
             subject=str(g.get("과목") or ""),
             credit=float(_first_number(g.get("이수단위")) or 1.0),
             rank_grade=_int_or_none(g.get("등급")),
-            achievement=(str(g.get("성취도")) if g.get("성취도") else None),
+            achievement=_ach_for_plugin(g),
+            raw_score=_first_number(g.get("원점수")),
+            mean_score=_first_number(g.get("평균")),
+            standard_deviation=_first_number(g.get("표준편차")),
+            course_type=str(g.get("과목구분") or g.get("course_type") or ""),
         )
         for g in grades
         if isinstance(g, dict)
     ]
     try:
-        result = fn(merged_row, transcript, {})
+        result = fn(merged_row, transcript, attendance or {})
     except Exception:
         return None
     data = result.to_dict() if hasattr(result, "to_dict") else None
-    if not isinstance(data, dict) or data.get("record_score") is None:
+    if not isinstance(data, dict):
         return None
     return data
+
+
+def _official_selected_academic_subjects(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summary_categories = {
+        "교과",
+        "1단계",
+        "출결",
+        "출결감점",
+        "출석",
+        "봉사",
+        "학생부",
+        "학생부교과",
+        "학업역량평가",
+        "실기",
+        "면접",
+        "서류",
+        "진로",
+        "학교폭력",
+        "환산",
+        "환산점수",
+        "부족교과",
+        "비교과/실기",
+    }
+    academic: list[dict[str, Any]] = []
+    for item in selected:
+        category = str(item.get("category") or "").strip()
+        if category in summary_categories:
+            continue
+        nested_rows = item.get("rows")
+        if isinstance(nested_rows, list) and nested_rows:
+            academic.extend(row for row in nested_rows if isinstance(row, dict))
+        else:
+            academic.append(item)
+    return academic
 
 
 
@@ -983,18 +1334,29 @@ def recommend_candidates(
         practical_full = _first_number(ct.get("plugin_practical_full_score")) if isinstance(ct, dict) else None
         if practical_full is None:
             practical_full = _first_number(_json_loads(row["raw_json"], {}).get("실기만점"))
+        record_only_track = False
         if not practical_full or practical_full <= 0:
             # 실기만점 데이터가 없어도 실기종목이 등록돼 있으면 실기전형으로 인정 (누락 방지).
             _ev = _json_loads(row["practical_events_json"], None)
             _events = _ev.get("events") if isinstance(_ev, dict) else _ev
             if not _events:
-                skipped["non_practical"] += 1
-                continue
+                # 실기 없는 교과전형 — record만으로 작년 교과 합격선 대비해 후보에 포함한다
+                # (사장님 2026-06-17). 단 자격 제한 전형(농어촌·기회균형 등)은 일반 학생
+                # 대상이 아니므로 지역인재·특기자처럼 제외한다.
+                if any(k in _trk for k in ("농어촌", "기회균형", "기균", "특성화")):
+                    skipped["non_practical"] += 1
+                    continue
+                record_only_track = True
         calc = calculate_score(row["university_id"], grades, {}, {})
         if calc.get("status") != "calculated":
             raw_for_formula = _json_loads(row["raw_json"], {})
-            formula = _formula_calculate(row["university"], dict(raw_for_formula), grades)
-            if formula is None:
+            # 일부 사이드카 plugin(청주대 등)은 admission_track으로 산식 트랙(예체능 300/700,
+            # 교과면접 700/300, 지역인재 1000 등)을 가른다. raw_json엔 한글 '전형명'만 있고
+            # admission_track 키가 없으므로 룰 컬럼값을 영어 키로 주입한다.
+            raw_for_formula["admission_track"] = row["admission_track"]
+            raw_for_formula["department"] = row["department"]
+            formula = _formula_calculate(row["university"], dict(raw_for_formula), grades, {})
+            if formula is None or formula.get("status") != "ready" or formula.get("record_score") is None:
                 skipped["calc_failed"] += 1
                 continue
             conn_calc = _connect()
@@ -1004,10 +1366,14 @@ def recommend_candidates(
                 "average_grade": formula.get("reflected_average_grade"),
                 "formula_key": formula.get("formula_key"),
             }
-            vs_f = _vs_prev_year(conn_calc, row["university_id"], float(formula["record_score"]))
+            vs_f = _vs_prev_year(conn_calc, row["university_id"], float(formula["record_score"]), record_only=record_only_track)
             if vs_f:
                 calc["vs_prev_year"] = vs_f
         vs = calc.get("vs_prev_year") or {}
+        if not vs and record_only_track:
+            # 교과전형은 calculate_score 내부 _vs_prev_year가 실기 가정으로 None을 반환하므로
+            # record_only 모드로 작년 교과 합격선 대비를 다시 구한다.
+            vs = _vs_prev_year(conn, row["university_id"], _first_number(calc.get("student_record_score")) or 0.0, record_only=True) or {}
         if not vs:
             skipped["calc_failed"] += 1
             continue
@@ -1051,11 +1417,18 @@ def recommend_candidates(
         prev_winner_practical = None
         prev_winner_grade = None
         stage1 = {}
+        # 수능최저학력기준 — 실기/내신이 충분해도 수능최저를 못 맞추면 불합격이므로
+        # 반드시 후보에 노출한다(2026-06-17 서원대 체교 실사고: 수능최저 미표시로 도달 오판).
+        min_csat_info = None
         try:
             extra = conn.execute(
                 "SELECT admission_result_26_json, admission_meta_json FROM susi_calculation_rules WHERE university_id = ?",
                 (row["university_id"],),
             ).fetchone()
+            _meta = _json_loads(extra[1], {}) or {}
+            _mc = _meta.get("minimum_csat") or {}
+            if isinstance(_mc, dict) and str(_mc.get("has_minimum") or "").strip().upper() == "O":
+                min_csat_info = _mc.get("detail") or "있음(세부기준 요강 확인)"
             r26 = _json_loads(extra[0], {})
             fp = (r26.get("final_pass_cutoff") or {}) if isinstance(r26, dict) else {}
             prev_final_record = _first_number(fp.get("record_score"))
@@ -1128,6 +1501,8 @@ def recommend_candidates(
                 "needed_practical_rate_pct": needed_practical_rate,
                 "prev_winner_practical_rate_pct": prev_winner_practical_rate,
                 "suggested_verdict": suggested,
+                "record_only_track": record_only_track or None,
+                "minimum_csat": min_csat_info,
                 "practical_events": event_names,
                 "quota": raw.get("정원"),
                 "stage_record_practical": f"{raw.get('내신교과') or '?'}:{raw.get('실기만점') or '?'}",

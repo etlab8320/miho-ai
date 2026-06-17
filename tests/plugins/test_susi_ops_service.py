@@ -11,6 +11,7 @@ from plugins.susi_ops.service import (
     _json_loads,
     _like,
     _norm_subject_area,
+    _first_number,
     _score_from_grade_table,
     _subject_allowed,
     _unit_value,
@@ -19,6 +20,11 @@ from plugins.susi_ops.service import (
     db_path,
     lookup_rules,
 )
+from plugins.susi_ops.score_adjustments import (
+    achievement_ratio_grade,
+    apply_unit_shortfall_adjustment,
+)
+from plugins.susi_ops.semester_rules import within_semester_limit
 
 _DB_AVAILABLE = db_path().exists()
 _skip_no_db = pytest.mark.skipif(not _DB_AVAILABLE, reason="susi27 staging DB not present")
@@ -111,16 +117,30 @@ def test_weighted_average_grade_basic() -> None:
         {"교과": "국어", "grade": "3", "unit": "4"},
     ]
     score_logic = {"subject_flags": {"국어": "O"}, "regular_subjects": ""}
-    avg, used, total = _weighted_average_grade(grades, score_logic)
+    avg, used, total, _ = _weighted_average_grade(grades, score_logic)
     assert avg == pytest.approx(2.0)
     assert used == 2
     assert total == pytest.approx(8.0)
 
 
 def test_weighted_average_grade_empty_grades_returns_none() -> None:
-    avg, used, total = _weighted_average_grade([], {"subject_flags": {}})
+    avg, used, total, _ = _weighted_average_grade([], {"subject_flags": {}})
     assert avg is None
     assert used == 0
+
+
+def test_semester_limit_expected_graduate_stops_at_third_grade_first_semester() -> None:
+    row = {"학년": 3, "학기": 2}
+    limit = "졸업예정자: 1학년 1학기~3학년 1학기; 졸업자: 전학년"
+
+    assert within_semester_limit(row, limit, {"graduation_status": "expected"}) is False
+
+
+def test_semester_limit_graduate_allows_full_years_when_pdf_rule_says_so() -> None:
+    row = {"학년": 3, "학기": 2}
+    limit = "졸업예정자: 1학년 1학기~3학년 1학기; 졸업자: 전학년"
+
+    assert within_semester_limit(row, limit, {"graduation_status": "graduate"}) is True
 
 
 def test_score_from_grade_table_exact_hit() -> None:
@@ -149,6 +169,42 @@ def test_score_from_grade_table_clamp_min() -> None:
 
 def test_score_from_grade_table_empty_returns_none() -> None:
     assert _score_from_grade_table(3.0, {}) is None
+
+
+def test_first_number_preserves_zero_float() -> None:
+    assert _first_number(0.0) == pytest.approx(0.0)
+
+
+def test_unit_shortfall_adjustment_applies_pdf_factor() -> None:
+    score_logic = {
+        "unit_shortfall_adjustment": {
+            "threshold_units": 70,
+            "base_factor": 0.96,
+            "per_missing_unit": 0.002,
+        }
+    }
+
+    adjusted = apply_unit_shortfall_adjustment(200.0, 65.0, score_logic)
+
+    assert adjusted == pytest.approx(200.0 * (0.96 - 5 * 0.002))
+
+
+def test_unit_shortfall_adjustment_ignores_sufficient_units() -> None:
+    score_logic = {"unit_shortfall_adjustment": {"threshold_units": 70}}
+
+    assert apply_unit_shortfall_adjustment(200.0, 70.0, score_logic) == pytest.approx(200.0)
+
+
+def test_achievement_ratio_grade_requires_ratio_for_b_or_c() -> None:
+    assert achievement_ratio_grade({"achievement": "C"}, "C") is None
+
+
+def test_achievement_ratio_grade_maps_konkuk_ratio_table() -> None:
+    row = {"achievement_ratios": {"B": 22.0, "C": 5.0}}
+
+    assert achievement_ratio_grade(row, "A") == pytest.approx(1.0)
+    assert achievement_ratio_grade(row, "B") == pytest.approx(6.0)
+    assert achievement_ratio_grade(row, "C") == pytest.approx(8.0)
 
 
 # ---------------------------------------------------------------------------
@@ -208,10 +264,17 @@ def test_calculate_score_unverified_rule_refused() -> None:
 
     conn = sqlite3.connect(str(db_path()))
     conn.row_factory = sqlite3.Row
-    # verified 계열(official_verified 등)은 이제 계산 허용 — 진짜 비계산 라벨만 거부 대상
+    # 공식 formula_key가 있는 행은 confidence 라벨이 plugin_ready/non_calculation_track이어도
+    # 플러그인 자체 검증 상태를 우선한다. 이 테스트는 실행기 없는 미검증 행만 거부 확인한다.
     row = conn.execute(
         "SELECT university_id FROM susi_calculation_rules "
-        "WHERE confidence NOT LIKE '%verified%' OR confidence LIKE '%non_calc%' LIMIT 1"
+        "WHERE json_extract(score_logic_json, '$.formula_key') IS NULL "
+        "AND (confidence NOT LIKE '%verified%' OR confidence LIKE '%non_calc%') "
+        "AND coalesce(json_extract(score_logic_json, '$.calculation_readiness'), '') NOT LIKE '%non_calculation_track%' "
+        "AND coalesce(json_extract(score_logic_json, '$.calculation_scope'), '') NOT LIKE '%non_calculation_track%' "
+        "AND coalesce(json_extract(score_logic_json, '$.calculation_readiness'), '') != 'not_in_2027_official_guide' "
+        "AND coalesce(json_extract(score_logic_json, '$.calculation_scope'), '') != 'not_in_2027_official_guide' "
+        "LIMIT 1"
     ).fetchone()
     conn.close()
 
@@ -252,6 +315,193 @@ def test_calculate_score_known_case_gachon() -> None:
     assert result["average_grade"] == pytest.approx(1.75, abs=0.001)
     assert result["student_record_score"] == pytest.approx(298.875, abs=0.001)
     assert result["used_subjects"] == 4
+
+
+@_skip_no_db
+def test_calculate_score_kangwon_uses_official_formula_plugin() -> None:
+    grades = [
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "영어", "과목": "영어", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "체육", "과목": "체육", "이수단위": 3, "등급": "1"},
+    ]
+
+    result = calculate_score(
+        university_id="7",
+        grades=grades,
+        attendance={},
+        practical_records={},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["student_record_score"] == pytest.approx(1000.0)
+
+
+@_skip_no_db
+def test_calculate_score_konkuk_glocal_requires_career_ratio_inputs() -> None:
+    grades = [
+        {"학년": 3, "학기": 1, "교과": "국어", "과목": "심화 국어", "이수단위": 2, "성취도": "C", "course_type": "진로선택"},
+        {"학년": 3, "학기": 1, "교과": "영어", "과목": "진로 영어", "이수단위": 2, "성취도": "C", "course_type": "진로선택"},
+        {"학년": 3, "학기": 1, "교과": "한국사", "과목": "한국사", "이수단위": 3, "등급": "2"},
+    ]
+
+    result = calculate_score(
+        university_id="9",
+        grades=grades,
+        attendance={},
+        practical_records={},
+    )
+
+    assert result["status"] == "missing_career_ratio_inputs"
+    assert result["missing_subjects"][0]["subject"] == "심화 국어"
+
+
+@_skip_no_db
+def test_calculate_score_gyeongguk_uses_official_formula_with_attendance() -> None:
+    grades = [
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "영어", "과목": "영어", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "수학", "과목": "수학", "이수단위": 3, "등급": "1"},
+    ]
+
+    result = calculate_score(
+        university_id="15",
+        grades=grades,
+        attendance={"unexcused_absence_days": 3},
+        practical_records={},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["student_record_score"] == pytest.approx(397.0)
+
+
+@_skip_no_db
+def test_calculate_score_kyonggi_uses_official_formula_plugin() -> None:
+    grades = [
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "영어", "과목": "영어", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "수학", "과목": "수학", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "사회", "과목": "통합사회", "이수단위": 3, "등급": "1"},
+    ]
+
+    result = calculate_score(
+        university_id="16",
+        grades=grades,
+        attendance={},
+        practical_records={},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["student_record_score"] == pytest.approx(30.0)
+
+
+@_skip_no_db
+def test_calculate_score_kyonggi_graduate_includes_third_grade_second_semester() -> None:
+    grades = [
+        {"학년": 3, "학기": 2, "교과": "국어", "과목": "고전 읽기", "이수단위": 3, "등급": "1"},
+        {"학년": 3, "학기": 2, "교과": "영어", "과목": "진로 영어", "이수단위": 3, "등급": "1"},
+    ]
+
+    result = calculate_score(
+        university_id="16",
+        grades=grades,
+        attendance={},
+        practical_records={},
+        student_context={"graduation_status": "graduate"},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["student_record_score"] == pytest.approx(30.0)
+
+
+@_skip_no_db
+def test_calculate_score_kyungnam_student_comprehensive_stays_non_calculation() -> None:
+    result = calculate_score(
+        university_id="20",
+        grades=[{"학년": 1, "학기": 1, "교과": "국어", "과목": "국어", "이수단위": 3, "등급": "1"}],
+        attendance={},
+        practical_records={},
+    )
+
+    assert result["status"] == "non_calculation_track"
+    assert result["strategy"] == "official_formula_plugin"
+
+
+@_skip_no_db
+def test_calculate_score_knu_plugin_ready_formula_is_allowed() -> None:
+    result = calculate_score(
+        university_id="22",
+        grades=[
+            {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어", "이수단위": 3, "등급": "1"},
+            {"학년": 1, "학기": 1, "교과": "영어", "과목": "영어", "이수단위": 3, "등급": "1"},
+        ],
+        attendance={},
+        practical_records={},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "KNU_2027_STUDENT_COURSE400_COMPLETION_REVIEW100"
+    assert result["student_record_score"] == pytest.approx(400.0)
+
+
+@_skip_no_db
+def test_calculate_score_knu_non_calculation_formula_is_allowed() -> None:
+    result = calculate_score(
+        university_id="24",
+        grades=[{"학년": 1, "학기": 1, "교과": "국어", "과목": "국어", "이수단위": 3, "등급": "1"}],
+        attendance={},
+        practical_records={},
+    )
+
+    assert result["status"] == "non_calculation_track"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "KNU_2027_STUDENT_RECORD_DOCUMENT_REVIEW_100"
+
+
+@_skip_no_db
+def test_calculate_score_kyungsung_practical_uses_official_formula_plugin() -> None:
+    grades = [
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어1", "이수단위": 1, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "국어", "과목": "국어2", "이수단위": 1, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "수학", "과목": "수학1", "이수단위": 1, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "수학", "과목": "수학2", "이수단위": 1, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "영어", "과목": "영어1", "이수단위": 1, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "영어", "과목": "영어2", "이수단위": 1, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "사회", "과목": "사회1", "이수단위": 1, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "사회", "과목": "사회2", "이수단위": 1, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "기타", "과목": "기타1", "이수단위": 1, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "기타", "과목": "기타2", "이수단위": 1, "등급": "1"},
+    ]
+
+    result = calculate_score(
+        university_id="38",
+        grades=grades,
+        attendance={},
+        practical_records={},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "KYUNGSUNG_2027_OFFICIAL_SPORTS_HEALTH_RECORD100_PRACTICAL900"
+    assert result["student_record_score"] == pytest.approx(100.0)
+
+
+@_skip_no_db
+def test_calculate_score_kyungsung_student_comprehensive_stays_non_calculation() -> None:
+    result = calculate_score(
+        university_id="39",
+        grades=[{"학년": 1, "학기": 1, "교과": "국어", "과목": "국어", "이수단위": 3, "등급": "1"}],
+        attendance={},
+        practical_records={},
+    )
+
+    assert result["status"] == "non_calculation_track"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "KYUNGSUNG_2027_STUDENT_RECORD_COMPREHENSIVE_NON_CALCULATION"
 
 
 # ---------------------------------------------------------------------------
@@ -310,9 +560,11 @@ def test_recommend_candidates_filters_unreachable(monkeypatch):
             return dict.__getitem__(self, k)
 
     rules = [FakeRow(university_id="u1", university="가능대", department="체육", admission_track="실기",
-                     practical_events_json=None, raw_json='{"정원": "10", "내신교과": "200", "실기만점": "800"}'),
+                     practical_events_json=None, calculation_test_json=None,
+                     raw_json='{"정원": "10", "내신교과": "200", "실기만점": "800"}'),
              FakeRow(university_id="u2", university="불가대", department="체육", admission_track="실기",
-                     practical_events_json=None, raw_json='{"정원": "5", "내신교과": "200", "실기만점": "600"}')]
+                     practical_events_json=None, calculation_test_json=None,
+                     raw_json='{"정원": "5", "내신교과": "200", "실기만점": "600"}')]
 
     class FakeConn:
         def execute(self, sql, params=()):
@@ -320,7 +572,7 @@ def test_recommend_candidates_filters_unreachable(monkeypatch):
                 def fetchall(self_inner):
                     return rules
                 def fetchone(self_inner):
-                    return ['{"final_pass_cutoff": {"total_score": 900.0, "record_score": 150.0}}']
+                    return ['{"final_pass_cutoff": {"total_score": 900.0, "record_score": 150.0}}', "{}"]
             return C()
 
     monkeypatch.setattr(service, "_connect", lambda: FakeConn())
@@ -330,10 +582,12 @@ def test_recommend_candidates_filters_unreachable(monkeypatch):
         if uid == "u1":
             base["vs_prev_year"] = {"practical_max": 800.0, "max_possible_total": 960.0,
                                     "prev_final_total": 900.0, "prev_first_total": None,
+                                    "prev_final_record_rescaled": 150.0,
                                     "reachable_at_full_practical": True}
         else:
             base["vs_prev_year"] = {"practical_max": 600.0, "max_possible_total": 760.0,
                                     "prev_final_total": 900.0, "prev_first_total": None,
+                                    "prev_final_record_rescaled": 150.0,
                                     "reachable_at_full_practical": False}
         return base
 
