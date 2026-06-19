@@ -69,6 +69,13 @@ korea-susi27-athletic-reference/runtime/susi27_pipeline/
 - `runtime/susi27_pipeline/susi27_formula_*.py`
 - `runtime/susi27_pipeline/test_susi27_formula_*.py`
 
+주의:
+
+- 모든 학교가 개별 `susi27_formula_<school>.py` 파일을 갖는 것은 아니다.
+- 경희대학교와 동명대학교는 통합본 `susi27_university_formula_plugins.py` 안의
+  `@formula("경희대학교")`, `@formula("동명대학교")` 구현을 봐야 한다.
+- 개별 파일이 없다는 이유만으로 plugin 미구현/N/A 판정을 내리면 오판이다.
+
 요강 원문:
 
 - `source_files/pdfs_official/`
