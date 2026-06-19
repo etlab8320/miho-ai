@@ -46,3 +46,29 @@ def test_calculate_score_donga_holistic_tracks_are_official_noncalc() -> None:
         assert result["strategy"] == "official_formula_plugin"
         assert result["formula_key"] == "DONGA_2027_NON_CALCULATION_TRACK"
         assert result["minimum_csat"]["has_minimum"] is False
+
+
+@_skip_no_db
+@pytest.mark.parametrize(
+    ("university_id", "formula_key", "record_full", "practical_full"),
+    [
+        ("460", "DONGA_2027_ARTDESIGN_RECORD300_PRACTICAL700", 300.0, 700.0),
+        ("461", "DONGA_2027_ARTDESIGN_RECORD300_PRACTICAL700", 300.0, 700.0),
+        ("462", "DONGA_2027_MUSIC_RECORD200_PRACTICAL800", 200.0, 800.0),
+    ],
+)
+def test_calculate_score_donga_non_athletics_arts_tracks_use_department_scale(
+    university_id: str,
+    formula_key: str,
+    record_full: float,
+    practical_full: float,
+) -> None:
+    result = calculate_score(university_id, _subjects(), {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == formula_key
+    assert result["student_record_score"] == pytest.approx(record_full)
+    assert result["record_full_score"] == pytest.approx(record_full)
+    assert result["practical_full_score"] == pytest.approx(practical_full)
+    assert result["full_practical_total"] == pytest.approx(1000.0)

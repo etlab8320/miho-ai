@@ -33,6 +33,13 @@ def _subjects_with_career() -> list[dict[str, object]]:
     ]
 
 
+def _subjects_with_cross_category_career() -> list[dict[str, object]]:
+    return _subjects_with_career() + [
+        {"학년": 2, "학기": 1, "교과": "체육", "과목": "스포츠생활", "이수단위": 2, "성취도": "A", "과목구분": "진로"},
+        {"학년": 2, "학기": 2, "교과": "음악", "과목": "음악감상", "이수단위": 2, "성취도": "A", "과목구분": "진로"},
+    ]
+
+
 @_skip_no_db
 def test_calculate_score_jeonju_practical_track_uses_official_plugin() -> None:
     result = calculate_score("323", _subjects(), {}, {})
@@ -49,13 +56,13 @@ def test_calculate_score_jeonju_practical_track_uses_official_plugin() -> None:
 
 
 @_skip_no_db
-def test_calculate_score_jeonju_attendance_and_practical_absence() -> None:
+def test_calculate_score_jeonju_practical_track_ignores_attendance_and_blocks_absence() -> None:
     attendance = {"unexcused_absence_days": 7, "unexcused_late": 1, "unexcused_early_leave": 3}
     calculated = calculate_score("323", _subjects(), attendance, {})
     absent = calculate_score("323", _subjects(), {"practical_absent": True}, {})
 
-    assert calculated["student_record_score"] == pytest.approx(298.0)
-    assert calculated["full_practical_total"] == pytest.approx(998.0)
+    assert calculated["student_record_score"] == pytest.approx(300.0)
+    assert calculated["full_practical_total"] == pytest.approx(1000.0)
     assert absent["status"] == "practical_absent_ineligible"
 
 
@@ -71,3 +78,12 @@ def test_calculate_score_jeonju_course_track_and_non_calculation() -> None:
     assert course["full_practical_total"] == pytest.approx(1005.0)
     assert non_calc["status"] == "non_calculation_track"
     assert non_calc["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
+
+
+@_skip_no_db
+def test_calculate_score_jeonju_career_bonus_uses_all_career_subjects() -> None:
+    result = calculate_score("351", _subjects_with_cross_category_career(), {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["formula_key"] == COURSE_KEY
+    assert result["student_record_score"] == pytest.approx(1006.0)

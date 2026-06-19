@@ -26,6 +26,46 @@ def _subjects() -> list[dict[str, object]]:
     return subjects
 
 
+def _career_subjects_out_of_order() -> list[dict[str, object]]:
+    subjects: list[dict[str, object]] = []
+    for index in range(10):
+        subjects.append(
+            {
+                "학년": 2,
+                "학기": 1,
+                "교과": "국어",
+                "과목": f"진로C{index}",
+                "이수단위": 1,
+                "성취도": "C",
+                "과목구분": "진로선택",
+            }
+        )
+    for index in range(8):
+        subjects.append(
+            {
+                "학년": 2,
+                "학기": 2,
+                "교과": "영어",
+                "과목": f"진로A{index}",
+                "이수단위": 1,
+                "성취도": "A",
+                "과목구분": "진로선택",
+            }
+        )
+    for index in range(10):
+        subjects.append(
+            {
+                "학년": 1 + index // 6,
+                "학기": 1 + index % 2,
+                "교과": ["국어", "영어", "수학", "사회", "한국사", "과학"][index % 6],
+                "과목": f"일반{index}",
+                "이수단위": 1,
+                "등급": "1",
+            }
+        )
+    return subjects
+
+
 @_skip_no_db
 def test_calculate_score_daejin_practical_track_uses_official_plugin() -> None:
     result = calculate_score("146", _subjects(), {}, {})
@@ -36,6 +76,15 @@ def test_calculate_score_daejin_practical_track_uses_official_plugin() -> None:
     assert result["student_record_score"] == pytest.approx(200.0)
     assert result["vs_prev_year"]["practical_max"] == pytest.approx(800.0)
     assert result["minimum_csat"]["has_minimum"] is False
+
+
+@_skip_no_db
+def test_calculate_score_daejin_selects_best_career_subjects_before_cap() -> None:
+    result = calculate_score("146", _career_subjects_out_of_order(), {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["student_record_score"] == pytest.approx(200.0)
+    assert result["used_subjects"] == 18
 
 
 @_skip_no_db

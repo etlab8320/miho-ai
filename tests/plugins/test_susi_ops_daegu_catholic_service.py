@@ -43,6 +43,17 @@ def test_calculate_score_daegu_catholic_life_practical_uses_official_formula() -
 
 
 @_skip_no_db
+def test_calculate_score_daegu_catholic_pe_general_exposes_official_minimum_csat() -> None:
+    result = calculate_score("123", _subjects(), {"unexcused_absence_days": 0}, {})
+
+    assert result["status"] == "calculated"
+    assert result["minimum_csat"]["has_minimum"] is True
+    assert "3개 영역 등급 합 5" in result["minimum_csat"]["detail"]
+    assert "미적분 또는 기하" in result["minimum_csat"]["detail"]
+    assert "과학탐구 2과목 평균" in result["minimum_csat"]["detail"]
+
+
+@_skip_no_db
 def test_calculate_score_daegu_catholic_pe_practical_exposes_minimum_csat() -> None:
     result = calculate_score("124", _subjects(), {"unexcused_absence_days": 0}, {})
 

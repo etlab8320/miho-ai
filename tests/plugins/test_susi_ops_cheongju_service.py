@@ -31,6 +31,25 @@ def _subjects() -> list[dict[str, object]]:
     ]
 
 
+def _subjects_with_score(raw_score: float) -> list[dict[str, object]]:
+    rows = _subjects()
+    for row in rows:
+        row["원점수"] = raw_score
+    return rows
+
+
+def _career_a_subject() -> dict[str, object]:
+    return {
+        "학년": 2,
+        "학기": 1,
+        "교과": "과학",
+        "과목": "진로선택A",
+        "이수단위": 2,
+        "과목유형": "진로선택",
+        "성취도": "A",
+    }
+
+
 @_skip_no_db
 def test_calculate_score_cheongju_art_sports_uses_official_plugin() -> None:
     result = calculate_score("338", _subjects(), {}, {})
@@ -64,6 +83,8 @@ def test_calculate_score_cheongju_absent_and_school_violence_contract() -> None:
 def test_calculate_score_cheongju_extra_tracks_use_official_components() -> None:
     athlete = calculate_score("366", _subjects(), {"unexcused_absence_days": 7}, {})
     record = calculate_score("367", _subjects(), {}, {})
+    course_talent = calculate_score("450", _subjects(), {}, {})
+    future_talent = calculate_score("451", _subjects(), {}, {})
     regional = calculate_score("368", _subjects(), {}, {})
     interview = calculate_score("369", _subjects(), {}, {})
 
@@ -75,6 +96,12 @@ def test_calculate_score_cheongju_extra_tracks_use_official_components() -> None
     assert record["formula_key"] == RECORD1000_KEY
     assert record["record_full_score"] == pytest.approx(1000.0)
     assert record["practical_full_score"] == pytest.approx(0.0)
+    assert course_talent["formula_key"] == RECORD1000_KEY
+    assert course_talent["record_full_score"] == pytest.approx(1000.0)
+    assert course_talent["full_practical_total"] == pytest.approx(1000.0)
+    assert future_talent["formula_key"] == RECORD1000_KEY
+    assert future_talent["record_full_score"] == pytest.approx(1000.0)
+    assert future_talent["full_practical_total"] == pytest.approx(1000.0)
     assert regional["formula_key"] == RECORD1000_KEY
     assert regional["record_full_score"] == pytest.approx(1000.0)
     assert interview["formula_key"] == INTERVIEW_KEY
@@ -83,3 +110,15 @@ def test_calculate_score_cheongju_extra_tracks_use_official_components() -> None
     assert interview["practical_full_score"] == pytest.approx(300.0)
     assert interview["full_practical_total"] == pytest.approx(1000.0)
     assert interview["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
+
+
+@_skip_no_db
+def test_calculate_score_cheongju_sports_rehab_career_a_bonus() -> None:
+    result = calculate_score("367", _subjects_with_score(98.0) + [_career_a_subject()], {}, {})
+    life_pe = calculate_score("338", _subjects_with_score(98.0) + [_career_a_subject()], {}, {})
+
+    assert result["formula_key"] == RECORD1000_KEY
+    assert result["student_record_score"] == pytest.approx(982.0)
+    assert result["full_practical_total"] == pytest.approx(982.0)
+    assert life_pe["student_record_score"] == pytest.approx(294.0)
+    assert life_pe["full_practical_total"] == pytest.approx(994.0)

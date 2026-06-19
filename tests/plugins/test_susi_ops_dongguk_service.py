@@ -54,3 +54,17 @@ def test_calculate_score_dongguk_seoul_pe_uses_no_credit_average() -> None:
     assert result["formula_key"] == "DGU_2027_PRACTICAL_TOP10_NOCREDIT_GRADE10BASE_TO_3_1_CAREER_RANKONLY"
     assert result["student_record_score"] == pytest.approx(260.6)
     assert result["minimum_csat"]["has_minimum"] is False
+
+
+@_skip_no_db
+def test_calculate_score_dongguk_seoul_pe_converts_practical_event_scores() -> None:
+    result = calculate_score(
+        "155",
+        _seoul_subjects(),
+        {"practical_event_scores": [100, 100, 100, 100]},
+        {},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["practical_full_score"] == pytest.approx(700.0)
+    assert result["full_practical_total"] == pytest.approx(972.6)

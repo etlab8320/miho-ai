@@ -70,3 +70,30 @@ def test_calculate_score_namseoul_comprehensive_interview_is_non_calculation_wit
     assert result["status"] == "non_calculation_track"
     assert result["formula_key"] == "NAMSEOUL_2027_NON_CALCULATION_TRACK"
     assert result["minimum_csat"]["has_minimum"] is False
+
+
+@_skip_no_db
+def test_calculate_score_namseoul_regional_uses_top_two_practical_events() -> None:
+    result = calculate_score(
+        "114",
+        _perfect_subjects(),
+        {"practical_event_scores": [80, 90, 50]},
+        {},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["formula_key"] == "NAMSEOUL_2027_TOP12_REGULAR_TOP3_CAREER"
+    assert result["student_record_score"] == pytest.approx(300.0)
+    assert result["practical_full_score"] == pytest.approx(700.0)
+    assert result["full_practical_total"] == pytest.approx(895.0)
+
+
+@_skip_no_db
+def test_calculate_score_namseoul_school_violence_follows_pdf_table() -> None:
+    deducted = calculate_score("111", _perfect_subjects(), {"school_violence_measures": [1, 4, 6]}, {})
+    ineligible = calculate_score("111", _perfect_subjects(), {"school_violence_measure": 8}, {})
+
+    assert deducted["status"] == "calculated"
+    assert deducted["full_practical_total"] == pytest.approx(940.0)
+    assert ineligible["status"] == "namseoul_school_violence_ineligible"
+    assert ineligible["formula_key"] == "NAMSEOUL_2027_SCHOOL_VIOLENCE_INELIGIBLE"

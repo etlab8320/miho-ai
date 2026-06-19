@@ -43,6 +43,24 @@ def _subjects(rank: str = "1", achievement: str = "A") -> list[dict[str, object]
     return rows
 
 
+def _mixed_record100_subjects() -> list[dict[str, object]]:
+    grades = ["2", "2", "2", "2", "2", "3", "3", "3", "3", "3"]
+    groups = ["국어", "영어", "수학", "사회", "과학"] * 2
+    terms = [(1, 1), (1, 2), (2, 1), (2, 2), (3, 1)] * 2
+    return [
+        {
+            "학년": terms[index][0],
+            "학기": terms[index][1],
+            "교과": group,
+            "과목": f"{group}{index + 1}",
+            "이수단위": 1,
+            "등급": grade,
+            "과목구분": "일반",
+        }
+        for index, (group, grade) in enumerate(zip(groups, grades))
+    ]
+
+
 @_skip_no_db
 def test_calculate_score_jungbu_practical_tracks_use_official_plugin() -> None:
     for uid in ["334", "335", "336"]:
@@ -57,6 +75,18 @@ def test_calculate_score_jungbu_practical_tracks_use_official_plugin() -> None:
         assert result["practical_full_score"] == pytest.approx(800.0)
         assert result["full_practical_total"] == pytest.approx(1000.0)
         assert result["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
+
+
+@_skip_no_db
+def test_calculate_score_jungbu_record100_mixed_grades_use_average_band_table() -> None:
+    result = calculate_score("358", _mixed_record100_subjects(), {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == RECORD100_KEY
+    assert result["average_grade"] == pytest.approx(2.5)
+    assert result["student_record_score"] == pytest.approx(940.0)
+    assert result["full_practical_total"] == pytest.approx(940.0)
 
 
 @_skip_no_db

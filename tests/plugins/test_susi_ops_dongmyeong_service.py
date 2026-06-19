@@ -25,6 +25,7 @@ def _subjects() -> list[dict[str, object]]:
 def test_calculate_score_dongmyeong_tracks_use_official_plugin() -> None:
     record = calculate_score("157", _subjects(), {}, {})
     practical = calculate_score("159", _subjects(), {}, {})
+    interview = calculate_score("160", _subjects(), {"interview_score": 180}, {})
     creative = calculate_score("161", _subjects(), {}, {})
 
     assert record["strategy"] == "official_formula_plugin"
@@ -32,5 +33,8 @@ def test_calculate_score_dongmyeong_tracks_use_official_plugin() -> None:
     assert practical["strategy"] == "official_formula_plugin"
     assert practical["student_record_score"] == pytest.approx(400.0)
     assert practical["vs_prev_year"]["practical_max"] == pytest.approx(600.0)
+    assert interview["strategy"] == "official_formula_plugin"
+    assert interview["student_record_score"] == pytest.approx(800.0)
+    assert interview["full_practical_total"] == pytest.approx(980.0)
     assert creative["status"] == "non_calculation_track"
     assert creative["formula_key"] == "DONGMYEONG_2027_CREATIVE_HOLISTIC_NON_CALC"

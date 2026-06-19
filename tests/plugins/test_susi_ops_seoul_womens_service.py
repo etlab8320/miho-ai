@@ -36,6 +36,20 @@ def test_calculate_score_seoul_womens_sports_course_practical() -> None:
 
 
 @_skip_no_db
+def test_calculate_score_seoul_womens_sports_practical_excellence_uses_record40_practical60() -> None:
+    result = calculate_score("420", _subjects(), {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "SWU_2027_SPORTS_PRACTICAL60_RECORD40"
+    assert result["student_record_score"] == pytest.approx(40.0)
+    assert result["record_full_score"] == pytest.approx(40.0)
+    assert result["practical_full_score"] == pytest.approx(60.0)
+    assert result["full_practical_total"] == pytest.approx(100.0)
+    assert result["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
+
+
+@_skip_no_db
 def test_calculate_score_seoul_womens_barom_interview_is_noncalc() -> None:
     result = calculate_score("234", _subjects(), {}, {})
 

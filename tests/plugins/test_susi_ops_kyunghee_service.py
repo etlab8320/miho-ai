@@ -37,8 +37,31 @@ def test_calculate_score_kyunghee_regional_uses_official_formula_plugin() -> Non
 
 
 @_skip_no_db
+def test_calculate_score_kyunghee_opportunity_uses_official_formula_plugin() -> None:
+    result = calculate_score("60", _khu_subjects(), {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "KHU_2027_ARTSPORT_OPPORTUNITY_KOREAN_ENGLISH_ALL_CAREER_TOP3_COURSE300_DOCUMENT700"
+    assert result["student_record_score"] == pytest.approx(300.0)
+    assert result["record_full_score"] == pytest.approx(300.0)
+    assert result["practical_full_score"] == pytest.approx(700.0)
+    assert result["full_practical_total"] == pytest.approx(1000.0)
+    assert result["used_subjects"] == 6
+
+
+@_skip_no_db
 def test_calculate_score_kyunghee_neorenaissance_stays_non_calculation() -> None:
     result = calculate_score("58", _khu_subjects(), {}, {})
+
+    assert result["status"] == "non_calculation_track"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "KHU_2027_NON_CALCULATION_TRACK"
+
+
+@_skip_no_db
+def test_calculate_score_kyunghee_essay_stays_non_calculation() -> None:
+    result = calculate_score("62", _khu_subjects(), {}, {})
 
     assert result["status"] == "non_calculation_track"
     assert result["strategy"] == "official_formula_plugin"
@@ -52,3 +75,17 @@ def test_calculate_score_kyunghee_not_in_official_guide_is_blocked() -> None:
     assert result["status"] == "non_calculation_track"
     assert result["strategy"] == "official_formula_plugin"
     assert result["formula_key"] == "KHU_2027_NOT_IN_OFFICIAL_GUIDE"
+
+
+@_skip_no_db
+def test_calculate_score_kyunghee_school_violence_measure_4_deducts_five_percent() -> None:
+    result = calculate_score(
+        "63",
+        _khu_subjects(),
+        {"unexcused_absence_days": 0, "service_hours": 15, "school_violence_measure": 4},
+        {},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["student_record_score"] == pytest.approx(700.0)
+    assert result["full_practical_total"] == pytest.approx(950.0)

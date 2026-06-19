@@ -26,6 +26,20 @@ def _perfect_subjects() -> list[dict[str, object]]:
     ]
 
 
+def _subjects_with_korean_history_as_top_tamgu() -> list[dict[str, object]]:
+    return [
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어1", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "국어", "과목": "국어2", "이수단위": 3, "등급": "1"},
+        {"학년": 2, "학기": 1, "교과": "수학", "과목": "수학1", "이수단위": 3, "등급": "1"},
+        {"학년": 2, "학기": 2, "교과": "수학", "과목": "수학2", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "영어", "과목": "영어1", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "영어", "과목": "영어2", "이수단위": 3, "등급": "1"},
+        {"학년": 2, "학기": 1, "교과": "사회", "과목": "사회1", "이수단위": 3, "등급": "4"},
+        {"학년": 2, "학기": 2, "교과": "과학", "과목": "과학1", "이수단위": 3, "등급": "4"},
+        {"학년": 3, "학기": 1, "교과": "한국사", "과목": "한국사1", "이수단위": 3, "등급": "1"},
+    ]
+
+
 @_skip_no_db
 def test_calculate_score_seowon_official_plugins_cover_all_tracks() -> None:
     subjects = _perfect_subjects()
@@ -67,3 +81,13 @@ def test_calculate_score_seowon_official_plugins_cover_all_tracks() -> None:
             assert result["minimum_csat"]["detail"] == PE_EDU_MINIMUM_CSAT
         else:
             assert result["minimum_csat"]["detail"] == "없음"
+
+
+@_skip_no_db
+def test_calculate_score_seowon_tamgu_group_includes_korean_history() -> None:
+    result = calculate_score("239", _subjects_with_korean_history_as_top_tamgu(), {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["used_subjects"] == 8
+    assert result["student_record_score"] == pytest.approx(992.5)

@@ -60,6 +60,20 @@ def test_calculate_score_knsu_attendance_interview_and_ineligible_contracts() ->
 
 
 @_skip_no_db
+def test_calculate_score_knsu_special_pe_reflects_korean_history_subject() -> None:
+    result = calculate_score(
+        "364",
+        [{"학년": 1, "학기": 1, "교과": "한국사", "과목": "한국사", "이수단위": 1, "등급": "1"}],
+        {"practical_score": 300, "interview_score": 100},
+        {},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["student_record_score"] == pytest.approx(600.0)
+    assert result["full_practical_total"] == pytest.approx(1000.0)
+
+
+@_skip_no_db
 def test_calculate_score_knsu_semester_context_defaults_to_current_student() -> None:
     current = calculate_score("343", _semester_subjects(), {}, {})
     graduate = calculate_score("343", _semester_subjects(), {}, {}, {"is_graduate": True})

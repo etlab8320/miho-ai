@@ -54,3 +54,18 @@ def test_calculate_score_hoseo_school_violence_uses_20_percent_column() -> None:
     assert result["status"] == "calculated"
     assert result["full_practical_total"] == pytest.approx(984.0)
     assert result["vs_prev_year"]["max_possible_total"] == pytest.approx(984.0)
+
+
+@_skip_no_db
+def test_calculate_score_hoseo_graduate_includes_third_grade_second_semester() -> None:
+    grades = [
+        {"학년": 1 + index % 3, "학기": 1, "교과": "국어", "과목": f"국어{index}", "이수단위": 2, "등급": "9", "과목구분": "일반"}
+        for index in range(12)
+    ]
+    grades.append({"학년": 3, "학기": 2, "교과": "국어", "과목": "졸업자반영국어", "이수단위": 2, "등급": "1", "과목구분": "일반"})
+
+    current = calculate_score("397", grades, {}, {})
+    graduate = calculate_score("397", grades, {}, {}, student_context={"graduation_status": "graduate"})
+
+    assert current["student_record_score"] == pytest.approx(0.0)
+    assert graduate["student_record_score"] == pytest.approx(60.0)

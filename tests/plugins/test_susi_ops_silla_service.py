@@ -38,6 +38,16 @@ def test_calculate_score_silla_practical_uses_official_formula_plugin() -> None:
 
 
 @_skip_no_db
+def test_calculate_score_silla_practical_raw_100_point_events_scale_to_250_each() -> None:
+    result = calculate_score("265", _subjects(), {"practical_event_scores": [100, 96, 96, 0]}, {})
+
+    assert result["status"] == "calculated"
+    assert result["student_record_score"] == pytest.approx(250.0)
+    assert result["practical_full_score"] == pytest.approx(730.0)
+    assert result["full_practical_total"] == pytest.approx(980.0)
+
+
+@_skip_no_db
 def test_calculate_score_silla_record100_tracks_use_official_formula_plugin() -> None:
     for university_id in ("271", "279"):
         result = calculate_score(university_id, _subjects("2"), {}, {})

@@ -31,6 +31,51 @@ def _hannam_subjects() -> list[dict[str, object]]:
     return rows
 
 
+def _hannam_career_cap_subjects() -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for index, group in enumerate(["국어", "수학", "영어", "사회", "과학", "국어", "영어"]):
+        rows.append(
+            {
+                "학년": 1 + (index // 4),
+                "학기": 1 + (index % 2),
+                "교과": group,
+                "과목": f"일반{index + 1}",
+                "이수단위": 2,
+                "등급": "2",
+            }
+        )
+    for index in range(4):
+        rows.append(
+            {
+                "학년": 2,
+                "학기": 1,
+                "교과": "국어",
+                "과목": f"진로A{index + 1}",
+                "과목유형": "진로선택",
+                "이수단위": 2,
+                "성취도": "A",
+            }
+        )
+    return rows
+
+
+def _hannam_graduate_subjects() -> list[dict[str, object]]:
+    rows = [
+        {
+            "학년": 1,
+            "학기": 1,
+            "교과": "국어",
+            "과목": f"상위{index + 1}",
+            "이수단위": 2,
+            "등급": "1",
+        }
+        for index in range(9)
+    ]
+    rows.append({"학년": 3, "학기": 1, "교과": "영어", "과목": "예정자3-1저점", "이수단위": 2, "등급": "9"})
+    rows.append({"학년": 3, "학기": 2, "교과": "수학", "과목": "졸업자3-2고점", "이수단위": 2, "등급": "1"})
+    return rows
+
+
 def _hanshin_subjects() -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     groups = ["국어", "영어", "수학", "사회", "과학"]
@@ -89,6 +134,36 @@ def test_calculate_score_hannam_uses_official_formula_plugin() -> None:
 
 
 @_skip_no_db
+def test_calculate_score_hannam_limits_career_subjects_to_top_3() -> None:
+    result = calculate_score("383", _hannam_career_cap_subjects(), {"practical_score": 0}, {})
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == HANNAM_KEY
+    assert result["student_record_score"] == pytest.approx(388.8)
+    assert result["full_practical_total"] == pytest.approx(388.8)
+    assert result["used_subjects"] == 10
+
+
+@_skip_no_db
+def test_calculate_score_hannam_graduate_context_includes_grade3_semester2() -> None:
+    current = calculate_score("383", _hannam_graduate_subjects(), {"practical_score": 0}, {})
+    graduate = calculate_score(
+        "383",
+        _hannam_graduate_subjects(),
+        {"practical_score": 0},
+        {},
+        {"is_graduate": True},
+    )
+
+    assert current["status"] == "calculated"
+    assert current["student_record_score"] == pytest.approx(383.2)
+    assert graduate["status"] == "calculated"
+    assert graduate["student_record_score"] == pytest.approx(400.0)
+    assert graduate["used_subjects"] == 10
+
+
+@_skip_no_db
 def test_calculate_score_hanshin_uses_official_formula_plugin() -> None:
     result = calculate_score("389", _hanshin_subjects(), {}, {})
 
@@ -101,6 +176,18 @@ def test_calculate_score_hanshin_uses_official_formula_plugin() -> None:
     assert result["full_practical_total"] == pytest.approx(1000.0)
     assert result["used_subjects"] == 12
     assert result["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
+
+
+@_skip_no_db
+def test_calculate_score_hanshin_applies_school_violence_total_deduction() -> None:
+    result = calculate_score("389", _hanshin_subjects(), {"school_violence_measure": 8}, {})
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == HANSHIN_KEY
+    assert result["student_record_score"] == pytest.approx(450.0)
+    assert result["practical_full_score"] == pytest.approx(550.0)
+    assert result["full_practical_total"] == pytest.approx(980.0)
 
 
 @_skip_no_db

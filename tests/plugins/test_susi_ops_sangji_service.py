@@ -32,6 +32,21 @@ def test_calculate_score_sangji_practical_track_uses_official_plugin() -> None:
 
 
 @_skip_no_db
+def test_calculate_score_sangji_treats_korean_history_as_social_slot() -> None:
+    subjects = [
+        {"학년": 1, "학기": 1, "교과": "사회", "과목": "통합사회", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "한국사", "과목": "한국사", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어", "이수단위": 3, "등급": "9"},
+    ]
+
+    result = calculate_score("219", subjects, {"unexcused_absence_days": 0}, {})
+
+    assert result["status"] == "calculated"
+    assert result["student_record_score"] == pytest.approx(205.65)
+    assert result["used_subjects"] == 10
+
+
+@_skip_no_db
 def test_calculate_score_sangji_holistic_tracks_are_noncalc() -> None:
     for uid in ("225", "226"):
         result = calculate_score(uid, _subjects(), {}, {})

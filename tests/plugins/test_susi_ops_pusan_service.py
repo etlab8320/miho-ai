@@ -33,7 +33,10 @@ def test_calculate_score_pusan_minimum_csat_by_track() -> None:
     assert calculate_score("202", _subjects(), {}, {})["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
     assert calculate_score("203", _subjects(), {}, {})["minimum_csat"] == {
         "has_minimum": True,
-        "detail": "상위 2개 영역 등급 합 6 이내, 한국사 4등급 이내",
+        "detail": (
+            "국어, 수학, 영어, 사회/과학탐구 4개 영역 중 3개 영역 이상 응시하고, "
+            "이 중 상위 2개 영역 등급 합 6 이내, 한국사 4등급 이내"
+        ),
     }
     assert calculate_score("204", _subjects(), {}, {})["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
     assert calculate_score("210", _subjects(), {}, {})["minimum_csat"] == {"has_minimum": False, "detail": "없음"}

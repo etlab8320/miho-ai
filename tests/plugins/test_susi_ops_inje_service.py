@@ -25,6 +25,10 @@ def _subjects(rank_grade: str = "1") -> list[dict[str, object]]:
     ]
 
 
+def _short_subjects(rank_grade: str = "2") -> list[dict[str, object]]:
+    return _subjects(rank_grade)[:-1]
+
+
 @_skip_no_db
 def test_calculate_score_inje_practical_track_exposes_official_contract() -> None:
     result = calculate_score("310", _subjects(), {}, {})
@@ -38,6 +42,20 @@ def test_calculate_score_inje_practical_track_exposes_official_contract() -> Non
     assert result["practical_full_score"] == pytest.approx(70.0)
     assert result["full_practical_total"] == pytest.approx(100.0)
     assert result["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
+
+
+@_skip_no_db
+def test_calculate_score_inje_short_subjects_use_average_grade_formula() -> None:
+    need_based = calculate_score("319", _short_subjects(), {}, {})
+    specialized = calculate_score("321", _short_subjects(), {}, {})
+
+    assert need_based["status"] == "calculated"
+    assert need_based["used_subjects"] == 9
+    assert need_based["average_grade"] == pytest.approx(2.0)
+    assert need_based["student_record_score"] == pytest.approx(93.5)
+    assert need_based["full_practical_total"] == pytest.approx(93.5)
+    assert specialized["student_record_score"] == pytest.approx(74.8)
+    assert specialized["full_practical_total"] == pytest.approx(94.8)
 
 
 @_skip_no_db

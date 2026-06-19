@@ -36,6 +36,44 @@ def _perfect_kyungwoon_subjects() -> list[dict[str, object]]:
     return subjects
 
 
+def _core_career_subjects_over_limit() -> list[dict[str, object]]:
+    subjects: list[dict[str, object]] = [
+        {
+            "학년": 1,
+            "학기": 1,
+            "교과": "국어",
+            "과목": f"진로국어{index}",
+            "이수단위": 3,
+            "과목유형": "진로선택",
+            "성취도": "A",
+        }
+        for index in range(6)
+    ]
+    subjects.extend(
+        {
+            "학년": 1,
+            "학기": 1,
+            "교과": "수학",
+            "과목": f"일반수학{index}",
+            "이수단위": 3,
+            "등급": "9",
+        }
+        for index in range(3)
+    )
+    subjects.extend(
+        {
+            "학년": 2,
+            "학기": 1,
+            "교과": area,
+            "과목": area,
+            "이수단위": 3,
+            "등급": "1",
+        }
+        for area in ("사회", "과학", "한국사")
+    )
+    return subjects
+
+
 @_skip_no_db
 @pytest.mark.parametrize("university_id", ["40", "42"])
 def test_calculate_score_kyungwoon_course_tracks_use_official_formula(university_id: str) -> None:
@@ -87,3 +125,18 @@ def test_calculate_score_kyungwoon_attendance_uses_unexcused_absence_days_only()
     assert result["student_record_score"] == pytest.approx(179.4)
     assert result["vs_prev_year"]["practical_max"] == pytest.approx(420.0)
     assert result["vs_prev_year"]["max_possible_total"] == pytest.approx(599.4)
+
+
+@_skip_no_db
+def test_calculate_score_kyungwoon_limits_career_subjects_by_group() -> None:
+    result = calculate_score(
+        university_id="40",
+        grades=_core_career_subjects_over_limit(),
+        attendance={},
+        practical_records={},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["student_record_score"] == pytest.approx(528.0)
+    assert result["used_subjects"] == 9

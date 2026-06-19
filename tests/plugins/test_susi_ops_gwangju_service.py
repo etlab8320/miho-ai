@@ -43,3 +43,29 @@ def test_calculate_score_gwangju_general_uses_official_formula_plugin() -> None:
     assert result["strategy"] == "official_formula_plugin"
     assert result["formula_key"] == "GWANGJU_2027_GENERAL_COURSE900_ATT100"
     assert result["student_record_score"] == pytest.approx(1000.0)
+
+
+@_skip_no_db
+def test_calculate_score_gwangju_no_attendance_record_uses_official_score() -> None:
+    practical = calculate_score("102", _full_subjects(), {"no_attendance_record": True}, {})
+    general = calculate_score("103", _full_subjects(), {"no_attendance_record": True}, {})
+
+    assert practical["status"] == "calculated"
+    assert practical["student_record_score"] == pytest.approx(294.0)
+    assert practical["full_practical_total"] == pytest.approx(994.0)
+    assert general["status"] == "calculated"
+    assert general["student_record_score"] == pytest.approx(980.0)
+    assert general["full_practical_total"] == pytest.approx(980.0)
+
+
+@_skip_no_db
+def test_calculate_score_gwangju_foreign_high_school_counts_course_score_half() -> None:
+    practical = calculate_score("102", _full_subjects(), {"foreign_high_school": True}, {})
+    general = calculate_score("103", _full_subjects(), {"foreign_high_school": True}, {})
+
+    assert practical["status"] == "calculated"
+    assert practical["student_record_score"] == pytest.approx(159.0)
+    assert practical["full_practical_total"] == pytest.approx(859.0)
+    assert general["status"] == "calculated"
+    assert general["student_record_score"] == pytest.approx(530.0)
+    assert general["full_practical_total"] == pytest.approx(530.0)

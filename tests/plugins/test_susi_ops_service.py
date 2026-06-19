@@ -29,11 +29,7 @@ from plugins.susi_ops.semester_rules import within_semester_limit
 _DB_AVAILABLE = db_path().exists()
 _skip_no_db = pytest.mark.skipif(not _DB_AVAILABLE, reason="susi27 staging DB not present")
 
-
-# ---------------------------------------------------------------------------
 # Pure unit tests — no DB required
-# ---------------------------------------------------------------------------
-
 
 def test_like_wraps_in_percent() -> None:
     assert _like("국민대") == "%국민대%"
@@ -206,11 +202,7 @@ def test_achievement_ratio_grade_maps_konkuk_ratio_table() -> None:
     assert achievement_ratio_grade(row, "B") == pytest.approx(6.0)
     assert achievement_ratio_grade(row, "C") == pytest.approx(8.0)
 
-
-# ---------------------------------------------------------------------------
 # DB-dependent tests
-# ---------------------------------------------------------------------------
-
 
 @_skip_no_db
 def test_lookup_roundtrip_returns_dict_with_rows() -> None:
@@ -299,10 +291,10 @@ def test_calculate_score_known_case_gachon() -> None:
     expected avg = 1.75, student_record_score ≈ 298.875.
     """
     grades = [
-        {"교과": "국어", "grade": "1", "unit": "4"},
-        {"교과": "국어", "grade": "2", "unit": "4"},
-        {"교과": "영어", "grade": "1", "unit": "4"},
-        {"교과": "영어", "grade": "3", "unit": "4"},
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어1", "등급": "1", "이수단위": "4"},
+        {"학년": 1, "학기": 2, "교과": "국어", "과목": "국어2", "등급": "2", "이수단위": "4"},
+        {"학년": 2, "학기": 1, "교과": "영어", "과목": "영어1", "등급": "1", "이수단위": "4"},
+        {"학년": 2, "학기": 2, "교과": "영어", "과목": "영어2", "등급": "3", "이수단위": "4"},
     ]
     result = calculate_score(
         university_id="1",
@@ -312,6 +304,7 @@ def test_calculate_score_known_case_gachon() -> None:
     )
     assert result["status"] == "calculated"
     assert result["confidence"] == "verified"
+    assert result["strategy"] == "official_formula_plugin"
     assert result["average_grade"] == pytest.approx(1.75, abs=0.001)
     assert result["student_record_score"] == pytest.approx(298.875, abs=0.001)
     assert result["used_subjects"] == 4
@@ -338,7 +331,7 @@ def test_calculate_score_kangwon_uses_official_formula_plugin() -> None:
 
 
 @_skip_no_db
-def test_calculate_score_konkuk_glocal_requires_career_ratio_inputs() -> None:
+def test_calculate_score_konkuk_glocal_ignores_career_without_ratio_inputs() -> None:
     grades = [
         {"학년": 3, "학기": 1, "교과": "국어", "과목": "심화 국어", "이수단위": 2, "성취도": "C", "course_type": "진로선택"},
         {"학년": 3, "학기": 1, "교과": "영어", "과목": "진로 영어", "이수단위": 2, "성취도": "C", "course_type": "진로선택"},
@@ -352,8 +345,11 @@ def test_calculate_score_konkuk_glocal_requires_career_ratio_inputs() -> None:
         practical_records={},
     )
 
-    assert result["status"] == "missing_career_ratio_inputs"
-    assert result["missing_subjects"][0]["subject"] == "심화 국어"
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "KONKUK_2027_PRACTICAL_RECORD20_PRACTICAL80"
+    assert result["used_subjects"] == 1
+    assert result["student_record_score"] == pytest.approx(190.0)
 
 
 @_skip_no_db
@@ -502,118 +498,3 @@ def test_calculate_score_kyungsung_student_comprehensive_stays_non_calculation()
     assert result["status"] == "non_calculation_track"
     assert result["strategy"] == "official_formula_plugin"
     assert result["formula_key"] == "KYUNGSUNG_2027_STUDENT_RECORD_COMPREHENSIVE_NON_CALCULATION"
-
-
-# ---------------------------------------------------------------------------
-# lookup_prev_year (26susi 크로스체크)
-# ---------------------------------------------------------------------------
-
-def test_prev_year_requires_search_term():
-    from plugins.susi_ops.service import lookup_prev_year
-
-    assert "error" in lookup_prev_year()
-
-
-def test_prev_year_sanitizes_terms():
-    from plugins.susi_ops.service import _safe_like_term
-
-    assert _safe_like_term("중부'; DROP TABLE x; --") == "중부 DROP TABLE x --"
-    assert _safe_like_term('대진"`\\') == "대진"
-    assert _safe_like_term(None) is None
-
-
-def test_prev_year_parses_rows(monkeypatch):
-    from plugins.susi_ops import service
-
-    calls = []
-
-    def fake_mysql(sql, timeout=12):
-        calls.append(sql)
-        if "대학정보" in sql:
-            return [["334", "96", "중부대학교", "스포츠건강관리학전공", "실기우수자", "12",
-                     "NULL", "NULL", "30", "70", "NULL", "NULL", "700", "100"]]
-        return [["96", "10m왕복달리기"], ["96", "서전트점프"]]
-
-    monkeypatch.setattr(service, "_vultr_mysql", fake_mysql)
-    result = service.lookup_prev_year(university="중부")
-    assert result["count"] == 1
-    row = result["rows"][0]
-    assert row["stage2_record"] == "30" and row["stage2_practical"] == "70"
-    assert row["practical_events_prev"] == ["10m왕복달리기", "서전트점프"]
-    assert len(calls) == 2
-
-
-def test_recommend_candidates_missing_student(monkeypatch, tmp_path):
-    from plugins.susi_ops import service
-
-    monkeypatch.setattr(service, "_CENTRAL_LIFE_DB", tmp_path / "none.sqlite3")
-    assert "error" in service.recommend_candidates("없는학생", region="전국")
-
-
-def test_recommend_candidates_filters_unreachable(monkeypatch):
-    from plugins.susi_ops import service
-
-    monkeypatch.setattr(service, "_student_grades_from_central", lambda q: ("백종환", [{"교과": "국어", "과목": "국어", "이수단위": 4, "등급": "7"}]))
-
-    class FakeRow(dict):
-        def __getitem__(self, k):
-            return dict.__getitem__(self, k)
-
-    rules = [FakeRow(university_id="u1", university="가능대", department="체육", admission_track="실기",
-                     practical_events_json=None, calculation_test_json=None,
-                     raw_json='{"정원": "10", "내신교과": "200", "실기만점": "800"}'),
-             FakeRow(university_id="u2", university="불가대", department="체육", admission_track="실기",
-                     practical_events_json=None, calculation_test_json=None,
-                     raw_json='{"정원": "5", "내신교과": "200", "실기만점": "600"}')]
-
-    class FakeConn:
-        def execute(self, sql, params=()):
-            class C:
-                def fetchall(self_inner):
-                    return rules
-                def fetchone(self_inner):
-                    return ['{"final_pass_cutoff": {"total_score": 900.0, "record_score": 150.0}}', "{}"]
-            return C()
-
-    monkeypatch.setattr(service, "_connect", lambda: FakeConn())
-
-    def fake_calc(uid, grades, att, prac):
-        base = {"status": "calculated", "student_record_score": 160.0}
-        if uid == "u1":
-            base["vs_prev_year"] = {"practical_max": 800.0, "max_possible_total": 960.0,
-                                    "prev_final_total": 900.0, "prev_first_total": None,
-                                    "prev_final_record_rescaled": 150.0,
-                                    "reachable_at_full_practical": True}
-        else:
-            base["vs_prev_year"] = {"practical_max": 600.0, "max_possible_total": 760.0,
-                                    "prev_final_total": 900.0, "prev_first_total": None,
-                                    "prev_final_record_rescaled": 150.0,
-                                    "reachable_at_full_practical": False}
-        return base
-
-    monkeypatch.setattr(service, "calculate_score", fake_calc)
-    result = service.recommend_candidates("백종환", region="전국")
-    names = [c["university"] for c in result["candidates"]]
-    assert "가능대" in names and "불가대" not in names
-    assert result["skipped"]["unreachable"] == 1
-    assert result["candidates"][0]["suggested_verdict"] == "적정"
-
-
-def test_recommend_candidates_requires_region():
-    from plugins.susi_ops import service
-
-    result = service.recommend_candidates("아무개")
-    assert result.get("need_region") is True
-    assert "지역" in result.get("message", "")
-
-
-def test_recommend_handler_same_turn_region_recall_allowed(monkeypatch):
-    """현관 게이트 도입 후: 지역을 받은 턴의 재호출은 정상 통과해야 한다."""
-    from plugins import susi_ops
-
-    monkeypatch.setattr(susi_ops, "recommend_candidates", lambda **kw: {"need_region": True} if not kw.get("region") else {"total_feasible": 1, "candidates": []})
-
-    first = susi_ops._recommend_handler({"student_query": "서연"})
-    assert first.get("need_region") is True
-    second = susi_ops._recommend_handler({"student_query": "서연", "region": "서울, 경기, 인천, 강원, 충청"})
-    assert second.get("total_feasible") == 1

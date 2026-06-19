@@ -67,6 +67,22 @@ def test_calculate_score_sangmyung_cheonan_practical_uses_official_plugin() -> N
 
 
 @_skip_no_db
+def test_calculate_score_sangmyung_school_violence_measure5_deducts_five_points() -> None:
+    result = calculate_score("217", _subjects(), {"school_violence_measure": 5}, {})
+
+    assert result["status"] == "calculated"
+    assert result["full_practical_total"] == pytest.approx(995.0)
+
+
+@_skip_no_db
+def test_calculate_score_sangmyung_school_violence_multiple_measures_cap_at_ten() -> None:
+    result = calculate_score("217", _subjects(), {"school_violence_measures": [5, 8]}, {})
+
+    assert result["status"] == "calculated"
+    assert result["full_practical_total"] == pytest.approx(990.0)
+
+
+@_skip_no_db
 def test_calculate_score_sangmyung_comprehensive_tracks_are_noncalc() -> None:
     for uid in ("222", "223", "224"):
         result = calculate_score(uid, _subjects(), {}, {})

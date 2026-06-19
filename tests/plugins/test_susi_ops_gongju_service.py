@@ -29,6 +29,19 @@ def test_calculate_score_gongju_uses_official_formula_plugin() -> None:
 
 
 @_skip_no_db
+def test_calculate_score_gongju_physical_education_rural_uses_same_official_formula() -> None:
+    result = calculate_score("100", _subjects(), {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "GONGJU_2027_PHYSICAL_ED_GENERAL_RURAL_RECORD70_PRACTICAL30"
+    assert result["student_record_score"] == pytest.approx(700.0)
+    assert result["record_full_score"] == pytest.approx(703.5)
+    assert result["practical_full_score"] == pytest.approx(300.0)
+    assert result["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
+
+
+@_skip_no_db
 def test_calculate_score_gongju_applies_school_violence_total_deduction() -> None:
     result = calculate_score("101", _subjects(), {"school_violence_measures": [2]}, {})
 

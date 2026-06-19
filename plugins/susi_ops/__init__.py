@@ -74,6 +74,8 @@ def register(ctx: Any) -> None:
         handler=_lookup_handler,
         description=(
             "학교별 수시 패키지 조회 — 학종 리포트와 실기/수시 추천 체인의 룰 조회 단계에서 사용한다. "
+            "단, 수시 실기/교과 추천 요청의 시작점으로 직접 쓰지 마라 — 추천은 반드시 "
+            "susi27_recommend_candidates가 학생 성적 조회·학교별 환산·전년도 도달성 필터를 한 번에 처리한다. "
             "반환 rows(요약)에는 전형 구조(admission_meta: 단계별 반영비율·모집인원·수능최저·전년도 cut_data), "
             "전년도 결과(admission_result_26), 실기 종목(practical_events), 모집정원(quota), "
             "맥스 예상컷(max_expected_cut), university_id가 포함된다. "
@@ -113,6 +115,8 @@ def register(ctx: Any) -> None:
         handler=_calculate_handler,
         description=(
             "검증(verified)된 수시 룰로 학생 교과 성적을 환산점수로 계산한다. "
+            "단, 추천 요청에서는 이 도구를 개별 학교별로 반복 호출해 후보를 조립하지 마라 — "
+            "susi27_recommend_candidates 단일 파이프라인 결과를 먼저 사용한다. "
             "university_id와 grades는 susi27_rule_lookup 결과와 life_record_lookup 성적에서 가져온다. "
             "unverified/missing 룰은 추측하지 않고 거부한다 — 그 경우 점수 없이 추천을 확정하지 말 것."
         ),

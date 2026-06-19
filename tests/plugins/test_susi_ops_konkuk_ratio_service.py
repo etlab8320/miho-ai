@@ -20,6 +20,7 @@ def test_calculate_score_konkuk_glocal_uses_life_record_achievement_ratios() -> 
         result = calculate_score(uid, grades, attendance, {})
 
         assert result["status"] == "calculated"
-        assert result["strategy"] == "weighted_grade_table"
-        assert result["student_record_score"] == pytest.approx(110.8511)
+        assert result["strategy"] == "official_formula_plugin"
+        assert result["formula_key"] == "KONKUK_2027_PRACTICAL_RECORD20_PRACTICAL80"
+        assert result["student_record_score"] == pytest.approx(113.4653)
         assert result["minimum_csat"] == {"has_minimum": False, "detail": "없음"}

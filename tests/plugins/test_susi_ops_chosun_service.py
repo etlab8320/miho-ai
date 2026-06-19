@@ -68,3 +68,16 @@ def test_calculate_score_chosun_sports_industry_defaults_to_confirmed_general_pr
     assert calculated["status"] == "calculated"
     assert calculated["full_practical_total"] == pytest.approx(1000.0)
     assert calculated["minimum_csat"] == {"has_minimum": False, "detail": "없음"}
+
+
+@_skip_no_db
+def test_calculate_score_chosun_general_practical_applies_075_multiplier() -> None:
+    result = calculate_score(
+        "332",
+        _subjects(),
+        {"chosun_practical_subtrack": "일반실기", "practical_event_scores": [20, 20, 20]},
+        {},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["full_practical_total"] == pytest.approx(970.0)

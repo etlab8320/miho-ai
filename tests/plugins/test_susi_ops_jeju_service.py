@@ -55,6 +55,27 @@ def test_calculate_score_jeju_physical_education_and_absence() -> None:
 
 
 @_skip_no_db
+def test_calculate_score_jeju_physical_education_practical_events_have_no_multiplier() -> None:
+    result = calculate_score(
+        "326",
+        _subjects(),
+        {
+            "practical_event_scores": {
+                "20m왕복달리기": 40,
+                "서서 윗몸 앞으로 굽히기": 40,
+                "농구": 40,
+            },
+        },
+        {},
+    )
+
+    assert result["status"] == "calculated"
+    assert result["student_record_score"] == pytest.approx(850.0)
+    assert result["practical_full_score"] == pytest.approx(120.0)
+    assert result["full_practical_total"] == pytest.approx(970.0)
+
+
+@_skip_no_db
 def test_calculate_score_jeju_not_in_guide_row_is_blocked() -> None:
     result = calculate_score("325", _subjects(), {}, {})
 

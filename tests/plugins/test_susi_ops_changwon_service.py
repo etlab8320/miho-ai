@@ -55,6 +55,27 @@ def test_calculate_score_changwon_uses_official_plugin_and_subject_contract() ->
 
 
 @_skip_no_db
+def test_calculate_score_changwon_career_subjects_use_official_top_three_rule() -> None:
+    grades = [
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어1", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 1, "교과": "영어", "과목": "영어1", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "수학", "과목": "수학1", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "사회", "과목": "통합사회", "이수단위": 3, "등급": "1"},
+        {"학년": 1, "학기": 2, "교과": "과학", "과목": "통합과학", "이수단위": 3, "등급": "1"},
+        {"학년": 2, "학기": 1, "교과": "국어", "과목": "진로A소단위", "이수단위": 1, "성취도": "A", "과목구분": "진로"},
+        {"학년": 2, "학기": 1, "교과": "영어", "과목": "진로A대단위", "이수단위": 4, "성취도": "A", "과목구분": "진로"},
+        {"학년": 2, "학기": 1, "교과": "사회", "과목": "진로B소단위", "이수단위": 1, "성취도": "B", "과목구분": "진로"},
+        {"학년": 2, "학기": 1, "교과": "수학", "과목": "진로B대단위제외", "이수단위": 5, "성취도": "B", "과목구분": "진로"},
+    ]
+
+    result = calculate_score("337", grades, {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["student_record_score"] == pytest.approx(299.571)
+    assert result["used_subjects"] == 8
+
+
+@_skip_no_db
 def test_calculate_score_changwon_practical_event_absent_is_ineligible() -> None:
     result = calculate_score("337", _subjects(), {"practical_event_absent": True}, {})
 

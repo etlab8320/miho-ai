@@ -38,6 +38,27 @@ def test_calculate_score_suncheonhyang_practical_uses_official_formula_plugin() 
 
 
 @_skip_no_db
+def test_calculate_score_suncheonhyang_no_career_uses_official_u_thresholds() -> None:
+    grade3 = calculate_score("257", _subjects(rank="3")[:-1], {}, {})
+    grade5 = calculate_score("257", _subjects(rank="5")[:-1], {}, {})
+
+    assert grade3["student_record_score"] == pytest.approx(288.0)
+    assert grade5["student_record_score"] == pytest.approx(275.85)
+
+
+@_skip_no_db
+def test_calculate_score_suncheonhyang_uses_five_grade_scale_points() -> None:
+    grades = [
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "5등급제국어", "이수단위": 5, "등급": "5", "grade_scale": 5, "과목구분": "일반"},
+    ]
+
+    result = calculate_score("257", grades, {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["student_record_score"] == pytest.approx(240.0)
+
+
+@_skip_no_db
 def test_calculate_score_suncheonhyang_course_excellence_has_minimum_csat() -> None:
     result = calculate_score("267", _subjects(), {}, {})
 

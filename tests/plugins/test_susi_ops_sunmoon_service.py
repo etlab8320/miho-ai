@@ -49,3 +49,17 @@ def test_calculate_score_sunmoon_applies_highest_school_violence_deduction() -> 
     assert result["student_record_score"] == pytest.approx(200.0)
     assert result["full_practical_total"] == pytest.approx(932.0)
     assert result["vs_prev_year"]["max_possible_total"] == pytest.approx(932.0)
+
+
+@_skip_no_db
+@pytest.mark.parametrize("university_id", ["456", "457"])
+def test_calculate_score_sunmoon_martial_arts_tracks_are_registered(university_id: str) -> None:
+    result = calculate_score(university_id, _subjects(), {}, {})
+
+    assert result["status"] == "calculated"
+    assert result["strategy"] == "official_formula_plugin"
+    assert result["formula_key"] == "SUNMOON_2027_PRACTICAL_RECORD200_PRACTICAL800"
+    assert result["student_record_score"] == pytest.approx(200.0)
+    assert result["record_full_score"] == pytest.approx(200.0)
+    assert result["practical_full_score"] == pytest.approx(800.0)
+    assert result["full_practical_total"] == pytest.approx(1000.0)

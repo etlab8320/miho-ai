@@ -41,3 +41,22 @@ def test_calculate_score_mokpo_holistic_and_zero_quota_are_official_noncalc() ->
         assert result["strategy"] == "official_formula_plugin"
         assert result["formula_key"] == "MOKPO_2027_NO_RECRUIT_OR_HOLISTIC"
         assert result["minimum_csat"]["has_minimum"] is False
+
+
+@_skip_no_db
+def test_calculate_score_mokpo_graduate_includes_grade3_semester2() -> None:
+    subjects = [
+        {"학년": 3, "학기": 1, "교과": "국어", "과목": "국어저점", "이수단위": 3, "등급": "9"},
+        {"학년": 3, "학기": 1, "교과": "영어", "과목": "영어저점", "이수단위": 3, "등급": "9"},
+        {"학년": 3, "학기": 1, "교과": "수학", "과목": "수학저점", "이수단위": 3, "등급": "9"},
+        {"학년": 3, "학기": 1, "교과": "사회", "과목": "사회저점", "이수단위": 3, "등급": "9"},
+        {"학년": 3, "학기": 2, "교과": "국어", "과목": "졸업자국어고점", "이수단위": 3, "등급": "1"},
+    ]
+
+    current = calculate_score("185", subjects, {"unexcused_absence_days": 0}, {}, {"is_graduate": False})
+    graduate = calculate_score("185", subjects, {"unexcused_absence_days": 0}, {}, {"is_graduate": True})
+
+    assert current["status"] == "calculated"
+    assert graduate["status"] == "calculated"
+    assert current["student_record_score"] == pytest.approx(909.0)
+    assert graduate["student_record_score"] == pytest.approx(927.2)
