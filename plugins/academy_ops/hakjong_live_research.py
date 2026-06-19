@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .hakjong_live_refresh import copy_section, failed_results, section_fresh, section_ttls
+
 
 _LIVE_KEYWORDS = (
     "스포츠", "체육", "운동", "신체활동", "건강", "건강증진", "체력", "측정",
@@ -95,6 +97,10 @@ def bundle_is_fresh(bundle: dict[str, Any] | None) -> bool:
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _live_enabled() -> bool:
+    return os.environ.get("MIHO_HAKJONG_LIVE_RESEARCH", "1").strip().lower() not in {"0", "false", "off", "no"}
 
 
 def _strip_html(raw: str) -> str:
@@ -240,8 +246,9 @@ def write_live_research_bundle(
     university: str,
     department: str,
     admission_track: str,
+    existing: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    if os.environ.get("MIHO_HAKJONG_LIVE_RESEARCH", "1").strip().lower() in {"0", "false", "off", "no"}:
+    if not _live_enabled():
         return None
     bundle_dir = bundle_dir_for_db(path)
     bundle_dir.mkdir(parents=True, exist_ok=True)
@@ -251,12 +258,53 @@ def write_live_research_bundle(
     faculty_query = f"{university} {department} 교수진"
     paper_query = f"{university} {department} 스포츠 체육 논문 연구"
     news_query = f"{university} {department} 뉴스 최신 스포츠 과학"
-    faculty_snips = search_web_snippets(faculty_query, limit=4)
-    scholarly = search_kci(paper_query, limit=4) + search_openalex(paper_query, limit=4) + search_crossref(paper_query, limit=4)
-    news_snips = search_web_snippets(news_query, limit=4)
+    ttls = section_ttls()
+    status: dict[str, str] = {}
+
+    if section_fresh(existing, "faculty_live_sources", ttls["faculty"]):
+        faculty_rows = copy_section(existing, "faculty_live_sources")
+        faculty_snips = faculty_rows[0].get("results", []) if faculty_rows else []
+        status["faculty"] = "cache_fresh"
+    else:
+        faculty_snips = search_web_snippets(faculty_query, limit=4)
+        if failed_results(faculty_snips) and copy_section(existing, "faculty_live_sources"):
+            faculty_rows = copy_section(existing, "faculty_live_sources")
+            faculty_snips = faculty_rows[0].get("results", [])
+            status["faculty"] = "cache_fallback_after_live_failure"
+        else:
+            faculty_rows = []
+            status["faculty"] = "live_refreshed"
+
+    if section_fresh(existing, "paper_title_live_probe", ttls["paper"]):
+        scholarly = copy_section(existing, "scholarly_sources")
+        status["paper"] = "cache_fresh"
+    else:
+        scholarly = search_kci(paper_query, limit=4) + search_openalex(paper_query, limit=4) + search_crossref(paper_query, limit=4)
+        if failed_results(scholarly) and copy_section(existing, "scholarly_sources"):
+            scholarly = copy_section(existing, "scholarly_sources")
+            status["paper"] = "cache_fallback_after_live_failure"
+        else:
+            status["paper"] = "live_refreshed"
+
+    if section_fresh(existing, "field_news_live_probe", ttls["news"]):
+        news_snips = copy_section(existing, "field_news_live_probe")
+        status["news"] = "cache_fresh"
+    else:
+        news_snips = search_web_snippets(news_query, limit=4)
+        if failed_results(news_snips) and copy_section(existing, "field_news_live_probe"):
+            news_snips = copy_section(existing, "field_news_live_probe")
+            status["news"] = "cache_fallback_after_live_failure"
+        else:
+            status["news"] = "live_refreshed"
+
     all_text = " ".join(s.get("snippet", "") + " " + s.get("title", "") for s in faculty_snips + scholarly + news_snips)
     keywords = keywords_from_text(all_text, department=department, limit=10)
     confidence = "high" if len(keywords) >= 4 and any(s.get("source") in {"kci", "openalex", "crossref"} for s in scholarly) else ("medium" if len(keywords) >= 2 else "low")
+    faculty_section = faculty_rows or [{"source_type": "live_search", "query": faculty_query, "results": faculty_snips, "keywords": keywords, "searched_at": searched_at}]
+    for item in faculty_section:
+        item.setdefault("searched_at", searched_at)
+    for item in scholarly + news_snips:
+        item.setdefault("searched_at", searched_at)
     bundle: dict[str, Any] = {
         "probe_type": "live_research_auto",
         "searched_at": searched_at,
@@ -264,10 +312,12 @@ def write_live_research_bundle(
         "department": department,
         "admission_track": admission_track,
         "source_policy": "official profile first, scholarly APIs second, web/news search last",
-        "faculty_live_sources": [{"source_type": "live_search", "query": faculty_query, "results": faculty_snips, "keywords": keywords}],
+        "section_ttl_hours": ttls,
+        "refresh_status": status,
+        "faculty_live_sources": faculty_section,
         "scholarly_sources": scholarly,
-        "paper_title_live_probe": [{"query": paper_query, "search_source": "kci_openalex_crossref", "hits_or_titles": [s.get("title", "") for s in scholarly if s.get("title")], "usable_keywords": keywords}],
-        "field_news_live_probe": [{"query": news_query, "source": s.get("source", "naver"), "title": s.get("title", news_query), "url": s.get("url", ""), "snippet": s.get("snippet", ""), "keywords": keywords} for s in news_snips],
+        "paper_title_live_probe": [{"query": paper_query, "search_source": "kci_openalex_crossref", "hits_or_titles": [s.get("title", "") for s in scholarly if s.get("title")], "usable_keywords": keywords, "searched_at": searched_at}],
+        "field_news_live_probe": [{"query": news_query, "source": s.get("source", "naver"), "title": s.get("title", news_query), "url": s.get("url", ""), "snippet": s.get("snippet", ""), "keywords": keywords, "searched_at": s.get("searched_at", searched_at)} for s in news_snips],
         "query_log": [faculty_query, paper_query, news_query],
         "confidence": confidence,
         "limits": [
@@ -292,19 +342,27 @@ def live_research_bundle(
     department: str,
     admission_track: str,
 ) -> dict[str, Any] | None:
+    if not _live_enabled():
+        return None
     existing = latest_live_research_bundle(
         path,
         university=university,
         department=department,
         admission_track=admission_track,
     )
-    if bundle_is_fresh(existing):
+    ttls = section_ttls()
+    if (
+        section_fresh(existing, "faculty_live_sources", ttls["faculty"])
+        and section_fresh(existing, "paper_title_live_probe", ttls["paper"])
+        and section_fresh(existing, "field_news_live_probe", ttls["news"])
+    ):
         return existing
     generated = write_live_research_bundle(
         path,
         university=university,
         department=department,
         admission_track=admission_track,
+        existing=existing,
     )
     return generated or existing
 
