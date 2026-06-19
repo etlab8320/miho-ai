@@ -1,0 +1,84 @@
+{
+ "student": "박시현 (중앙생기부, 62 grade rows, 졸업예정자 3-1)",
+ "scope": "특기자/예술실기/무도단독 제외 체대 calculated 전형",
+ "total": 282,
+ "universities": 81,
+ "method": "캡틴 직접 순차 (PDF원문 등급표+반영교과+만점 대조 + 박시현 rec 재현)",
+ "priority": "unverified→verified(104)→plugin_ready/high→official_verified→official_pdf(132)",
+ "done": [
+  {
+   "uid": "153",
+   "school": "동국대 WISE 스포츠의학/실기",
+   "verdict": "확정일치",
+   "note": "등급표9값 ÷3정합,국영6,단위가중,진로미반영,3-1,300만점"
+  },
+  {
+   "uid": "149",
+   "school": "동국대 WISE 스포츠과학/실기",
+   "verdict": "확정일치",
+   "note": "153과 동일산식"
+  },
+  {
+   "uid": "36",
+   "school": "경상국립대 체육교육/일반",
+   "verdict": "확정일치",
+   "note": "기본점수680+등급환산=grade_points 9값 정합,국영사과+한국사 수학미반영,교과800실기200,3-1,66단위"
+  },
+  {
+   "uid": "345",
+   "school": "한국체대 사회체육/교과우수",
+   "verdict": "plugin정합·잔재결함",
+   "note": "선형보간공식 PDF정합,박시현970재현OK,단 grade_points{800..760}는 미사용 잔재"
+  },
+  {
+   "uid": "308/304",
+   "school": "원광대 체육교육·스포츠과학/실기",
+   "verdict": "산식정합(미세재현차)",
+   "note": "plugin이 PDF ①②공식 정확구현,국영수사과 반영일치,만점600명목/590실질,rec540.41 ~3점차(career가중 다음세션)"
+  }
+ ],
+ "excluded_note": "unverified 6건=대진대 예술학과(만화/디자인/영화/연기/실용음악) 전부 [대상제외]",
+ "defects": [
+  {
+   "id": 1,
+   "sev": "P0",
+   "title": "_REGION_MAP/_REGION_MAP_PATH 모듈정의 누락→region 준 추천 전체 NameError",
+   "loc": "plugins/susi_ops/recommendation.py:45-58(정의없음),382(호출)",
+   "status": "확정",
+   "repro": "우회주입시 정상40건"
+  },
+  {
+   "id": 2,
+   "sev": "P1",
+   "title": "동국대 WISE(경주)·건국대 글로컬 캠퍼스 라벨누락 + 동국대 tier S 과대",
+   "loc": "recommendation.py:70 _S_TIER_SCHOOLS / DB university명에 캠퍼스 표기 0건",
+   "status": "확정"
+  },
+  {
+   "id": 3,
+   "sev": "P2",
+   "title": "한국체대 grade_points 잔재(미사용·만점불일치)",
+   "loc": "DB uid=345 score_logic",
+   "status": "확정(계산영향 없음)"
+  }
+ ],
+ "next": "verified 104개 중 미검 — 강남대(5)/동아대(174)/울산대(303)/가천대(1)... 순차. 원광대 rec 미세차 career_avg 정밀재현",
+ "status": "완료 (282 전수 PDF 대조)",
+ "report": "docs/susi27-park-athletic-audit-report-20260619.md",
+ "result_summary": {
+  "확정일치": "~150",
+  "반박오류": "~40",
+  "부분반박": "~60",
+  "근거부족": "~25",
+  "대상제외": 1
+ },
+ "top_defects": [
+  "P0 _REGION_MAP 누락(추천 사망)",
+  "semester 3-2 오기재 30건+",
+  "grade_9=0 override 미반영 9건",
+  "동국대WISE/건국대글로컬 캠퍼스라벨",
+  "formula_key 오기재(조선353/공주101)",
+  "grade_points=null(원광304/308,한국교통341/342/433)",
+  "계산과대 의심 10건(경남/중부/한림/성결/극동) 캡틴 재확인 필요"
+ ]
+}

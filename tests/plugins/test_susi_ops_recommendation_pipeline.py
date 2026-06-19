@@ -124,6 +124,16 @@ def test_recommend_candidates_missing_student(monkeypatch, tmp_path) -> None:
     assert "error" in recommendation.recommend_candidates("없는학생", region="전국")
 
 
+def test_region_map_initializes_without_cached_file(monkeypatch, tmp_path) -> None:
+    from plugins.susi_ops import recommendation
+
+    monkeypatch.setattr(recommendation, "_REGION_MAP", None)
+    monkeypatch.setattr(recommendation, "_REGION_MAP_PATH", tmp_path / "missing" / "region.json")
+    monkeypatch.setattr(recommendation, "_vultr_mysql", lambda sql: [])
+
+    assert recommendation._region_map() == {}
+
+
 def test_recommend_candidates_filters_unreachable(monkeypatch) -> None:
     from plugins.susi_ops import recommendation
 
@@ -247,6 +257,7 @@ def test_recommend_candidates_filters_condition_limited_tracks_by_request() -> N
     assert not _is_allowed_recommendation_target("시각디자인학과", "실기우수자", None)
     assert not _is_allowed_recommendation_target("연기예술학과", "실기우수자", None)
     assert not _is_allowed_recommendation_target("실용음악학과", "실기우수자", None)
+    assert not _is_allowed_recommendation_target("빅데이터헬스케어융합학과", "학생부교과", None)
     assert _is_allowed_recommendation_target("경호학과", "실기우수자", None)
     assert _is_allowed_recommendation_target("무도경호학과", "실기우수자", None)
     assert _is_allowed_recommendation_target("스포츠재활학과", "실기우수자", None)
@@ -261,6 +272,39 @@ def test_recommend_candidates_filters_condition_limited_tracks_by_request() -> N
     assert not _is_specific_sport_practical_row(
         '{"events":[{"name":"제자리 멀리뛰기"},{"name":"좌전굴"}],"selection_rule":"전 종목 반영"}'
     )
+
+
+def test_recommend_candidates_displays_branch_campuses_without_seoul_tier(monkeypatch) -> None:
+    from plugins.susi_ops import recommendation
+
+    monkeypatch.setattr(recommendation, "_SCHOOL_TIER", {})
+    wise_row = {
+        "university_id": "149",
+        "university": "동국대학교",
+        "department": "스포츠과학전공",
+        "score_logic_json": '{"formula_key":"DGU_WISE_2027_PRACTICAL"}',
+        "raw_json": "{}",
+    }
+    seoul_row = {
+        "university_id": "155",
+        "university": "동국대학교",
+        "department": "체육교육과",
+        "score_logic_json": '{"formula_key":"DGU_2027_PRACTICAL"}',
+        "raw_json": "{}",
+    }
+    glocal_row = {
+        "university_id": "10",
+        "university": "건국대학교",
+        "department": "스포츠건강학과",
+        "score_logic_json": "{}",
+        "raw_json": '{"source_pdf_rel_path":"건국대학교(글로컬)"}',
+    }
+
+    assert recommendation._display_university_name(wise_row) == "동국대학교 WISE"
+    assert recommendation._school_tier("동국대학교 WISE", "스포츠과학전공", "경북") == "C"
+    assert recommendation._display_university_name(seoul_row) == "동국대학교"
+    assert recommendation._school_tier("동국대학교", "체육교육과", "서울") == "S"
+    assert recommendation._display_university_name(glocal_row) == "건국대학교(글로컬)"
 
 
 def test_recommend_handler_same_turn_region_recall_allowed(monkeypatch) -> None:

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import sqlite3
+
 import pytest
 
 from plugins.susi_ops.service import calculate_score, db_path
@@ -61,6 +64,22 @@ def test_calculate_score_knut_record_practical_components() -> None:
     assert medicine["student_record_score"] == pytest.approx(600.0)
     assert medicine["record_full_score"] == pytest.approx(600.0)
     assert medicine["practical_full_score"] == pytest.approx(400.0)
+
+
+@_skip_no_db
+def test_calculate_score_knut_sports_medicine_grade_points_metadata_is_scaled() -> None:
+    with sqlite3.connect(db_path()) as conn:
+        row = conn.execute(
+            "SELECT score_logic_json FROM susi_calculation_rules WHERE university_id = ?",
+            ("341",),
+        ).fetchone()
+
+    score_logic = json.loads(row[0])
+
+    assert score_logic["grade_conversion_points"]["1"] == "100"
+    assert score_logic["grade_points"]["1"] == "600.0"
+    assert score_logic["grade_points"]["9"] == "360.0"
+    assert "B=6" in score_logic["grade_points_scale_note"]
 
 
 @_skip_no_db

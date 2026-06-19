@@ -23,6 +23,8 @@ from .utils import _first_number
 
 
 _CENTRAL_LIFE_DB = _student_records.CENTRAL_LIFE_DB
+_REGION_MAP_PATH = pathlib.Path(os.path.expanduser("~/.miho/academy_ops/susi_region_map.json"))
+_REGION_MAP: dict[str, str] | None = None
 
 
 def _student_grades_from_central(student_query: str) -> tuple[str | None, list[dict[str, Any]]]:
@@ -80,6 +82,8 @@ _D_TIER_SCHOOLS = {
     "동서대학교", "동명대학교",
 }
 _E_TIER_SCHOOLS = {"경국대학교", "부산외국어대학교", "영산대학교", "극동대학교"}
+_DGU_WISE_ROW_IDS = {"147", "148", "149", "151", "152", "153", "154", "156"}
+_KONKUK_GLOCAL_ROW_IDS = {"9", "10"}
 
 
 def _school_tier_map() -> dict[str, str]:
@@ -119,6 +123,20 @@ def _school_tier(university: str, department: str = "", region: str = "") -> str
     if u in _D_TIER_SCHOOLS:
         return "D"
     return "C"
+
+
+def _display_university_name(row: Any) -> str:
+    university = str(_row_get(row, "university", "") or "")
+    uid = str(_row_get(row, "university_id", "") or "")
+    text = " ".join(
+        str(_row_get(row, key, "") or "")
+        for key in ("score_logic_json", "raw_json")
+    )
+    if university == "동국대학교" and (uid in _DGU_WISE_ROW_IDS or "DGU_WISE" in text or "WISE" in text):
+        return "동국대학교 WISE"
+    if university == "건국대학교" and (uid in _KONKUK_GLOCAL_ROW_IDS or "글로컬" in text):
+        return "건국대학교(글로컬)"
+    return university
 
 
 _REGION_GROUPS = {
@@ -383,12 +401,13 @@ def recommend_candidates(
         if wanted_regions and cand_region not in wanted_regions:
             skipped["region_filtered"] = skipped.get("region_filtered", 0) + 1
             continue
+        display_university = _display_university_name(row)
         candidates.append(
             {
                 "university_id": row["university_id"],
                 "region": cand_region,
-                "tier": _school_tier(row["university"], row["department"], cand_region),
-                "university": row["university"],
+                "tier": _school_tier(display_university, row["department"], cand_region),
+                "university": display_university,
                 "department": row["department"],
                 "admission_track": row["admission_track"],
                 "student_record_score": record,

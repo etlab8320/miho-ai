@@ -43,6 +43,22 @@ def test_calculate_score_daegu_catholic_life_practical_uses_official_formula() -
 
 
 @_skip_no_db
+def test_calculate_score_daegu_catholic_all_regular_grade_nine_zero_rule() -> None:
+    subjects = [
+        {"학년": 1, "학기": 1, "교과": "국어", "과목": "국어", "이수단위": 1, "등급": "9"},
+        {"학년": 1, "학기": 2, "교과": "영어", "과목": "영어", "이수단위": 1, "등급": "9"},
+        {"학년": 2, "학기": 1, "교과": "수학", "과목": "수학", "이수단위": 1, "등급": "9"},
+        {"학년": 2, "학기": 2, "교과": "사회", "과목": "사회", "이수단위": 1, "등급": "9"},
+        {"학년": 3, "학기": 1, "교과": "과학", "과목": "과학", "이수단위": 1, "등급": "9"},
+    ]
+
+    result = calculate_score("121", subjects, {"unexcused_absence_days": 0}, {})
+
+    assert result["status"] == "calculated"
+    assert result["student_record_score"] == pytest.approx(40.0)
+
+
+@_skip_no_db
 def test_calculate_score_daegu_catholic_pe_general_exposes_official_minimum_csat() -> None:
     result = calculate_score("123", _subjects(), {"unexcused_absence_days": 0}, {})
 
