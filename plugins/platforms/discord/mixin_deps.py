@@ -30,6 +30,7 @@ from gateway.platforms.base import (
     cache_image_from_bytes,
     cache_image_from_url,
     cache_video_from_bytes,
+    resolve_media_delivery_path,
 )
 from gateway.platforms.helpers import MessageDeduplicator, ThreadParticipationTracker
 from tools.url_safety import is_safe_url

@@ -52,10 +52,12 @@ def _thread_metadata_for_source(source, reply_to_message_id: str | None = None) 
     ``direct_messages_topic_id`` when the Bot API supports it.
     """
     thread_id = getattr(source, "thread_id", None)
-    if thread_id is None:
-        return None
-    metadata = {"thread_id": thread_id}
-    if _platform_name(getattr(source, "platform", None)) == "telegram" and getattr(source, "chat_type", None) == "dm":
+    metadata = {"thread_id": thread_id} if thread_id is not None else {}
+    if (
+        thread_id is not None
+        and _platform_name(getattr(source, "platform", None)) == "telegram"
+        and getattr(source, "chat_type", None) == "dm"
+    ):
         metadata["telegram_dm_topic_reply_fallback"] = True
         tid = str(thread_id)
         if tid and tid not in {"", "1"}:
@@ -63,6 +65,17 @@ def _thread_metadata_for_source(source, reply_to_message_id: str | None = None) 
         anchor = reply_to_message_id or getattr(source, "message_id", None)
         if anchor is not None:
             metadata["telegram_reply_to_message_id"] = str(anchor)
+    if _platform_name(getattr(source, "platform", None)) == "discord":
+        try:
+            from gateway.discord_workspace import ensure_workspace_for_source
+
+            workspace = ensure_workspace_for_source(source)
+        except Exception:
+            workspace = None
+        if workspace is not None:
+            metadata["media_delivery_roots"] = [str(workspace.active_dir)]
+    if not metadata:
+        return None
     return metadata
 
 
@@ -465,7 +478,7 @@ def is_host_excluded_by_no_proxy(hostname: str, no_proxy_value: str | None = Non
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable, Awaitable, Tuple, Union
+from typing import Dict, List, Optional, Any, Callable, Awaitable, Tuple, Union, Iterable
 from enum import Enum
 
 from pathlib import Path as _Path
@@ -473,6 +486,9 @@ sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
 
 from gateway.config import Platform, PlatformConfig
 from gateway.session import SessionSource, build_session_key
+from gateway.platforms.media_path_resolver import (
+    resolve_media_delivery_path as _resolve_media_delivery_path,
+)
 from miho_constants import get_miho_dir, get_miho_home
 
 
@@ -918,7 +934,10 @@ def _path_is_within(path: Path, root: Path) -> bool:
         return False
 
 
-def validate_media_delivery_path(path: str) -> Optional[str]:
+def validate_media_delivery_path(
+    path: str,
+    extra_roots: Optional[Iterable[Path]] = None,
+) -> Optional[str]:
     """Return a safe absolute file path for native media delivery, else None.
 
     MEDIA tags and bare local paths in model output are untrusted text. Only
@@ -951,7 +970,11 @@ def validate_media_delivery_path(path: str) -> Optional[str]:
     if not resolved.is_file():
         return None
 
-    for root in _media_delivery_allowed_roots():
+    roots = _media_delivery_allowed_roots()
+    if extra_roots:
+        roots.extend(Path(root) for root in extra_roots)
+
+    for root in roots:
         try:
             resolved_root = root.expanduser().resolve(strict=False)
         except (OSError, RuntimeError, ValueError):
@@ -965,6 +988,19 @@ def validate_media_delivery_path(path: str) -> Optional[str]:
             return str(resolved)
 
     return None
+
+
+def resolve_media_delivery_path(
+    path: str,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Resolve cache/workspace-relative media paths to safe absolute paths."""
+    return _resolve_media_delivery_path(
+        path,
+        validate_path=validate_media_delivery_path,
+        allowed_roots=_media_delivery_allowed_roots(),
+        metadata=metadata,
+    )
 
 
 SUPPORTED_DOCUMENT_TYPES = {
@@ -2278,11 +2314,14 @@ class BasePlatformAdapter(ABC):
         return validate_media_delivery_path(path)
 
     @staticmethod
-    def filter_media_delivery_paths(media_files) -> List[Tuple[str, bool]]:
+    def filter_media_delivery_paths(
+        media_files,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> List[Tuple[str, bool]]:
         """Drop unsafe MEDIA paths and normalize accepted paths."""
         safe_media: List[Tuple[str, bool]] = []
         for media_path, is_voice in media_files or []:
-            safe_path = validate_media_delivery_path(str(media_path))
+            safe_path = resolve_media_delivery_path(str(media_path), metadata=metadata)
             if safe_path:
                 safe_media.append((safe_path, bool(is_voice)))
             else:
@@ -2290,11 +2329,14 @@ class BasePlatformAdapter(ABC):
         return safe_media
 
     @staticmethod
-    def filter_local_delivery_paths(file_paths) -> List[str]:
+    def filter_local_delivery_paths(
+        file_paths,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> List[str]:
         """Drop unsafe bare local file paths and normalize accepted paths."""
         safe_paths: List[str] = []
         for file_path in file_paths or []:
-            safe_path = validate_media_delivery_path(str(file_path))
+            safe_path = resolve_media_delivery_path(str(file_path), metadata=metadata)
             if safe_path:
                 safe_paths.append(safe_path)
             else:
@@ -2341,7 +2383,7 @@ class BasePlatformAdapter(ABC):
         # Extract MEDIA:<path> tags, allowing optional whitespace after the colon
         # and quoted/backticked paths for LLM-formatted outputs.
         media_pattern = re.compile(
-            r'''[`"']?MEDIA:\s*(?P<path>`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|(?:~/|/|[A-Za-z]:[\\/]|\\\\)[^`"'\n]*?\.(?:png|jpe?g|gif|webp|mp4|mov|avi|mkv|webm|ogg|opus|mp3|wav|m4a|flac|epub|pdf|zip|rar|7z|docx?|xlsx?|pptx?|txt|csv|apk|ipa)(?=[\s`"',;:)\]}]|$))[`"']?'''
+            r'''[`"']?MEDIA:\s*(?P<path>`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|(?:(?:~/|/|[A-Za-z]:[\\/]|\\\\)[^`"'\n]*?|[\w.\-]+(?:/[\w.\-]+)*)\.(?:png|jpe?g|gif|webp|mp4|mov|avi|mkv|webm|ogg|opus|mp3|wav|m4a|flac|epub|pdf|zip|rar|7z|docx?|xlsx?|pptx?|txt|csv|apk|ipa)(?=[\s`"',;:)\]}]|$))[`"']?'''
         )
         for match in media_pattern.finditer(content):
             path = match.group("path").strip()
@@ -3348,7 +3390,10 @@ class BasePlatformAdapter(ABC):
 
                 # Extract MEDIA:<path> tags (from TTS tool) before other processing
                 raw_media_files, response = self.extract_media(response)
-                media_files = self.filter_media_delivery_paths(raw_media_files)
+                media_files = self.filter_media_delivery_paths(
+                    raw_media_files,
+                    metadata=_thread_metadata,
+                )
                 blocked_media_count = max(0, len(raw_media_files) - len(media_files))
 
                 # Extract image URLs and send them as native platform attachments
@@ -3370,7 +3415,10 @@ class BasePlatformAdapter(ABC):
                 # Auto-detect bare local file paths for native media delivery
                 # (helps small models that don't use MEDIA: syntax)
                 local_files, text_content = self.extract_local_files(text_content)
-                local_files = self.filter_local_delivery_paths(local_files)
+                local_files = self.filter_local_delivery_paths(
+                    local_files,
+                    metadata=_thread_metadata,
+                )
                 if local_files:
                     logger.info("[%s] extract_local_files found %d file(s) in response", self.name, len(local_files))
                 

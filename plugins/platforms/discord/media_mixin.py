@@ -64,6 +64,10 @@ class DiscordMediaMixin:
                         captions.append(alt_text)
                     if image_url.startswith("file://"):
                         local_path = _unquote(image_url[7:])
+                        local_path = resolve_media_delivery_path(
+                            local_path,
+                            metadata=metadata,
+                        ) or local_path
                         if not os.path.exists(local_path):
                             logger.warning("[%s] Skipping missing image: %s", self.name, local_path)
                             continue
@@ -146,7 +150,12 @@ class DiscordMediaMixin:
     ) -> SendResult:
         """Send a local image file natively as a Discord file attachment."""
         try:
-            return await self._send_file_attachment(chat_id, image_path, caption)
+            return await self._send_file_attachment(
+                chat_id,
+                image_path,
+                caption,
+                metadata=metadata,
+            )
         except FileNotFoundError:
             return SendResult(success=False, error=f"Image file not found: {image_path}")
         except Exception as e:  # pragma: no cover - defensive logging
@@ -314,7 +323,12 @@ class DiscordMediaMixin:
     ) -> SendResult:
         """Send a local video file natively as a Discord attachment."""
         try:
-            return await self._send_file_attachment(chat_id, video_path, caption)
+            return await self._send_file_attachment(
+                chat_id,
+                video_path,
+                caption,
+                metadata=metadata,
+            )
         except FileNotFoundError:
             return SendResult(success=False, error=f"Video file not found: {video_path}")
         except Exception as e:  # pragma: no cover - defensive logging
@@ -333,7 +347,13 @@ class DiscordMediaMixin:
     ) -> SendResult:
         """Send an arbitrary file natively as a Discord attachment."""
         try:
-            return await self._send_file_attachment(chat_id, file_path, caption, file_name=file_name)
+            return await self._send_file_attachment(
+                chat_id,
+                file_path,
+                caption,
+                file_name=file_name,
+                metadata=metadata,
+            )
         except FileNotFoundError:
             return SendResult(success=False, error=f"File not found: {file_path}")
         except Exception as e:  # pragma: no cover - defensive logging

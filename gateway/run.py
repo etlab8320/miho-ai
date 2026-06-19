@@ -5244,7 +5244,10 @@ class GatewayRunner:
             return
 
         from gateway.platforms.base import BasePlatformAdapter
-        candidates = BasePlatformAdapter.filter_local_delivery_paths(candidates)
+        candidates = BasePlatformAdapter.filter_local_delivery_paths(
+            candidates,
+            metadata=metadata,
+        )
         if not candidates:
             return
 
@@ -11530,13 +11533,22 @@ class GatewayRunner:
 
             from gateway.platforms.base import BasePlatformAdapter, should_send_media_as_audio
 
+            _thread_meta = self._thread_metadata_for_source(
+                event.source,
+                self._reply_anchor_for_event(event),
+            )
+
             media_files, _ = adapter.extract_media(response)
-            media_files = BasePlatformAdapter.filter_media_delivery_paths(media_files)
+            media_files = BasePlatformAdapter.filter_media_delivery_paths(
+                media_files,
+                metadata=_thread_meta,
+            )
             images, cleaned = adapter.extract_images(response)
             local_files, _ = adapter.extract_local_files(cleaned)
-            local_files = BasePlatformAdapter.filter_local_delivery_paths(local_files)
-
-            _thread_meta = self._thread_metadata_for_source(event.source, self._reply_anchor_for_event(event))
+            local_files = BasePlatformAdapter.filter_local_delivery_paths(
+                local_files,
+                metadata=_thread_meta,
+            )
 
             _VIDEO_EXTS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.3gp'}
             _IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
@@ -11838,9 +11850,12 @@ class GatewayRunner:
 
             # Extract media files from the response
             if response:
-                media_files, response = adapter.extract_media(response)
                 from gateway.platforms.base import BasePlatformAdapter
-                media_files = BasePlatformAdapter.filter_media_delivery_paths(media_files)
+                media_files, response = adapter.extract_media(response)
+                media_files = BasePlatformAdapter.filter_media_delivery_paths(
+                    media_files,
+                    metadata=_thread_metadata,
+                )
                 images, text_content = adapter.extract_images(response)
 
                 preview = prompt[:60] + ("..." if len(prompt) > 60 else "")
@@ -13765,13 +13780,13 @@ class GatewayRunner:
     ) -> Optional[Dict[str, Any]]:
         """Build the metadata dict platforms need for thread-aware replies."""
         thread_id = getattr(source, "thread_id", None)
-        if thread_id is None:
-            return None
-        metadata: Dict[str, Any] = {"thread_id": thread_id}
-        if (
-            getattr(source, "platform", None) == Platform.TELEGRAM
+        metadata: Dict[str, Any] = {"thread_id": thread_id} if thread_id is not None else {}
+        is_telegram_dm_topic = (
+            thread_id is not None
+            and getattr(source, "platform", None) == Platform.TELEGRAM
             and getattr(source, "chat_type", None) == "dm"
-        ):
+        )
+        if is_telegram_dm_topic:
             metadata["telegram_dm_topic_reply_fallback"] = True
             # Telegram DM topic lanes need direct_messages_topic_id in metadata
             # so synthetic/queued messages (goal continuations, status notices)
@@ -13782,6 +13797,17 @@ class GatewayRunner:
             anchor = reply_to_message_id or getattr(source, "message_id", None)
             if anchor is not None:
                 metadata["telegram_reply_to_message_id"] = str(anchor)
+        if getattr(source, "platform", None) == Platform.DISCORD:
+            try:
+                from gateway.discord_workspace import ensure_workspace_for_source
+
+                workspace = ensure_workspace_for_source(source)
+            except Exception:
+                workspace = None
+            if workspace is not None:
+                metadata["media_delivery_roots"] = [str(workspace.active_dir)]
+        if not metadata:
+            return None
         return metadata
 
     @staticmethod

@@ -245,6 +245,33 @@ class TestDiscordSendImageFile:
         assert "file" in mock_channel.send.call_args.kwargs
         assert file_cls.call_args.kwargs["filename"] == "renamed.pdf"
 
+    def test_send_document_resolves_relative_workspace_file(self, adapter, tmp_path):
+        """send_document should upload files from the active workspace root."""
+        workspace = tmp_path / "thread-workspace"
+        pdf = workspace / "exports" / "report.pdf"
+        pdf.parent.mkdir(parents=True)
+        pdf.write_bytes(b"%PDF-1.4\n")
+
+        mock_channel = MagicMock()
+        mock_msg = MagicMock()
+        mock_msg.id = 102
+        mock_channel.send = AsyncMock(return_value=mock_msg)
+        adapter._client.get_channel = MagicMock(return_value=mock_channel)
+
+        with patch.object(discord_mod_ref, "File", MagicMock()) as file_cls:
+            result = _run(
+                adapter.send_document(
+                    chat_id="67890",
+                    file_path="exports/report.pdf",
+                    metadata={"media_delivery_roots": [str(workspace)]},
+                )
+            )
+
+        assert result.success
+        assert result.message_id == "102"
+        assert "file" in mock_channel.send.call_args.kwargs
+        assert file_cls.call_args.kwargs["filename"] == "report.pdf"
+
     def test_send_video_uploads_file_attachment(self, adapter, tmp_path):
         """send_video should upload a native Discord attachment."""
         video = tmp_path / "clip.mp4"

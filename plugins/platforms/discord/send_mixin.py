@@ -330,6 +330,7 @@ class DiscordSendMixin:
         file_path: str,
         caption: Optional[str] = None,
         file_name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send a local file as a Discord attachment.
 
@@ -345,8 +346,9 @@ class DiscordSendMixin:
         if not channel:
             return SendResult(success=False, error=f"Channel {chat_id} not found")
 
-        filename = file_name or os.path.basename(file_path)
-        with open(file_path, "rb") as fh:
+        resolved_path = resolve_media_delivery_path(file_path, metadata=metadata) or file_path
+        filename = file_name or os.path.basename(resolved_path)
+        with open(resolved_path, "rb") as fh:
             file = discord.File(fh, filename=filename)
             if self._is_forum_parent(channel):
                 return await self._forum_post_file(
