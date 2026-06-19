@@ -26,7 +26,8 @@ _SCHEMA = """JSON 스키마:
 {
   "identity": {"name": str|null, "school_name": str|null, "birth6": "YYMMDD"|null, "class_no": str|null, "student_no": str|null},
   "attendance": [{"grade": int, "school_days": int|null, "absence": str|null, "late": str|null, "early_leave": str|null, "special_note": str|null}],
-  "grades": [{"grade": int, "semester": int, "category": str|null, "subject": str, "credits": number|null, "raw_score": str|null, "achievement": str|null, "students_count": int|null, "rank_grade": str|null}],
+  "grades": [{"grade": int, "semester": int, "category": str|null, "subject": str, "credits": number|null, "raw_score": str|null, "achievement": str|null, "students_count": int|null, "rank_grade": str|null, "course_type": "진로선택"|"일반선택"|null}],
+  // course_type: 생기부에서 '진로 선택 과목' 표(섹션)에 속한 과목은 "진로선택", 공통/일반선택 과목은 "일반선택"으로 구분한다. 대학 산식이 진로선택만 성취도→등급 환산해 반영하므로(일반선택 성취도평가 과목은 제외) 반드시 구분한다. 석차등급이 있으면 일반선택이다.
   "notes": [{"grade": int|null, "semester": int|null, "subject": str, "note_text": str}],
   // notes에는 과목별 세부능력 및 특기사항뿐 아니라 창의적 체험활동상황(자율/동아리/진로/봉사), 행동특성 및 종합의견도 포함한다. 이때 subject는 "창체: 자율활동", "창체: 동아리활동", "창체: 진로활동", "행동특성 및 종합의견"처럼 구분한다.
   "awards": [{"grade": int|null, "title": str, "awarded_at": str|null, "issuer": str|null}]

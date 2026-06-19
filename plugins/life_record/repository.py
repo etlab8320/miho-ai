@@ -51,7 +51,17 @@ def connect_central(path: Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.executescript(CENTRAL_SCHEMA)
+    _ensure_central_grade_columns(conn)
     return conn
+
+
+def _ensure_central_grade_columns(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(central_grades)").fetchall()
+    }
+    if "course_type" not in columns:
+        conn.execute("ALTER TABLE central_grades ADD COLUMN course_type TEXT")
 
 
 # ---------------------------------------------------------------- consensus helpers
@@ -370,9 +380,19 @@ def promote_to_central(bundle_path: Path, document_id: int, *, source_thread: st
             delete_central_duplicate_students(central, student_id, doc["name"], doc["birth_masked"], source_thread)
             clear_central_student_rows(central, student_id)
         for g in grades:
+            # course_type(진로선택/일반선택): vision_extractor가 원문 '진로 선택 과목' 섹션
+            # 기반으로 채워주면 그 값을, 없으면 휴리스틱(석차등급 없는 성취도과목 중 raw_score에
+            # 표준편차(괄호)가 있으면 일반선택=성취도평가 과목, 없으면 진로선택)으로 보강한다.
+            # 대학별 산식이 진로선택만 성취도 환산하므로(일반선택 성취도과목 제외) 필수 구분이다.
+            _ctype = g.get("course_type")
+            if not _ctype:
+                _rg = g.get("rank_grade")
+                _rs = str(g.get("raw_score") or "")
+                if (_rg is None or str(_rg).strip() == "") and _rs and _rs != "P":
+                    _ctype = "일반선택" if "(" in _rs else "진로선택"
             central.execute(
-                "INSERT OR REPLACE INTO central_grades(student_id, grade, semester, category, subject, credits, raw_score, achievement, students_count, rank_grade, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (student_id, g["grade"], g["semester"], g["category"], g["subject"], g["credits"], g["raw_score"], g["achievement"], g["students_count"], g["rank_grade"], now),
+                "INSERT OR REPLACE INTO central_grades(student_id, grade, semester, category, subject, credits, raw_score, achievement, students_count, rank_grade, course_type, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (student_id, g["grade"], g["semester"], g["category"], g["subject"], g["credits"], g["raw_score"], g["achievement"], g["students_count"], g["rank_grade"], _ctype, now),
             )
         for n in notes:
             central.execute(

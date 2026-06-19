@@ -184,6 +184,7 @@ CREATE TABLE IF NOT EXISTS central_grades (
   achievement TEXT,
   students_count INTEGER,
   rank_grade TEXT,
+  course_type TEXT,
   updated_at TEXT NOT NULL,
   UNIQUE(student_id, grade, semester, subject)
 );
