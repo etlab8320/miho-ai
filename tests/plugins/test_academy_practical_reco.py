@@ -128,7 +128,7 @@ def _base_content() -> dict:
 def _base_args() -> dict:
     return {
         "student_name": "홍길동",
-        "evidence_tools": ["susi27_score_calculate", "susi27_rule_lookup"],
+        "evidence_tools": ["susi27_recommend_candidates"],
         "content": _base_content(),
     }
 
@@ -198,7 +198,7 @@ def _fake_chromium(html_path: Path, pdf_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_valid_content_passes() -> None:
-    ok, errors = validate_content(_base_content(), evidence_tools=["susi27_score_calculate"])
+    ok, errors = validate_content(_base_content(), evidence_tools=["susi27_recommend_candidates"])
     assert ok is True, errors
 
 
@@ -357,6 +357,24 @@ def test_no_susi_evidence_yields_warning(monkeypatch, tmp_path) -> None:
     assert result["ok"] is True, result.get("errors")
     assert result["warnings"]
     assert any("susi27" in w for w in result["warnings"])
+
+
+def test_split_susi_tools_without_recommend_pipeline_yields_warning(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
+    _patch_pdf_tools(monkeypatch, content=_base_args()["content"])
+    _patch_recalc_ok(monkeypatch)
+
+    args = _base_args()
+    args["evidence_tools"] = ["susi27_score_calculate", "susi27_rule_lookup"]
+
+    with patch(
+        "plugins.academy_ops.practical_reco_tool._chromium_print_to_pdf",
+        side_effect=_fake_chromium,
+    ):
+        result = json.loads(_practical_reco_package_tool_handler(args))
+
+    assert result["ok"] is True, result.get("errors")
+    assert any("susi27_recommend_candidates" in w for w in result["warnings"])
 
 
 def test_recalc_mismatch_rejected_before_pdf_generation(monkeypatch) -> None:

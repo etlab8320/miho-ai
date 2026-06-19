@@ -35,7 +35,7 @@ _KST = ZoneInfo("Asia/Seoul")
 _TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "practical_reco_shell.html"
 _BRAND_TEXT = BRAND_TEXT
 
-_SUSI_EVIDENCE_PREFIXES = ("susi27_", "jungsi_")
+_RECOMMENDATION_EVIDENCE_TOOL = "susi27_recommend_candidates"
 
 
 def _kst_today() -> str:
@@ -139,16 +139,12 @@ def _validate_pdf_physical(
 
 
 def _check_evidence_warnings(evidence_tools: list[str]) -> list[str]:
-    """Return warnings (not errors) when susi27_* or jungsi_* tools are absent."""
+    """Return warnings when the single recommendation pipeline is absent."""
     warnings: list[str] = []
-    has_susi = any(
-        any(t.startswith(prefix) for prefix in _SUSI_EVIDENCE_PREFIXES)
-        for t in evidence_tools
-    )
-    if not has_susi:
+    if _RECOMMENDATION_EVIDENCE_TOOL not in evidence_tools:
         warnings.append(
-            "수시 산출 근거 도구(susi27_* 또는 jungsi_*)가 evidence_tools에 없다. "
-            "환산점수·전년도 수치는 반드시 susi27_score_calculate/susi27_rule_lookup 산출값을 써야 한다."
+            "수시 추천 단일 파이프라인(susi27_recommend_candidates)이 evidence_tools에 없다. "
+            "환산점수·전년도 수치는 반드시 susi27_recommend_candidates 후보 결과에서 가져와야 한다."
         )
     return warnings
 
@@ -379,8 +375,8 @@ def register_practical_reco_tool(ctx: Any) -> None:
                     "type": "array",
                     "description": (
                         "실제 근거 조회에 사용한 도구/소스 이름. "
-                        "susi27_score_calculate / susi27_rule_lookup 등 수시 산출 도구가 "
-                        "최소 하나 이상 포함되어야 한다 (없으면 경고)."
+                        "수시 추천이면 susi27_recommend_candidates가 반드시 포함되어야 한다 "
+                        "(룰/계산 도구를 따로 조립한 결과는 경고)."
                     ),
                     "items": {"type": "string"},
                 },
@@ -397,7 +393,7 @@ def register_practical_reco_tool(ctx: Any) -> None:
                         "final{cards[{title,body}], callout{title, paragraphs[]}, tags[]} · "
                         "footnote. "
                         "학교별 상세 페이지는 없다 — 전체를 comparison.rows 한 표로 보여주므로 schools 키는 불필요. "
-                        "환산점수·전년도 수치는 susi27_score_calculate/susi27_rule_lookup 산출값만 사용. "
+                        "환산점수·전년도 수치는 susi27_recommend_candidates 후보 결과값만 사용. "
                         "로고·푸터·브랜딩은 템플릿이 보장하므로 여기에 넣지 않는다."
                     ),
                 },
@@ -408,7 +404,8 @@ def register_practical_reco_tool(ctx: Any) -> None:
         handler=_practical_reco_package_tool_handler,
         description=(
             "수시 실기전형 추천 결과를 고정 템플릿 PDF로 만든다. "
-            "환산점수·전년도 수치는 susi27_score_calculate/susi27_rule_lookup 산출값만 사용. "
+            "추천 후보와 환산점수·전년도 수치는 susi27_recommend_candidates 단일 파이프라인 결과값만 사용. "
+            "susi27_rule_lookup/susi27_score_calculate를 손으로 조립해 추천 목록을 만들지 않는다. "
             "상향은 (내신환산+실기만점) ≥ 전년도 최종합 학교만 — 만점으로도 못 닿는 학교는 절대 싣지 않는다. "
             "단, 이 선별 과정은 리포트에 쓰지 않는다: 제외한 학교 이름, 검토 학교 수, '제외했다/걸렀다' 류 "
             "과정 설명은 전부 금지 — 리포트는 추천하는 학교 이야기만 한다. "
