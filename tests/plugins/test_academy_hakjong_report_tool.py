@@ -18,6 +18,12 @@ from plugins.academy_ops.hakjong_report_tool import (
     _grounding_errors,
     _field_of,
     _student_record_brief,
+    _apply_live_research_enrichment,
+)
+from plugins.academy_ops.hakjong_live_research import (
+    bundle_is_fresh,
+    latest_live_research_bundle as _latest_live_research_bundle,
+    write_live_research_bundle as _write_live_research_bundle,
 )
 import plugins.academy_ops.hakjong_report_tool as report_tool
 import plugins.academy_ops.hakjong_report_contract as contract
@@ -252,6 +258,7 @@ def test_schema_rejection_no_media_tag() -> None:
 
 def test_valid_content_returns_media_tag(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
+    monkeypatch.setenv("MIHO_HAKJONG_LIVE_RESEARCH", "0")
     _patch_pdf_tools(monkeypatch, content=_base_args()["content"])
 
     with patch(
@@ -268,6 +275,7 @@ def test_valid_content_returns_media_tag(monkeypatch, tmp_path) -> None:
 
 def test_manifest_written_on_success(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
+    monkeypatch.setenv("MIHO_HAKJONG_LIVE_RESEARCH", "0")
     _patch_pdf_tools(monkeypatch, content=_base_args()["content"])
 
     with patch(
@@ -301,6 +309,7 @@ def test_landscape_pdf_rejected(monkeypatch, tmp_path) -> None:
 
 def test_missing_brand_text_in_pdf_rejected(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
+    monkeypatch.setenv("MIHO_HAKJONG_LIVE_RESEARCH", "0")
     _patch_pdf_tools(monkeypatch)
     monkeypatch.setattr(
         contract,
@@ -324,6 +333,7 @@ def test_missing_brand_text_in_pdf_rejected(monkeypatch, tmp_path) -> None:
 
 def test_chromium_failure_returns_error(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / ".miho"))
+    monkeypatch.setenv("MIHO_HAKJONG_LIVE_RESEARCH", "0")
 
     with patch(
         "plugins.academy_ops.hakjong_report_tool._chromium_print_to_pdf",
@@ -483,6 +493,97 @@ def test_student_record_brief_groups_by_field(monkeypatch, tmp_path) -> None:
     assert any("체력측정" in s for s in brief["체육"])
     assert any("마그누스" in s for s in brief["과학"])
     assert _student_record_brief("없는학생") == {}
+
+
+def test_latest_live_research_bundle_reads_matching_cache(tmp_path) -> None:
+    db_path = tmp_path / "susi27_student_record_qualitative.sqlite3"
+    db_path.write_text("stub", encoding="utf-8")
+    bundle_dir = tmp_path / "school_specific_source_bundles"
+    bundle_dir.mkdir()
+    bundle = bundle_dir / "국민대학교_스포츠건강재활학과_국민프런티어_live_research_probe_20260619.json"
+    bundle.write_text(
+        json.dumps({"faculty_research_live": [], "field_news_live_probe": [{"keywords": ["운동재활"]}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    found = _latest_live_research_bundle(
+        db_path,
+        university="국민대학교",
+        department="스포츠건강재활학과",
+        admission_track="국민프런티어",
+    )
+    assert found is not None
+    assert found["bundle_path"].endswith("20260619.json")
+    assert found["field_news_live_probe"][0]["keywords"] == ["운동재활"]
+
+
+def test_live_research_cache_is_fresh_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("MIHO_HAKJONG_LIVE_RESEARCH_TTL_HOURS", raising=False)
+    bundle = {"searched_at": "2099-01-01T00:00:00+00:00"}
+    assert bundle_is_fresh(bundle) is True
+
+
+def test_auto_live_research_bundle_writes_search_results(monkeypatch, tmp_path) -> None:
+    import plugins.academy_ops.hakjong_live_research as live_research
+
+    db_path = tmp_path / "susi27_student_record_qualitative.sqlite3"
+    db_path.write_text("stub", encoding="utf-8")
+
+    def fake_search(query: str, *, limit: int = 5):
+        return [
+            {
+                "title": query,
+                "snippet": "체육과학부 교수진 스포츠 과학 정밀 분석 신체활동 측정 건강증진 연구 뉴스",
+                "url": "https://example.test/search",
+            }
+        ]
+
+    monkeypatch.setattr(live_research, "search_web_snippets", fake_search)
+    monkeypatch.setattr(live_research, "search_openalex", fake_search)
+    monkeypatch.setattr(live_research, "search_crossref", fake_search)
+    monkeypatch.setattr(live_research, "search_kci", lambda *args, **kwargs: [])
+    bundle = _write_live_research_bundle(
+        db_path,
+        university="이화여자대학교",
+        department="체육과학부",
+        admission_track="예체능서류",
+    )
+
+    assert bundle is not None
+    assert bundle["probe_type"] == "live_research_auto"
+    assert "스포츠" in bundle["paper_title_live_probe"][0]["usable_keywords"]
+    assert "정밀 분석" in bundle["field_news_live_probe"][0]["keywords"]
+    assert Path(bundle["bundle_path"]).is_file()
+
+
+def test_live_research_enrichment_is_visible_in_report_content() -> None:
+    content = _base_content()
+    content["university"] = {
+        "name": "국민대학교",
+        "department": "스포츠건강재활학과",
+        "college": "체육대학",
+        "track": "국민프런티어",
+    }
+    profile = {
+        "live_research": {
+            "paper_title_live_probe": [
+                {"usable_keywords": ["신체활동 측정", "가속도계", "체육측정평가"]},
+                {"usable_keywords": ["운동역학", "발목 부상"]},
+            ],
+            "field_news_live_probe": [
+                {"title": "지역사회 노인 맞춤형 건강재활 서비스", "keywords": ["노인운동재활", "지역사회"]}
+            ],
+        }
+    }
+
+    applied = _apply_live_research_enrichment(content, profile)
+    visible = _flatten_strings(content)
+    assert applied is True
+    assert "최신 학과 흐름" in visible
+    assert "신체활동 측정" in visible
+    assert "가속도계" in visible
+    assert any(row.get("label") == "최신 학과 흐름" for row in content["track_section"]["rows"])
+    assert len(content["strategy_section"]["actions"]) == 4
 
 
 def test_render_html_contains_brand_text() -> None:

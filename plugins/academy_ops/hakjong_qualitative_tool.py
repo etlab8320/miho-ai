@@ -16,6 +16,12 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .hakjong_live_research import (
+    latest_live_research_bundle as _latest_live_research_bundle,
+    live_research_bundle as _live_research_bundle,
+    write_live_research_bundle as _write_live_research_bundle,
+)
+
 _DEFAULT_DB = (
     "~/.miho/discord/guilds/1507988396235296778/channels/10___1508422955460198420/"
     "threads/thread__1513557600497565696/work/susi27_pipeline/"
@@ -88,6 +94,12 @@ def lookup_profiles(
 
     profiles = []
     for r in rows:
+        live_research = _live_research_bundle(
+            path,
+            university=r["university"],
+            department=r["department"],
+            admission_track=r["admission_track"],
+        )
         profiles.append(
             {
                 "university": r["university"],
@@ -100,6 +112,7 @@ def lookup_profiles(
                 "interview_points": _loads(r["interview_points_json"]),
                 "recent_result_avg_grade": r["recent_result_avg_grade"],
                 "recent_result_note": r["recent_result_note"],
+                "live_research": live_research,
             }
         )
     return {"ok": True, "profiles": profiles}
@@ -135,8 +148,10 @@ def register_hakjong_qualitative_tool(ctx: Any) -> None:
             "학종(학생부종합) 정성 프로필 조회 — 학종 리포트·학종 상담 체인의 필수 첫 단계. "
             "대학이 서류에서 중점적으로 보는 것(검토축·읽는 방식), 생기부에 박혀 있어야 할 키워드, "
             "과목별 기록 노트, 면접/서류 방어 질문, 최근 입결 참고값을 반환한다. "
+            "조회 시마다 교수진·최근논문·최신뉴스 live search를 시도해 "
+            "school_specific_source_bundles/*live_research_auto*.json으로 저장하고 live_research로 함께 반환한다. "
             "academy_hakjong_report_package를 호출하기 전에 반드시 이 도구로 해당 전형 프로필을 "
-            "확인하고, 객관진단·보완전략을 이 평가 기준에 맞춰 써라. "
+            "확인하고, 객관진단·보완전략을 이 평가 기준과 live_research 흐름에 맞춰 써라. "
             "프로필이 없는 전형은 평가 중점을 추측하지 말 것."
         ),
     )

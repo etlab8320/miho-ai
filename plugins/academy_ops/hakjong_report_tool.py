@@ -25,6 +25,7 @@ from .brand_assets import academy_brand_logo_src
 from . import hakjong_report_contract as _contract
 from .pdf_autocorrect import autocorrect as _autocorrect
 from .hakjong_report_contract import BRAND_TEXT
+from .hakjong_live_research import apply_live_research_enrichment as _apply_live_research_enrichment
 from .hakjong_report_schema import validate_content
 from .hakjong_stage_contract import normalize_student_stage
 from .report_fonts import report_font_css
@@ -286,8 +287,23 @@ def _stage_grade(student_stage: str) -> int | None:
     if grade or norm == "graduate":
         return grade  # graduate는 None (재학 학년 없음)
     # 자유표기 폴백: '고등학교 3학년' 등 alias에 없는 표현.
-    m = re.search(r"([1-3])\s*학년", student_stage)
-    return int(m.group(1)) if m else None
+    compact = str(student_stage or "").replace(" ", "")
+    for value in (1, 2, 3):
+        if f"{value}학년" in compact:
+            return value
+    return None
+
+
+def _completed_record_rewrite_phrase(text: str) -> str | None:
+    marker = "세특"
+    rewrite_words = ("정리하", "재구성", "재정렬", "채워", "채우", "설계", "디벨롭", "보강", "발전시키", "만들")
+    start = str(text or "").find(marker)
+    while start >= 0:
+        window = str(text or "")[start:start + 60]
+        if any(word in window for word in rewrite_words):
+            return window
+        start = str(text or "").find(marker, start + len(marker))
+    return None
 
 
 def _infer_stage_from_birth(student_name: str) -> str | None:
@@ -473,7 +489,8 @@ def _grounding_errors(
                     if not any(k in str(r.get("field") or "") for k in ("창체", "동아리", "자율", "자치", "진로", "봉사", "활동")):
                         continue
                     steps_txt = " ".join(str(s) for s in (r.get("steps") or []))
-                    if re.search(r"제작|만든다|만들어|만들기|산출물|새로\s|체크리스트", steps_txt):
+                    blocked_words = ("제작", "만든다", "만들어", "만들기", "산출물", "새로", "체크리스트")
+                    if any(word in steps_txt for word in blocked_words):
                         errors.append(
                             f"고3 창체 분야('{r.get('field')}')에 새 활동을 제작·실행하라는 설계가 있다 — 고3 1학기는 창체를 새로 못 만든다. "
                             "steps를 '기존 활동(자율스포츠·경기운영단 등)이 이 학과 평가요소에 왜 유리한지 분석'과 "
@@ -503,13 +520,10 @@ def _grounding_errors(
                 "언어로 재해석하고, 면접이 있으면 면접 방어 전략을 리포트의 중심에 둬라."
             )
         # 끝난 생기부를 미래에 바꾸라는 설계 언어만 잡는다(과거 기록 재해석은 허용).
-        m = re.search(
-            r"세특[을를]?\s*[^.。\n]{0,40}?(정리하|재구성|재정렬|채워|채우|설계|디벨롭|보강|발전시키|만들)",
-            _content_text(strat),
-        )
-        if m:
+        bad_phrase = _completed_record_rewrite_phrase(_content_text(strat))
+        if bad_phrase:
             errors.append(
-                f"N수생 리포트에 세특을 바꾸라는 설계 언어가 있다(\"…{m.group(0)[:30]}…\") — "
+                f"N수생 리포트에 세특을 바꾸라는 설계 언어가 있다(\"…{bad_phrase[:30]}…\") — "
                 "끝난 생기부는 못 고친다. '세특을 어떻게 채울지'가 아니라 '이미 있는 기록이 이 학교 "
                 "평가축에 어떻게 먹히는지'와 면접 답변으로 다시 써라."
             )
@@ -728,6 +742,41 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
         char_limit=_contract.MAX_VISIBLE_TEXT_SEGMENT_CHARS,
     )
 
+    # T3 step 0.5: 학종 DB의 공식 프로필에 붙은 교수 연구/최신뉴스 캐시를
+    # 리포트 본문에 자동 주입한다. 미호가 source bundle을 읽고도 PDF content에
+    # 반영하지 않는 사고를 막기 위한 안전장치다.
+    matched_profile: dict[str, Any] | None = None
+    try:
+        from .hakjong_qualitative_tool import lookup_profiles
+
+        university_obj = content.get("university")
+        university = university_obj if isinstance(university_obj, dict) else {}
+        prof_rows = lookup_profiles(
+            university=str(university.get("name") or "").strip() or None,
+            department=str(university.get("department") or "").strip() or None,
+            admission_track=str(university.get("track") or "").strip() or None,
+            limit=1,
+        ).get("profiles") or []
+        matched_profile = prof_rows[0] if prof_rows else None
+        if not matched_profile and university.get("name") and university.get("department"):
+            # Some official-rule rows are not final_ready in the qualitative DB yet
+            # (e.g. newly added 예체능서류 tracks). Still run live research so the
+            # report can use 교수진/논문/뉴스 flow rather than dropping to generic copy.
+            from .hakjong_live_research import live_research_bundle
+            from .hakjong_qualitative_tool import _db_path
+
+            live_research = live_research_bundle(
+                _db_path(),
+                university=str(university.get("name") or "").strip(),
+                department=str(university.get("department") or "").strip(),
+                admission_track=str(university.get("track") or "").strip(),
+            )
+            if live_research:
+                matched_profile = {"live_research": live_research}
+    except Exception:
+        matched_profile = None
+    live_research_applied = _apply_live_research_enrichment(content, matched_profile)
+
     # T3 step 1: schema + quality validation
     ok, schema_errors = validate_content(
         content,
@@ -841,6 +890,12 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
                 "student_name": student_name,
                 "university_names": university_names,
                 "student_stage": student_stage,
+                "live_research_applied": live_research_applied,
+                "live_research_bundle_path": (
+                    str((matched_profile or {}).get("live_research", {}).get("bundle_path"))
+                    if isinstance((matched_profile or {}).get("live_research"), dict)
+                    else ""
+                ),
             },
             ensure_ascii=False,
             indent=2,
@@ -861,6 +916,12 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
                 "student_name": student_name,
                 "university_names": university_names,
                 "student_stage": student_stage,
+                "live_research_applied": live_research_applied,
+                "live_research_bundle_path": (
+                    str((matched_profile or {}).get("live_research", {}).get("bundle_path"))
+                    if isinstance((matched_profile or {}).get("live_research"), dict)
+                    else ""
+                ),
             },
         },
         ensure_ascii=False,
