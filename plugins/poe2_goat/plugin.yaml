@@ -1,0 +1,7 @@
+name: poe2_goat
+version: 0.1.0
+description: "PoE2 GOAT budget build reports for Discord and tools, backed by /Users/etlab/projects/poe2-goat-builder."
+author: "ET Lab"
+kind: standalone
+tools:
+  - poe2_goat_build
