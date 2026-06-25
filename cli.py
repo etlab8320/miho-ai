@@ -7984,6 +7984,21 @@ class MihoCLI:
         except Exception as exc:
             print(f"(._.) curator: {exc}")
 
+    def _handle_evolution_command(self, cmd: str):
+        """Handle /evolution slash command via the shared evolution CLI."""
+        import shlex
+
+        tokens = shlex.split(cmd)[1:] if cmd else []
+        if not tokens:
+            tokens = ["status"]
+        try:
+            from miho_cli.evolution import cli_main
+            cli_main(tokens)
+        except SystemExit:
+            pass
+        except Exception as exc:
+            print(f"(._.) evolution: {exc}")
+
     def _handle_kanban_command(self, cmd: str):
         """Handle the /kanban command — delegate to the shared kanban CLI.
 
@@ -8288,6 +8303,8 @@ class MihoCLI:
             self._handle_cron_command(cmd_original)
         elif canonical == "curator":
             self._handle_curator_command(cmd_original)
+        elif canonical == "evolution":
+            self._handle_evolution_command(cmd_original)
         elif canonical == "kanban":
             self._handle_kanban_command(cmd_original)
         elif canonical == "skills":

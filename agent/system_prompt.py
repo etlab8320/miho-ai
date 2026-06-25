@@ -43,6 +43,26 @@ from agent.prompt_builder import (
 from agent.forge_guidance import FORGE_CODING_GUIDANCE, should_inject_forge_guidance
 
 
+def build_evolution_harness_prompt(limit: int = 12) -> str:
+    """Build a compact prompt block from promoted Evolution OS harness rules."""
+    try:
+        from agent import evolution
+
+        rules = evolution.list_harness_rules()[: max(0, int(limit))]
+    except Exception:
+        return ""
+    active = [r for r in rules if r.get("status") == "active" and str(r.get("summary") or "").strip()]
+    if not active:
+        return ""
+    lines = [
+        "# Miho Evolution Harness Rules",
+        "The following rules were promoted from verified repeated failure patterns. Apply them as operational guardrails unless the user's current instruction explicitly conflicts.",
+    ]
+    for rule in active:
+        lines.append(f"- {rule.get('title')}: {rule.get('summary')}")
+    return "\n".join(lines)
+
+
 def _ra():
     """Lazy reference to the ``run_agent`` module.
 
@@ -190,6 +210,10 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         skills_prompt = ""
     if skills_prompt:
         stable_parts.append(skills_prompt)
+
+    evolution_harness_prompt = build_evolution_harness_prompt()
+    if evolution_harness_prompt:
+        stable_parts.append(evolution_harness_prompt)
 
     # Alibaba Coding Plan API always returns "glm-4.7" as model name regardless
     # of the requested model. Inject explicit model identity into the system prompt

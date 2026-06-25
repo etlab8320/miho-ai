@@ -11092,7 +11092,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "acp", "auth", "backup", "bundles", "checkpoints", "claw", "completion",
         "computer-use",
         "config", "cron", "curator", "dashboard", "debug", "doctor",
-        "dump", "fallback", "gateway", "hooks", "import", "insights",
+        "dump", "evolution", "fallback", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate",
         "model", "pairing", "plugins", "portal", "postinstall", "profile", "proxy",
         "send", "sessions", "setup",
@@ -12977,6 +12977,25 @@ Examples:
         _register_curator_cli(curator_parser)
     except Exception as _exc:
         logging.getLogger(__name__).debug("curator CLI wiring failed: %s", _exc)
+
+    # =========================================================================
+    # evolution command — auditable self-harness / skill evolution ledger
+    # =========================================================================
+    evolution_parser = subparsers.add_parser(
+        "evolution",
+        help="Auditable Miho evolution ledger, snapshots, and rollbacks",
+        description=(
+            "Record and inspect Miho evolution events, take skill snapshots, "
+            "and rollback reversible skill/harness changes. This is the "
+            "safety layer for self-harness style improvement."
+        ),
+    )
+    try:
+        from miho_cli.evolution import register_cli as _register_evolution_cli
+
+        _register_evolution_cli(evolution_parser)
+    except Exception as _exc:
+        logging.getLogger(__name__).debug("evolution CLI wiring failed: %s", _exc)
 
     # =========================================================================
     # memory command

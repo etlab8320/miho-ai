@@ -268,7 +268,7 @@ def _validate_content_size(content: str, label: str = "SKILL.md") -> Optional[st
     return None
 
 
-def _resolve_skill_dir(name: str, category: str = None) -> Path:
+def _resolve_skill_dir(name: str, category: Optional[str] = None) -> Path:
     """Build the directory path for a new skill, optionally under a category."""
     if category:
         return SKILLS_DIR / category / name
@@ -370,7 +370,7 @@ def _atomic_write_text(file_path: Path, content: str, encoding: str = "utf-8") -
 # Core actions
 # =============================================================================
 
-def _create_skill(name: str, content: str, category: str = None) -> Dict[str, Any]:
+def _create_skill(name: str, content: str, category: Optional[str] = None) -> Dict[str, Any]:
     """Create a new user skill with SKILL.md content."""
     # Validate name
     err = _validate_name(name)
@@ -464,7 +464,7 @@ def _patch_skill(
     name: str,
     old_string: str,
     new_string: str,
-    file_path: str = None,
+    file_path: Optional[str] = None,
     replace_all: bool = False,
 ) -> Dict[str, Any]:
     """Targeted find-and-replace within a skill file.
@@ -491,6 +491,7 @@ def _patch_skill(
         target, err = _resolve_skill_target(skill_dir, file_path)
         if err:
             return {"success": False, "error": err}
+        assert target is not None
     else:
         # Patching SKILL.md
         target = skill_dir / "SKILL.md"
@@ -642,6 +643,7 @@ def _write_file(name: str, file_path: str, file_content: str) -> Dict[str, Any]:
     target, err = _resolve_skill_target(existing["path"], file_path)
     if err:
         return {"success": False, "error": err}
+    assert target is not None
     target.parent.mkdir(parents=True, exist_ok=True)
     # Back up for rollback
     original_content = target.read_text(encoding="utf-8") if target.exists() else None
@@ -678,6 +680,7 @@ def _remove_file(name: str, file_path: str) -> Dict[str, Any]:
     target, err = _resolve_skill_target(skill_dir, file_path)
     if err:
         return {"success": False, "error": err}
+    assert target is not None
     if not target.exists():
         # List what's actually there for the model to see
         available = []
@@ -713,20 +716,29 @@ def _remove_file(name: str, file_path: str) -> Dict[str, Any]:
 def skill_manage(
     action: str,
     name: str,
-    content: str = None,
-    category: str = None,
-    file_path: str = None,
-    file_content: str = None,
-    old_string: str = None,
-    new_string: str = None,
+    content: Optional[str] = None,
+    category: Optional[str] = None,
+    file_path: Optional[str] = None,
+    file_content: Optional[str] = None,
+    old_string: Optional[str] = None,
+    new_string: Optional[str] = None,
     replace_all: bool = False,
-    absorbed_into: str = None,
+    absorbed_into: Optional[str] = None,
 ) -> str:
     """
     Manage user-created skills. Dispatches to the appropriate action handler.
 
     Returns JSON string with results.
     """
+    snapshot_id = None
+    if action in {"create", "patch", "edit", "delete", "write_file", "remove_file"}:
+        try:
+            from agent import evolution
+            snapshot_id = evolution.snapshot_before_skill_mutation(action=action, skill_name=name)
+        except Exception:
+            snapshot_id = None
+
+    result: Dict[str, Any]
     if action == "create":
         if not content:
             return tool_error("content is required for 'create'. Provide the full SKILL.md text (frontmatter + body).", success=False)
@@ -777,6 +789,7 @@ def skill_manage(
         try:
             from tools.skill_usage import bump_patch, forget, mark_agent_created
             from tools.skill_provenance import is_background_review
+
             if action == "create":
                 if is_background_review():
                     mark_agent_created(name)
@@ -787,8 +800,38 @@ def skill_manage(
         except Exception:
             pass
 
-    return json.dumps(result, ensure_ascii=False)
+    try:
+        if action in {"create", "patch", "edit", "delete", "write_file", "remove_file"}:
+            from agent import evolution
 
+            changed_files = []
+            if result.get("path"):
+                changed_files.append(str(result.get("path")))
+            elif file_path:
+                changed_files.append(f"{name}/{file_path}")
+            else:
+                changed_files.append(f"{name}/SKILL.md")
+            event = evolution.record_skill_mutation(
+                action=action,
+                skill_name=name,
+                success=bool(result.get("success")),
+                changed_files=changed_files,
+                snapshot_id=snapshot_id,
+                message=str(result.get("message") or ""),
+                error=str(result.get("error") or ""),
+            )
+            evolution_payload = result.setdefault("evolution", {})
+            if not isinstance(evolution_payload, dict):
+                evolution_payload = {}
+                result["evolution"] = evolution_payload
+            evolution_payload.update({
+                "event_id": event.get("id"),
+                "snapshot_id": snapshot_id,
+            })
+    except Exception:
+        pass
+
+    return json.dumps(result, ensure_ascii=False)
 
 # =============================================================================
 # OpenAI Function-Calling Schema
