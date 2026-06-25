@@ -16,11 +16,9 @@ from audit_susi27_pdf_formulas import (
     AuditPaths,
     _collect_numbers,
     _compact,
-    _contains,
     _default_runtime,
     _json,
     _load_rows,
-    _near,
     _nonzero_unique,
     _number_found,
     _resolve_path,
@@ -111,7 +109,16 @@ def audit_row(
     if not hard and pdf_path:
         pages = source_cache.setdefault(str(pdf_path), _pdf_text_pages(pdf_path))
         page_numbers = _candidate_pages(row, expectations, pages, max_pages)
-        ocr_text = "\n".join(_ocr_page(pdf_path, number, ocr_backend, refresh_cache) for number in page_numbers)
+        if not page_numbers:
+            ocr_page_numbers = _bounded_page_numbers(pages.keys(), max_pages)
+            ocr_pages_text = source_cache.setdefault(
+                f"{pdf_path}#pixel:{ocr_backend}:max{max_pages}",
+                _ocr_document_text_pages(pdf_path, ocr_page_numbers, ocr_backend, refresh_cache),
+            )
+            page_numbers = _candidate_pages(row, expectations, ocr_pages_text, max_pages)
+            ocr_text = "\n".join(ocr_pages_text[number] for number in page_numbers)
+        else:
+            ocr_text = "\n".join(_ocr_page(pdf_path, number, ocr_backend, refresh_cache) for number in page_numbers)
         _compare(expectations, ocr_text, passed, review)
     status = "hard_fail" if hard else ("pixel_pass" if not review else "pixel_needs_review")
     return {
@@ -186,7 +193,7 @@ def _source_checks(row: Any, score: dict[str, Any], school: dict[str, Any], pdf_
 
 
 def _pdf_text_pages(path: Path) -> dict[int, str]:
-    import fitz  # type: ignore[import-not-found]
+    import fitz
 
     with fitz.open(str(path)) as doc:
         return {index + 1: doc.load_page(index).get_text("text") or "" for index in range(len(doc))}
@@ -197,7 +204,7 @@ def _candidate_pages(row: Any, expectations: list[dict[str, Any]], pages: dict[i
     page_scores: Counter[int] = Counter()
     for number, text in pages.items():
         compact = _compact(text)
-        score = sum(weight for token, weight in tokens if _compact(token) in compact)
+        score = sum(weight for token, weight in tokens if _text_has(compact, token))
         if score:
             page_scores[number] += score
     for item in expectations:
@@ -219,10 +226,10 @@ def _score_expectation_page(item: dict[str, Any], text: str) -> int:
     compact = _compact(text)
     key, mode, values = item["key"], item["mode"], item["values"]
     if mode == "text":
-        return sum(4 for value in values if _contains(compact, value))
+        return sum(4 for value in values if _text_has(compact, value))
     if mode == "near":
-        return 8 if _near(compact, values[0], values[1], 250) else 0
-    hits = sum(1 for value in values if _number_found(text, value))
+        return 8 if _near_text(compact, values[0], values[1], 250) else 0
+    hits = sum(1 for value in values if _pixel_number_found(text, value))
     if not hits:
         return 0
     keyword_bonus = 0
@@ -255,8 +262,16 @@ def _ocr_page(pdf_path: Path, page_number: int, backend: str, refresh: bool) -> 
     return str(payload["text"])
 
 
+def _ocr_document_text_pages(pdf_path: Path, page_numbers: Any, backend: str, refresh: bool) -> dict[int, str]:
+    return {int(number): _ocr_page(pdf_path, int(number), backend, refresh) for number in page_numbers}
+
+
+def _bounded_page_numbers(page_numbers: Any, limit: int) -> list[int]:
+    return sorted(int(number) for number in page_numbers)[: max(1, int(limit or 1))]
+
+
 def _render_page(pdf_path: Path, page_number: int, out_dir: Path) -> tuple[Path, int, int]:
-    import fitz  # type: ignore[import-not-found]
+    import fitz
 
     image_path = out_dir / f"page_{page_number:04d}.png"
     if image_path.exists():
@@ -273,11 +288,11 @@ def _compare(expectations: list[dict[str, Any]], text: str, passed: list[str], r
     for item in expectations:
         key, values, mode = item["key"], item["values"], item["mode"]
         if mode == "text":
-            hits = [value for value in values if _contains(compact, value)]
+            hits = [value for value in values if _text_has(compact, value)]
         elif mode == "numbers":
-            hits = [value for value in values if _number_found(text, value)]
+            hits = [value for value in values if _pixel_number_found(text, value)]
         else:
-            hits = values if _near(compact, values[0], values[1], 250) else []
+            hits = values if _near_text(compact, values[0], values[1], 250) else []
         if len(hits) == len(values):
             passed.append(f"pixel_{key}:pass")
         elif hits:
@@ -333,6 +348,30 @@ def _manifest_hashes(runtime: Path) -> dict[str, str]:
 
 def _manifest_key(path: str) -> str:
     return path.replace("source_files/", "").strip()
+
+
+def _text_has(compact_text: str, token: Any) -> bool:
+    return bool(_loose(token) and _loose(token) in _loose(compact_text))
+
+
+def _near_text(compact_text: str, left: Any, right: Any, distance: int) -> bool:
+    left_token = _loose(left)
+    right_token = _loose(right)
+    haystack = _loose(compact_text)
+    start = haystack.find(left_token)
+    while start >= 0:
+        if right_token in haystack[start : start + len(left_token) + distance]:
+            return True
+        start = haystack.find(left_token, start + 1)
+    return False
+
+
+def _loose(value: Any) -> str:
+    return re.sub(r"[^0-9a-zA-Z가-힣]", "", str(value or "").lower())
+
+
+def _pixel_number_found(text: str, value: Any) -> bool:
+    return _number_found(str(text or "").replace(",", ""), value)
 
 
 def _select_rows(rows: list[Any], ids: list[str], limit: int) -> list[Any]:

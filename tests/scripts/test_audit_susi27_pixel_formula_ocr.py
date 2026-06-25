@@ -92,3 +92,68 @@ def test_candidate_pages_prioritize_department_and_practical_tokens() -> None:
     )
 
     assert pixel_audit._candidate_pages(_row(), expectations, pages, 2)[0] == 3
+
+
+def test_pixel_number_match_accepts_ocr_commas_without_substring_false_positive() -> None:
+    assert pixel_audit._pixel_number_found("환산점수 1,000 등급", "1000") is True
+    assert pixel_audit._pixel_number_found("환산점수 10,000 등급", "1000") is False
+
+
+def test_pixel_audit_scans_available_pages_when_text_layer_has_no_candidates(tmp_path: Path, monkeypatch) -> None:
+    runtime = tmp_path / "runtime" / "susi27_pipeline"
+    pdf_rel = _row()["pdf_rel_path"]
+    pdf_path = runtime / pdf_rel
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_bytes(b"%PDF-1.4 scan")
+    manifest = {pixel_audit._manifest_key(pdf_rel): hashlib.sha256(pdf_path.read_bytes()).hexdigest()}
+    pixel_pages = {
+        1: "표지",
+        2: (
+            "테스트대학교 체육학과 12 실기우수자 학생부 40 실기 60 "
+            "학생부교과 400 실기고사 600 1등급 100 2등급 90 3등급 80 "
+            "제자리멀리뛰기 10m왕복달리기"
+        ),
+    }
+    monkeypatch.setattr(pixel_audit, "_pdf_text_pages", lambda _: {1: "", 2: ""})
+    monkeypatch.setattr(pixel_audit, "_ocr_page", lambda _pdf, number, *_: pixel_pages[number])
+
+    result = pixel_audit.audit_row(_row(), runtime, manifest, {}, "apple_vision", 3, False)
+
+    assert result["status"] == "pixel_pass"
+    assert result["candidate_pages"] == [2]
+
+
+def test_pixel_audit_caps_fallback_ocr_pages_before_scoring(tmp_path: Path, monkeypatch) -> None:
+    runtime = tmp_path / "runtime" / "susi27_pipeline"
+    pdf_rel = _row()["pdf_rel_path"]
+    pdf_path = runtime / pdf_rel
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_bytes(b"%PDF-1.4 scan")
+    manifest = {pixel_audit._manifest_key(pdf_rel): hashlib.sha256(pdf_path.read_bytes()).hexdigest()}
+    text_pages = {number: "" for number in range(1, 7)}
+    pixel_pages = {
+        1: "표지",
+        2: "목차",
+        3: (
+            "테스트대학교 체육학과 12 실기우수자 학생부 40 실기 60 "
+            "학생부교과 400 실기고사 600 1등급 100 2등급 90 3등급 80 "
+            "제자리멀리뛰기 10m왕복달리기"
+        ),
+        4: "이 페이지는 max_pages 상한 밖이다",
+        5: "이 페이지도 읽으면 안 된다",
+        6: "이 페이지도 읽으면 안 된다",
+    }
+    seen_pages: list[int] = []
+    monkeypatch.setattr(pixel_audit, "_pdf_text_pages", lambda _: text_pages)
+
+    def _fake_ocr_page(_pdf: Path, number: int, *_args: object) -> str:
+        seen_pages.append(number)
+        return pixel_pages[number]
+
+    monkeypatch.setattr(pixel_audit, "_ocr_page", _fake_ocr_page)
+
+    result = pixel_audit.audit_row(_row(), runtime, manifest, {}, "apple_vision", 3, False)
+
+    assert result["status"] == "pixel_pass"
+    assert result["candidate_pages"] == [3]
+    assert seen_pages == [1, 2, 3]
