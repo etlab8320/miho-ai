@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -12,7 +13,10 @@ from .delivery_gate_constants import (
     DOMAIN_DELIVERY_TERMS as _DOMAIN_DELIVERY_TERMS,
     DOMAIN_VERDICT_MARKERS as _DOMAIN_VERDICT_MARKERS,
     FINAL_CLAIM_MARKERS as _FINAL_CLAIM_MARKERS,
+    GOVERNANCE_JSON_LEAK_KEYS as _GOVERNANCE_JSON_LEAK_KEYS,
+    GOVERNANCE_JSON_LEAK_PAIRS as _GOVERNANCE_JSON_LEAK_PAIRS,
     GOVERNANCE_REVIEW_MARKERS as _GOVERNANCE_REVIEW_MARKERS,
+    INTERNAL_GUARD_LEAK_MARKERS as _INTERNAL_GUARD_LEAK_MARKERS,
     META_EXPLANATION_TERMS as _META_EXPLANATION_TERMS,
     PERSONALIZED_DELIVERY_TERMS as _PERSONALIZED_DELIVERY_TERMS,
     PLAYBOOK_BY_TOOL as _PLAYBOOK_BY_TOOL,
@@ -27,6 +31,49 @@ from .versioning import load_runtime_registry
 
 
 FinalDeliveryAction = Literal["allow", "block"]
+
+_MEDIA_TAG_RE = re.compile(
+    r"MEDIA:\s*(?:`([^`\n]+)`|\"([^\"\n]+)\"|'([^'\n]+)'|((?:~/|/)[^\s`\"']+))"
+)
+
+# Invisible / bidi-control characters that could split a guard or score marker
+# (e.g. "후​검증") and slip past substring detection. Stripped before matching.
+_INVISIBLE_RE = re.compile(r"[​‌‍‎‏‪-‮⁠﻿]")
+
+
+def _normalized_blob(text: Any) -> str:
+    """Casefold + collapse whitespace + strip invisible/bidi chars for matching."""
+
+    return " ".join(_INVISIBLE_RE.sub("", str(text or "")).casefold().split())
+
+
+_ATTACHMENT_UNAVAILABLE_NOTE = "(첨부 파일을 확인할 수 없어 링크를 제외했습니다)"
+
+# Admission-process-specific terms. A bare score ("95점") only force-routes to the
+# academy score playbook when one of these is present, so general tech/finance
+# answers that happen to mention a score are not blocked (범용성 보존).
+_ADMISSION_CONTEXT_TERMS = (
+    "수시",
+    "정시",
+    "환산",
+    "내신",
+    "등급컷",
+    "실기",
+    "학종",
+    "생기부",
+    "학생부",
+    "전형",
+    "수험생",
+    "가능권",
+    "모집",
+    "지원 가능",
+    "지원가능",
+)
+
+
+def _has_admission_context(text: Any) -> bool:
+    blob = _normalized_blob(text)
+    return any(term in blob for term in _ADMISSION_CONTEXT_TERMS)
 
 
 @dataclass(frozen=True)
@@ -44,6 +91,13 @@ def governance_transform_llm_output(
 ) -> str | None:
     registry = load_runtime_registry()
     user_text = str(context.get("user_message") or context.get("user_text") or "")
+    original_text = str(response_text or "")
+
+    # Final Delivery Gate also owns attachment-path correction: stage real local
+    # artifacts into the safe media cache and rewrite the MEDIA tag in place.
+    attachment_fixed = _repair_attachment_paths(original_text)
+    effective_text = attachment_fixed if attachment_fixed is not None else original_text
+
     outcomes = context.get("governance_outcomes")
     if outcomes is None:
         outcomes = _outcomes_from_conversation_history(
@@ -53,21 +107,69 @@ def governance_transform_llm_output(
         )
     decision = evaluate_final_delivery(
         registry,
-        response_text=str(response_text or ""),
+        response_text=effective_text,
         user_text=user_text,
         outcomes=outcomes,
     )
     if decision.action != "block":
-        return None
+        # Return the attachment-corrected text when we changed it; otherwise leave unchanged.
+        return attachment_fixed
     repaired = repair_blocked_answer(
         user_text=user_text,
-        response_text=str(response_text or ""),
+        response_text=effective_text,
         decision=decision,
         context=context,
     )
     if repaired:
         return repaired
     return decision.message_ko
+
+
+def _repair_attachment_paths(response_text: str) -> str | None:
+    """Stage real local artifacts referenced by MEDIA tags into the safe cache.
+
+    Returns the rewritten text if any attachment path was corrected, else None.
+    Only ``repaired`` outcomes (path actually moved) trigger a rewrite; already
+    deliverable paths and un-stageable ones are left untouched.
+    """
+
+    text = str(response_text or "")
+    if "MEDIA:" not in text:
+        return None
+    matches = list(_MEDIA_TAG_RE.finditer(text))
+    if not matches:
+        return None
+
+    from .final_delivery_repair import repair_artifact_delivery
+
+    replacements: list[tuple[str, str]] = []
+    for match in matches:
+        raw_path = next((group for group in match.groups() if group), "").strip()
+        if not raw_path:
+            continue
+        try:
+            repair = repair_artifact_delivery(raw_path)
+        except Exception:
+            # On a repair error we cannot trust the path: drop the broken tag
+            # rather than ship an undeliverable attachment to the user.
+            replacements.append((match.group(0), _ATTACHMENT_UNAVAILABLE_NOTE))
+            continue
+        if (
+            repair.status == "repaired"
+            and repair.artifact_path
+            and repair.artifact_path != raw_path
+        ):
+            replacements.append((match.group(0), f"MEDIA:`{repair.artifact_path}`"))
+        elif repair.status == "blocked":
+            # Path is missing / unsafe / un-stageable — never leak a dead MEDIA tag.
+            replacements.append((match.group(0), _ATTACHMENT_UNAVAILABLE_NOTE))
+
+    if not replacements:
+        return None
+    result = text
+    for old, new in replacements:
+        result = result.replace(old, new, 1)
+    return result
 
 
 def evaluate_final_delivery(
@@ -79,6 +181,16 @@ def evaluate_final_delivery(
 ) -> FinalDeliveryDecision:
     if _is_governance_review_context(registry, user_text=user_text, response_text=response_text):
         return FinalDeliveryDecision(action="allow", reason="governance_review_context")
+
+    if _contains_internal_guard_leak(response_text):
+        return FinalDeliveryDecision(
+            action="block",
+            reason="internal_guard_leak",
+            message_ko=(
+                "방금 답변에 내부 점검 안내가 섞여 그대로 전달하지 않겠습니다. "
+                "질문에 맞춰 다시 정리해 답하겠습니다."
+            ),
+        )
 
     playbook_key = _playbook_key(registry, user_text=user_text, response_text=response_text)
     if not playbook_key:
@@ -128,7 +240,11 @@ def _playbook_key(
         decision = dispatch_request(registry, text)
         if decision.playbook_key:
             return decision.playbook_key
-    if _contains_score_delivery_claim(response_text) and "susi_score_calculation" in registry.playbooks:
+    if (
+        _contains_score_delivery_claim(response_text)
+        and _has_admission_context(response_text)
+        and "susi_score_calculation" in registry.playbooks
+    ):
         return "susi_score_calculation"
     return ""
 
@@ -201,10 +317,31 @@ def _is_meta_system_explanation(blob: str) -> bool:
 
 
 def _contains_score_delivery_claim(response_text: str) -> bool:
-    blob = " ".join(str(response_text or "").casefold().split())
+    blob = _normalized_blob(response_text)
     if not blob:
         return False
     return bool(_SCORE_CLAIM_RE.search(blob) or _STUDENT_SCORE_CLAIM_RE.search(blob))
+
+
+def _contains_internal_guard_leak(response_text: str) -> bool:
+    """True if an internal retry/verification instruction leaked into the answer.
+
+    These are concrete guard phrases or governance JSON keys that must never
+    reach the user verbatim. Plain user-facing explanations (e.g. "전용 도구가
+    필요합니다") do not match because the markers are full instruction clauses.
+    """
+
+    blob = _normalized_blob(response_text)
+    if not blob:
+        return False
+    if any(marker.casefold() in blob for marker in _INTERNAL_GUARD_LEAK_MARKERS):
+        return True
+    if any(key.casefold() in blob for key in _GOVERNANCE_JSON_LEAK_KEYS):
+        return True
+    return any(
+        left.casefold() in blob and right.casefold() in blob
+        for left, right in _GOVERNANCE_JSON_LEAK_PAIRS
+    )
 
 
 def _is_safe_non_delivery_response(response_text: str) -> bool:
@@ -230,11 +367,6 @@ def _is_safe_non_delivery_response(response_text: str) -> bool:
         "필요해요",
         "확인이 필요",
         "원본 대조",
-        "전용 도구",
-        "후검증",
-        "다시 실행",
-        "수 없습니다",
-        "못했습니다",
         "진행할 수",
         "확인 중",
         "확인하겠습니다",

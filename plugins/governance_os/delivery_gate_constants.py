@@ -14,6 +14,42 @@ PLAYBOOK_BY_TOOL = {
     "life_record_verify": "life_record_ingest",
     "media_delivery_contract": "discord_attachment_delivery",
 }
+# 미호는 범용 거버넌스 OS다. leak 마커는 *거버넌스 내부에서만* 쓰는 고유 구절로만
+# 한정해, 일반 질문·코딩·대화 답변을 절대 오탐 차단하지 않는다.
+# (예: "npm run build를 다시 실행해야 합니다", "next_action 필드를 추가" 같은 정상
+#  기술 답변은 여기에 걸리면 안 된다.)
+INTERNAL_GUARD_LEAK_MARKERS = (
+    "결과를 전달하지 말고",
+    "전달하지 말고 같은",
+    "전달하지 말고 후검증",
+    "후검증을 통과한 뒤",
+    "후검증을 통과하지 못",
+    "후검증 통과 기록",
+    "후검증이 결과 전달을 막",
+    "후검증을 다시 실행",
+    "후검증 대상 결과를 읽을 수 없",
+    "후검증 정보가 없습니다",
+    "후검증 담당이 요청된 작업과",
+    "전용 도구를 다시 실행",
+    "전용 도구로 다시 실행",
+    "전용 도구를 사용하고, 결과는",
+    "등록된 전용 도구를 사용",
+    "의미 검증을 완료하지 못",
+    "올바른 검수 도구로 다시",
+    "전달하기 전에 후검증을 통과",
+)
+# 거버넌스 내부 JSON이 통째로 새는 경우만 잡는다. 일반 API 필드명 단독("next_action"
+# 하나만 언급)으로는 절대 차단하지 않는다 — 거버넌스 고유 키이거나, 거버넌스 전용
+# 키-값 조합이 함께 나타날 때만 leak으로 판정한다.
+GOVERNANCE_JSON_LEAK_KEYS = (
+    "retry_instruction_ko",
+    "review_evidence_missing",
+)
+GOVERNANCE_JSON_LEAK_PAIRS = (
+    ("next_action", "retry_required"),
+    ("next_action", "retry_needed"),
+    ("governance_review", "retry_tools"),
+)
 GOVERNANCE_REVIEW_MARKERS = (
     "governance os",
     "final delivery gate",

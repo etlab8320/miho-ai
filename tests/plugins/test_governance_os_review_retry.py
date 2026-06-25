@@ -294,6 +294,24 @@ def test_governance_transform_blocks_self_reviewed_tool_without_reviewer() -> No
     assert "후검증" in payload["error"]
 
 
+def test_governance_transform_separates_internal_and_user_safe_layers() -> None:
+    transformed = governance_transform_tool_result(
+        tool_name="media_delivery_contract",
+        result=json.dumps({"success": True, "artifact_path": "/tmp/report.mhtml"}),
+    )
+
+    assert transformed is not None
+    payload = json.loads(transformed)
+    # 내부 전용 지시 레이어: 재시도 지시문 유지.
+    assert payload["assistant_instruction"] == payload["error"]
+    # 사용자 노출 레이어: 내부 지시 용어가 새지 않아야 한다.
+    user_safe = payload["user_safe_message"]
+    assert "후검증" not in user_safe
+    assert "전용 도구" not in user_safe
+    assert "retry" not in user_safe.casefold()
+    assert user_safe.strip()
+
+
 def test_governance_transform_calls_auxiliary_reviewer_without_semantic_flag(monkeypatch) -> None:
     calls = _patch_auxiliary_review_pass(monkeypatch)
 

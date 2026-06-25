@@ -2,12 +2,47 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 
 import pytest
 
 from plugins.governance_os import final_qa
+
+
+def test_verdict_fail_closed_for_governed_answer_when_reviewer_unavailable(monkeypatch) -> None:
+    async def boom(*_a: object, **_k: object) -> str:
+        raise RuntimeError("reviewer offline")
+
+    monkeypatch.setattr(final_qa, "_request_verdict", boom)
+
+    verdict = asyncio.run(
+        final_qa.verdict_or_pass(
+            "서연이 수시 환산점수 계산해줘",
+            "서연이 수시 환산점수는 947.3점입니다.",
+            evidence={"playbook_key": "susi_score_calculation"},
+        )
+    )
+
+    assert verdict == final_qa.REVISE_VERDICT
+
+
+def test_verdict_fail_open_for_general_answer_when_reviewer_unavailable(monkeypatch) -> None:
+    async def boom(*_a: object, **_k: object) -> str:
+        raise RuntimeError("reviewer offline")
+
+    monkeypatch.setattr(final_qa, "_request_verdict", boom)
+
+    verdict = asyncio.run(
+        final_qa.verdict_or_pass(
+            "파이썬 GIL이 뭐야?",
+            "GIL은 한 번에 하나의 스레드만 바이트코드를 실행하게 합니다.",
+            evidence={},
+        )
+    )
+
+    assert verdict == final_qa.PASS_VERDICT
 
 
 class _Msg:

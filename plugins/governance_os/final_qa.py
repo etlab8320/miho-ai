@@ -44,8 +44,22 @@ async def verdict_or_pass(
         )
     except Exception as exc:
         logger.info("governance final QA skipped: %s", exc)
-        return PASS_VERDICT
+        # 미호는 범용 OS다. 일반 질문/코딩 답변은 검수 불가 시 통과시켜 능력을
+        # 막지 않는다(fail-open). 단 학원 도메인 등 governed 산출물은 미검증으로
+        # 흘려보내면 안 되므로 fail-closed(REVISE)로 보류한다.
+        return REVISE_VERDICT if _is_governed_evidence(evidence) else PASS_VERDICT
     return PASS_VERDICT if _is_pass(raw) else REVISE_VERDICT
+
+
+def _is_governed_evidence(evidence: dict[str, Any] | None) -> bool:
+    """True when the answer is tied to a governed playbook (domain artifact)."""
+
+    if not isinstance(evidence, dict):
+        return False
+    if str(evidence.get("playbook_key") or "").strip():
+        return True
+    retry_tools = evidence.get("retry_tools")
+    return bool(retry_tools)
 
 
 async def _request_verdict(

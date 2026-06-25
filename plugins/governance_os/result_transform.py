@@ -13,6 +13,10 @@ from .versioning import load_runtime_registry
 
 logger = logging.getLogger(__name__)
 
+# 내부 재시도 지시(assistant_instruction)와 사용자 노출 문구(user_safe_message)를
+# 명시적으로 분리한다. 사용자에게 보여도 안전한 평문만 user_safe_message로 둔다.
+_USER_SAFE_RETRY_MESSAGE = "확인을 한 번 더 거쳐 정리해서 이어 답하겠습니다."
+
 _SELF_REVIEWED_TOOL_PLAYBOOKS: dict[str, tuple[str, ...]] = {
     "academy_hakjong_report_package": ("academy_hakjong_report",),
     "academy_practical_reco_package": ("academy_practical_recommendation",),
@@ -88,6 +92,9 @@ def governance_transform_tool_result(
             "next_action": "retry_required",
             "delivery_status": "provisional" if _has_retry_needed(failures) else "blocked",
             "error": message,
+            # 레이어 분리: 내부 전용 지시 vs 사용자 노출 안전 문구.
+            "assistant_instruction": message,
+            "user_safe_message": _USER_SAFE_RETRY_MESSAGE,
             "governance_review": {
                 "status": _review_status(failures),
                 "tool_name": str(tool_name),

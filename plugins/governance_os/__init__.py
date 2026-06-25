@@ -138,6 +138,35 @@ def register(ctx: Any) -> None:
             "instructions": FINAL_QA_REPAIR_INSTRUCTIONS,
         },
     )
+    _ensure_self_harness_autopilot_cron()
+
+
+def _ensure_self_harness_autopilot_cron() -> None:
+    """Idempotently schedule the unattended Self-Harness autopilot in production.
+
+    Skipped under test/CI so plugin loading never writes a cron job there.
+    """
+
+    import os
+    import sys
+
+    if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    if os.environ.get("MIHO_DISABLE_SELF_HARNESS_AUTOPILOT", "").strip().lower() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }:
+        return
+    try:
+        from .self_harness_loop import register_self_harness_cron
+
+        register_self_harness_cron()
+    except Exception:  # cron infra optional; never block plugin load
+        import logging
+
+        logging.getLogger(__name__).debug("self-harness autopilot cron not registered", exc_info=True)
 
 
 __all__ = [
