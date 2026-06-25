@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from .ledger import OutcomeLedgerEntry, record_outcome
 
@@ -32,7 +32,7 @@ def record_academy_review_outcome(tool_name: str, payload: dict[str, Any]) -> No
 
 
 def _entry(tool_name: str, playbook_key: str, payload: dict[str, Any]) -> OutcomeLedgerEntry:
-    reviewer = payload.get("reviewer") if isinstance(payload.get("reviewer"), dict) else {}
+    reviewer = _reviewer_dict(payload)
     return OutcomeLedgerEntry(
         request_id=_request_id(tool_name, payload),
         playbook_key=playbook_key,
@@ -66,11 +66,16 @@ def _errors(payload: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _retry_tools(tool_name: str, payload: dict[str, Any]) -> tuple[str, ...]:
-    reviewer = payload.get("reviewer") if isinstance(payload.get("reviewer"), dict) else {}
+    reviewer = _reviewer_dict(payload)
     status = str(reviewer.get("status") or "").strip()
     if status in {"blocked", "fail", "failed"} or payload.get("ok") is False:
         return (tool_name,)
     return ()
+
+
+def _reviewer_dict(payload: dict[str, Any]) -> dict[str, Any]:
+    reviewer = payload.get("reviewer")
+    return cast("dict[str, Any]", reviewer) if isinstance(reviewer, dict) else {}
 
 
 def _artifact_paths(payload: dict[str, Any]) -> tuple[str, ...]:

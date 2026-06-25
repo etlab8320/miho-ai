@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from gateway.platforms.base import resolve_media_delivery_path
+from plugins.governance_os.final_delivery_repair import repair_artifact_delivery
 from tools.registry import registry, tool_result
 
 
@@ -40,9 +41,18 @@ def media_delivery_contract_tool(args: dict[str, Any]) -> str:
 
     resolved_path = resolve_media_delivery_path(artifact_path)
     if not resolved_path:
-        return _failed(
-            "첨부할 파일을 확인할 수 없습니다. 파일이 존재하고 미호가 보낼 수 있는 위치에 있어야 합니다.",
-            artifact_path=artifact_path,
+        repair = repair_artifact_delivery(artifact_path, caption=caption)
+        if repair.status == "blocked":
+            return _failed(repair.message_ko, artifact_path=artifact_path)
+        return tool_result(
+            success=True,
+            artifact_path=repair.artifact_path,
+            file_name=Path(repair.artifact_path).name,
+            media_tag=repair.media_tag,
+            delivery_text=repair.delivery_text,
+            delivery_repair=repair.to_dict(),
+            reviewer=repair.reviewer,
+            message_ko=repair.message_ko,
         )
 
     media_tag = f"MEDIA:`{resolved_path}`"

@@ -6,7 +6,7 @@ import logging
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from .models import PolicyDecision
 from .registry import GovernanceRegistry
@@ -318,14 +318,14 @@ def _candidate_metadata(candidate: RouteCandidate) -> dict[str, object]:
 
 def _loads_object(value: object) -> dict[str, object] | None:
     if isinstance(value, dict):
-        return value
+        return cast("dict[str, object]", value)
     if not isinstance(value, str):
         return None
     try:
         parsed = json.loads(value)
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
-    return parsed if isinstance(parsed, dict) else None
+    return cast("dict[str, object]", parsed) if isinstance(parsed, dict) else None
 
 
 def _tuple_str(value: object) -> tuple[str, ...]:
@@ -340,6 +340,8 @@ def _tuple_str(value: object) -> tuple[str, ...]:
 
 
 def _float(value: object, *, default: float) -> float:
+    if not isinstance(value, (int, float, str, bytes, bytearray)):
+        return default
     try:
         return float(value)
     except (TypeError, ValueError):

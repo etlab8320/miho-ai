@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from typing import Any, cast
 
 from plugins.governance_os.delivery_gate import (
     evaluate_final_delivery,
@@ -24,7 +25,7 @@ def _passed_outcome() -> dict[str, object]:
 def _patch_auxiliary_review_pass(monkeypatch) -> list[dict[str, object]]:
     import plugins.governance_os.review as review
 
-    calls: list[dict[str, object]] = []
+    calls: list[dict[str, Any]] = []
 
     def fake_auxiliary_reviewer(**kwargs: object) -> dict[str, object]:
         calls.append(kwargs)
@@ -63,7 +64,9 @@ def test_final_delivery_gate_blocks_score_claim_without_review_evidence() -> Non
     assert decision.playbook_key == "susi_score_calculation"
     assert decision.reason == "review_evidence_missing"
     assert decision.retry_tools == ("susi27_score_calculate",)
-    assert "후검증" in decision.message_ko
+    assert "확인 근거" in decision.message_ko
+    assert "후검증" not in decision.message_ko
+    assert "전용 도구" not in decision.message_ko
     assert "Traceback" not in decision.message_ko
 
 
@@ -277,9 +280,38 @@ def test_transform_llm_output_rewrites_blocked_governed_response() -> None:
     )
 
     assert transformed is not None
-    assert "후검증" in transformed
+    assert "확인 근거" in transformed
+    assert "후검증" not in transformed
+    assert "전용 도구" not in transformed
     assert "susi27_score_calculate" not in transformed
     assert "Traceback" not in transformed
+
+
+def test_transform_llm_output_uses_llm_repair_on_gateway_runtime(monkeypatch) -> None:
+    import plugins.governance_os.final_qa as final_qa
+
+    calls: list[dict[str, object]] = []
+
+    def fake_repair(question: str, answer: str, *, evidence=None):
+        calls.append({"question": question, "answer": answer, "evidence": evidence})
+        return "서연이 수시 환산점수 답변은 확인을 다시 거쳐 이어서 전달하겠습니다."
+
+    monkeypatch.setattr(final_qa, "repair_answer_until_pass", fake_repair)
+
+    transformed = governance_transform_llm_output(
+        response_text="서연이 수시 환산점수는 947.3점입니다.",
+        user_message="서연이 수시 환산점수 계산해줘",
+        governance_outcomes=[],
+        platform="discord",
+    )
+
+    assert transformed == "서연이 수시 환산점수 답변은 확인을 다시 거쳐 이어서 전달하겠습니다."
+    assert calls
+    assert calls[0]["question"] == "서연이 수시 환산점수 계산해줘"
+    evidence = calls[0]["evidence"]
+    assert isinstance(evidence, dict)
+    typed_evidence = cast("dict[str, object]", evidence)
+    assert typed_evidence["reason"] == "review_evidence_missing"
 
 
 def test_transform_llm_output_leaves_reviewed_response_unchanged() -> None:
@@ -385,7 +417,9 @@ def test_transform_llm_output_ignores_previous_turn_tool_result() -> None:
     )
 
     assert transformed is not None
-    assert "후검증" in transformed
+    assert "확인 근거" in transformed
+    assert "후검증" not in transformed
+    assert "전용 도구" not in transformed
 
 
 def test_final_delivery_gate_does_not_trust_stale_global_ledger(tmp_path, monkeypatch) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .registry import GovernanceRegistry
 
@@ -23,6 +23,10 @@ REQUIRED_AUXILIARY_TASKS = frozenset(
         "miho_governance_dispatcher",
         "miho_governance_reviewer",
         "miho_governance_promotion_judge",
+        "miho_self_harness_weakness_miner",
+        "miho_self_harness_proposer",
+        "miho_governance_final_qa",
+        "miho_governance_final_qa_repair",
     }
 )
 HOOK_CALLBACK_MODULES = {
@@ -102,6 +106,26 @@ def auxiliary_instruction_probe_passed() -> bool:
             tasks,
             governance_os.PROMOTION_JUDGE_TASK,
             ("반복 실패", "tests_required", "rollback"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.SELF_HARNESS_WEAKNESS_MINER_TASK,
+            ("Weakness Mining", "active registry", "target_surface_hint"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.SELF_HARNESS_PROPOSER_TASK,
+            ("shadow_candidate", "held-out", "기존 미호 동작", "activation", "regression"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.FINAL_QA_TASK,
+            ("사용자 질문", "최종 답변 후보", "revise"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.FINAL_QA_REPAIR_TASK,
+            ("새 최종 답변", "Final QA agent", "한국어 평문", "retry_tools"),
         )
     )
 
@@ -231,7 +255,8 @@ def _instruction_has(
     defaults = task.get("defaults")
     if not isinstance(defaults, dict):
         return False
-    instructions = str(defaults.get("instructions") or "")
+    typed_defaults = cast("dict[str, object]", defaults)
+    instructions = str(typed_defaults.get("instructions") or "")
     return all(term in instructions for term in required_terms)
 
 

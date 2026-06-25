@@ -28,6 +28,9 @@ class GovernanceReadinessReport:
     retry_instruction_probe_passed: bool
     transform_ledger_probe_passed: bool
     final_delivery_probe_passed: bool
+    final_delivery_repair_probe_passed: bool
+    final_qa_repair_probe_passed: bool
+    self_harness_autonomy_probe_passed: bool
     evolution_rollback_probe_passed: bool
     hook_probe_passed: bool
     manifest_probe_passed: bool
@@ -91,6 +94,9 @@ def run_readiness_check() -> GovernanceReadinessReport:
         and probe_results.retry_instruction_probe_passed
         and probe_results.transform_ledger_probe_passed
         and probe_results.final_delivery_probe_passed
+        and probe_results.final_delivery_repair_probe_passed
+        and probe_results.final_qa_repair_probe_passed
+        and probe_results.self_harness_autonomy_probe_passed
         and probe_results.evolution_rollback_probe_passed
         and probe_results.hook_probe_passed
         and probe_results.manifest_probe_passed
@@ -113,6 +119,9 @@ def run_readiness_check() -> GovernanceReadinessReport:
         retry_instruction_probe_passed=probe_results.retry_instruction_probe_passed,
         transform_ledger_probe_passed=probe_results.transform_ledger_probe_passed,
         final_delivery_probe_passed=probe_results.final_delivery_probe_passed,
+        final_delivery_repair_probe_passed=probe_results.final_delivery_repair_probe_passed,
+        final_qa_repair_probe_passed=probe_results.final_qa_repair_probe_passed,
+        self_harness_autonomy_probe_passed=probe_results.self_harness_autonomy_probe_passed,
         evolution_rollback_probe_passed=probe_results.evolution_rollback_probe_passed,
         hook_probe_passed=probe_results.hook_probe_passed,
         manifest_probe_passed=probe_results.manifest_probe_passed,
@@ -141,6 +150,9 @@ def run_readiness_check() -> GovernanceReadinessReport:
         retry_instruction_probe_passed=probe_results.retry_instruction_probe_passed,
         transform_ledger_probe_passed=probe_results.transform_ledger_probe_passed,
         final_delivery_probe_passed=probe_results.final_delivery_probe_passed,
+        final_delivery_repair_probe_passed=probe_results.final_delivery_repair_probe_passed,
+        final_qa_repair_probe_passed=probe_results.final_qa_repair_probe_passed,
+        self_harness_autonomy_probe_passed=probe_results.self_harness_autonomy_probe_passed,
         evolution_rollback_probe_passed=probe_results.evolution_rollback_probe_passed,
         hook_probe_passed=probe_results.hook_probe_passed,
         manifest_probe_passed=probe_results.manifest_probe_passed,
@@ -175,6 +187,9 @@ def _quality_score(
     retry_instruction_probe_passed: bool,
     transform_ledger_probe_passed: bool,
     final_delivery_probe_passed: bool,
+    final_delivery_repair_probe_passed: bool,
+    final_qa_repair_probe_passed: bool,
+    self_harness_autonomy_probe_passed: bool,
     evolution_rollback_probe_passed: bool,
     hook_probe_passed: bool,
     manifest_probe_passed: bool,
@@ -197,6 +212,9 @@ def _quality_score(
         retry_instruction_probe_passed,
         transform_ledger_probe_passed,
         final_delivery_probe_passed,
+        final_delivery_repair_probe_passed,
+        final_qa_repair_probe_passed,
+        self_harness_autonomy_probe_passed,
         evolution_rollback_probe_passed,
         hook_probe_passed,
         manifest_probe_passed,

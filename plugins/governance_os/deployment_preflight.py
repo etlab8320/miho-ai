@@ -89,7 +89,7 @@ _FAIL_STATUSES = {"fail", "failed", "error", "blocked", "red"}
 _LOCAL_RECEIPT_SOURCE = "governance_os_local"
 _MAX_RECEIPT_AGE_SECONDS = 24 * 60 * 60
 _MAX_RECEIPT_CLOCK_SKEW_SECONDS = 5 * 60
-_DEFAULT_PREFLIGHT_REQUIREMENTS = {
+_DEFAULT_PREFLIGHT_REQUIREMENTS: dict[str, dict[str, tuple[str, ...]]] = {
     "gateway_restart": {
         "tests": ("related_governance_suite", "static_checks"),
         "smoke": ("governance_status", "discord_delivery"),

@@ -9,7 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from miho_constants import get_miho_home
 
@@ -284,7 +284,8 @@ def _promotion_link_metadata(
     promotion: dict[str, Any],
     rollback_snapshot_id: str,
 ) -> dict[str, Any]:
-    candidate = promotion.get("candidate") if isinstance(promotion.get("candidate"), dict) else {}
+    raw_candidate = promotion.get("candidate")
+    candidate = cast("dict[str, Any]", raw_candidate) if isinstance(raw_candidate, dict) else {}
     return {
         "target_promotion_event_id": int(event.get("id") or 0),
         "playbook_key": str(candidate.get("playbook_key") or ""),

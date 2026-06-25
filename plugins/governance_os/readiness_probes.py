@@ -6,6 +6,11 @@ import json
 from dataclasses import dataclass, field
 
 from .registry import GovernanceRegistry
+from .readiness_autonomy_probes import (
+    final_delivery_repair_probe_passed as _final_delivery_repair_probe_passed,
+    final_qa_repair_probe_passed as _final_qa_repair_probe_passed,
+    self_harness_autonomy_probe_passed as _self_harness_autonomy_probe_passed,
+)
 from .readiness_plugin_probes import (
     auxiliary_dispatcher_dataplane_probe_passed as _auxiliary_dispatcher_dataplane_probe_passed,
     auxiliary_instruction_probe_passed as _auxiliary_instruction_probe_passed,
@@ -26,6 +31,9 @@ class ReadinessProbeResults:
     retry_instruction_probe_passed: bool
     transform_ledger_probe_passed: bool
     final_delivery_probe_passed: bool
+    final_delivery_repair_probe_passed: bool
+    final_qa_repair_probe_passed: bool
+    self_harness_autonomy_probe_passed: bool
     evolution_rollback_probe_passed: bool
     hook_probe_passed: bool
     manifest_probe_passed: bool
@@ -70,6 +78,18 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
     if not final_delivery_probe_passed:
         failures.append("final delivery probe did not block unreviewed governed output")
 
+    final_delivery_repair_probe_passed = _final_delivery_repair_probe_passed()
+    if not final_delivery_repair_probe_passed:
+        failures.append("final delivery repair probe did not stage an allowed attachment")
+
+    final_qa_repair_probe_passed = _final_qa_repair_probe_passed()
+    if not final_qa_repair_probe_passed:
+        failures.append("final QA repair probe did not reach LLM repair data-plane")
+
+    self_harness_autonomy_probe_passed = _self_harness_autonomy_probe_passed()
+    if not self_harness_autonomy_probe_passed:
+        failures.append("self-harness autonomy probe did not activate and rollback")
+
     evolution_rollback_probe_passed = _evolution_rollback_probe_passed()
     if not evolution_rollback_probe_passed:
         failures.append("evolution rollback probe did not prove skill and harness rollback")
@@ -107,6 +127,9 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
         retry_instruction_probe_passed=retry_instruction_probe_passed,
         transform_ledger_probe_passed=transform_ledger_probe_passed,
         final_delivery_probe_passed=final_delivery_probe_passed,
+        final_delivery_repair_probe_passed=final_delivery_repair_probe_passed,
+        final_qa_repair_probe_passed=final_qa_repair_probe_passed,
+        self_harness_autonomy_probe_passed=self_harness_autonomy_probe_passed,
         evolution_rollback_probe_passed=evolution_rollback_probe_passed,
         hook_probe_passed=hook_probe_passed,
         manifest_probe_passed=manifest_probe_passed,
@@ -342,7 +365,9 @@ def _final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
         and blocked.reason == "review_evidence_missing"
         and passed.action == "allow"
         and transformed is not None
-        and "후검증" in transformed
+        and "확인 근거" in transformed
+        and "후검증" not in transformed
+        and "전용 도구" not in transformed
     )
 
 

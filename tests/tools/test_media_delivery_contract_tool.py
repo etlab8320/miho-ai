@@ -84,3 +84,39 @@ def test_media_delivery_contract_quotes_nonstandard_extensions(tmp_path, monkeyp
 
     assert result["success"] is True
     assert result["media_tag"] == f"MEDIA:`{artifact.resolve()}`"
+
+
+def test_media_delivery_contract_repairs_existing_file_outside_allowed_root(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+    monkeypatch.setenv("MIHO_MEDIA_ALLOW_DIRS", str(tmp_path / "allowed"))
+
+    import gateway.platforms.base as base
+    import miho_constants
+    import tools.media_delivery_contract_tool as tool
+
+    importlib.reload(miho_constants)
+    importlib.reload(base)
+    importlib.reload(tool)
+
+    artifact = tmp_path / "workspace" / "report.xlsx"
+    artifact.parent.mkdir()
+    artifact.write_bytes(b"PK\x03\x04 fake workbook")
+
+    result = _json(
+        tool.media_delivery_contract_tool(
+            {
+                "artifact_path": str(artifact),
+                "caption": "복구된 첨부 파일입니다.",
+            }
+        )
+    )
+
+    assert result["success"] is True
+    assert result["delivery_repair"]["status"] == "repaired"
+    assert result["artifact_path"].startswith(str(tmp_path / "miho_home" / "cache" / "media"))
+    assert result["media_tag"] == f"MEDIA:`{result['artifact_path']}`"
+    assert base.resolve_media_delivery_path(result["artifact_path"]) == result["artifact_path"]
+    assert "복구된 첨부 파일입니다." in result["delivery_text"]

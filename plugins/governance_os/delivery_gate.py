@@ -3,151 +3,30 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from .delivery_gate_constants import (
+    ARTIFACT_COMPLETION_TERMS as _ARTIFACT_COMPLETION_TERMS,
+    COMPLETION_CLAIM_MARKERS as _COMPLETION_CLAIM_MARKERS,
+    DOMAIN_DELIVERY_TERMS as _DOMAIN_DELIVERY_TERMS,
+    DOMAIN_VERDICT_MARKERS as _DOMAIN_VERDICT_MARKERS,
+    FINAL_CLAIM_MARKERS as _FINAL_CLAIM_MARKERS,
+    GOVERNANCE_REVIEW_MARKERS as _GOVERNANCE_REVIEW_MARKERS,
+    META_EXPLANATION_TERMS as _META_EXPLANATION_TERMS,
+    PERSONALIZED_DELIVERY_TERMS as _PERSONALIZED_DELIVERY_TERMS,
+    PLAYBOOK_BY_TOOL as _PLAYBOOK_BY_TOOL,
+    SCORE_CLAIM_RE as _SCORE_CLAIM_RE,
+    STUDENT_SCORE_CLAIM_RE as _STUDENT_SCORE_CLAIM_RE,
+)
 from .dispatcher import dispatch_request
+from .final_qa_runtime import repair_blocked_answer
 from .registry import GovernanceRegistry
 from .review import auxiliary_review_policy_for_playbook, evaluate_review_gate
 from .versioning import load_runtime_registry
 
 
 FinalDeliveryAction = Literal["allow", "block"]
-_PLAYBOOK_BY_TOOL = {
-    "academy_hakjong_report_package": "academy_hakjong_report",
-    "academy_practical_reco_package": "academy_practical_recommendation",
-    "academy_practical_reco_all_candidates": "academy_practical_recommendation",
-    "susi27_recommend_candidates": "academy_practical_recommendation",
-    "susi27_score_calculate": "susi_score_calculation",
-    "life_record_ingest_pdf": "life_record_ingest",
-    "life_record_verify": "life_record_ingest",
-    "media_delivery_contract": "discord_attachment_delivery",
-}
-_GOVERNANCE_REVIEW_MARKERS = (
-    "governance os",
-    "final delivery gate",
-    "delivery gate",
-    "dispatcher",
-    "playbook",
-    "auxiliary dispatcher",
-    "auxiliary reviewer",
-    "readiness",
-    "preflight",
-    "governance_pre_tool_call",
-    "governance_transform_llm_output",
-    "적대적 리뷰",
-    "개발 리뷰",
-    "코드 리뷰",
-    "리뷰 문서",
-    "오탐",
-    "후보 제한",
-    "보조 라우터",
-    "보조 리뷰어",
-    "라우팅",
-    "게이트",
-)
-_SCORE_CLAIM_RE = re.compile(
-    r"(수시|환산|내신|등급|점수)[^\n.。]{0,40}\d+(?:\.\d+)?\s*점"
-    r"|\d+(?:\.\d+)?\s*점[^\n.。]{0,40}(수시|환산|내신|등급|점수)"
-)
-_STUDENT_SCORE_CLAIM_RE = re.compile(
-    r"(학생|지원자|수험생|서연|가은|가능권|합격|전형|대학|추천)"
-    r"[^\n.。]{0,80}\d+(?:\.\d+)?\s*점"
-    r"|\d+(?:\.\d+)?\s*점[^\n.。]{0,80}"
-    r"(학생|지원자|수험생|서연|가은|가능권|합격|전형|대학|추천)"
-)
-_FINAL_CLAIM_MARKERS = (
-    "완료했습니다",
-    "만들었습니다",
-    "생성했습니다",
-    "첨부했습니다",
-    "보냈습니다",
-    "전달합니다",
-    "저장했습니다",
-    "추천합니다",
-    "가능권입니다",
-    "현실적입니다",
-    "적정입니다",
-    "안정입니다",
-    "상향입니다",
-)
-_COMPLETION_CLAIM_MARKERS = (
-    "완료했습니다",
-    "만들었습니다",
-    "생성했습니다",
-    "첨부했습니다",
-    "보냈습니다",
-    "전달합니다",
-    "저장했습니다",
-)
-_DOMAIN_VERDICT_MARKERS = (
-    "추천합니다",
-    "가능권입니다",
-    "현실적입니다",
-    "적정입니다",
-    "안정입니다",
-    "상향입니다",
-)
-_DOMAIN_DELIVERY_TERMS = (
-    "학생",
-    "지원자",
-    "수험생",
-    "서연",
-    "가은",
-    "대학",
-    "학교",
-    "전형",
-    "수시",
-    "실기",
-    "학종",
-    "생기부",
-    "학생부",
-    "리포트",
-    "pdf",
-    "환산",
-    "점수",
-    "내신",
-    "등급",
-    "지원 가능",
-)
-_META_EXPLANATION_TERMS = (
-    "도구",
-    "서브에이전트",
-    "subagent",
-    "reviewer",
-    "리뷰어",
-    "시스템",
-    "구조",
-    "게이트",
-    "라우팅",
-    "방식",
-    "설정",
-    "권한",
-    "제한",
-)
-_PERSONALIZED_DELIVERY_TERMS = (
-    "학생",
-    "지원자",
-    "수험생",
-    "서연",
-    "가은",
-    "점수",
-    "가능권",
-    "합격",
-    "전형",
-    "대학",
-    "학교",
-)
-_ARTIFACT_COMPLETION_TERMS = (
-    "pdf 생성",
-    "리포트 생성",
-    "첨부 완료",
-    "저장했습니다",
-    "보냈습니다",
-    "전달합니다",
-    "생성했습니다",
-)
 
 
 @dataclass(frozen=True)
@@ -180,6 +59,14 @@ def governance_transform_llm_output(
     )
     if decision.action != "block":
         return None
+    repaired = repair_blocked_answer(
+        user_text=user_text,
+        response_text=str(response_text or ""),
+        decision=decision,
+        context=context,
+    )
+    if repaired:
+        return repaired
     return decision.message_ko
 
 
@@ -224,8 +111,8 @@ def evaluate_final_delivery(
         reason="review_evidence_missing",
         playbook_key=playbook_key,
         message_ko=(
-            "이 결과는 전용 도구와 후검증 통과 기록이 없어 최종 전달할 수 없습니다. "
-            "결과를 확정해서 말하지 말고 같은 작업을 전용 도구로 다시 실행해 주세요."
+            "방금 답변은 확인 근거가 충분하지 않아 그대로 전달하지 않겠습니다. "
+            "필요한 확인을 다시 거쳐 이어서 답하겠습니다."
         ),
         retry_tools=playbook.required_tools,
     )
