@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from .promotion import (
@@ -28,7 +28,7 @@ _GATE_BY_SURFACE = {
 def decide_autonomous_activation(
     candidate: dict[str, Any],
     *,
-    test_receipts: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] = (),
+    test_receipts: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Decide whether a shadow candidate can autonomously activate."""
 
@@ -61,7 +61,7 @@ def decide_autonomous_activation(
 def activate_autonomous_candidate(
     candidate: dict[str, Any],
     *,
-    test_receipts: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]],
+    test_receipts: Sequence[Mapping[str, Any]],
     registry: Any = None,
     created_at: str = "",
     base_dir: Any = None,
@@ -97,7 +97,7 @@ def activate_autonomous_candidate(
 def rollback_on_regression(
     activation: PromotionActivation,
     *,
-    regression_receipts: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]],
+    regression_receipts: Sequence[Mapping[str, Any]],
     base_dir: Any = None,
 ) -> Any | None:
     """Rollback an autonomous activation when post-activation receipts fail."""
@@ -181,7 +181,7 @@ def _required_tests(candidate: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _normalize_receipts(
-    value: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]],
+    value: Sequence[Mapping[str, Any]],
 ) -> tuple[tuple[PromotionTestReceipt, ...], int]:
     receipts: list[PromotionTestReceipt] = []
     invalid_count = 0

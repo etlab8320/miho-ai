@@ -8,6 +8,9 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from .delivery_safety import contains_internal_guard_leak
+from .user_messages import SAFE_EVIDENCE_FALLBACK
+
 
 logger = logging.getLogger(__name__)
 FINAL_QA_TASK = "miho_governance_final_qa"
@@ -17,10 +20,7 @@ FINAL_QA_REPAIR_TIMEOUT_SECONDS = 20
 FINAL_QA_REPAIR_ATTEMPTS = 2
 PASS_VERDICT = "pass"
 REVISE_VERDICT = "revise"
-SAFE_REPAIR_FALLBACK = (
-    "방금 답변은 확인 근거가 충분하지 않아 그대로 전달하지 않겠습니다. "
-    "필요한 확인을 다시 거쳐 이어서 답하겠습니다."
-)
+SAFE_REPAIR_FALLBACK = SAFE_EVIDENCE_FALLBACK
 
 
 async def verdict_or_pass(
@@ -172,7 +172,7 @@ def repair_answer_until_pass(
             call_llm=call_llm,
             extract_content=extract_content,
         )
-        if verdict == PASS_VERDICT:
+        if verdict == PASS_VERDICT and not contains_internal_guard_leak(candidate):
             return candidate
         current_evidence = {
             **current_evidence,

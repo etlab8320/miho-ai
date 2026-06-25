@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .delivery_safety import contains_internal_guard_leak
+
 
 def repair_blocked_answer(
     *,
@@ -30,6 +32,8 @@ def repair_blocked_answer(
         return ""
     repaired = str(repaired or "").strip()
     if not repaired or repaired == response_text:
+        return ""
+    if contains_internal_guard_leak(repaired):
         return ""
     return repaired
 

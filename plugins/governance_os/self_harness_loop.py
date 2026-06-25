@@ -21,6 +21,7 @@ Safety invariants kept intact:
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 import sys
@@ -38,6 +39,8 @@ from .self_harness_autonomy import (
 logger = logging.getLogger(__name__)
 
 CRON_JOB_NAME = "governance_self_harness_autopilot"
+WEAKNESS_MINER_TASK = "miho_self_harness_weakness_miner"
+PROPOSER_TASK = "miho_self_harness_proposer"
 DEFAULT_CRON_SCHEDULE = "0 4 * * *"  # daily 04:00 server time
 DEFAULT_EVENT_LIMIT = 200
 DEFAULT_TEST_TIMEOUT_SECONDS = 600
@@ -58,6 +61,8 @@ _UNSAFE_CANDIDATE_PATTERNS = (
 
 # Type alias: a receipt runner maps a pytest target to (exit_code, evidence_tail).
 ReceiptRunner = Callable[[str], "tuple[int, str]"]
+LlmCaller = Callable[..., Any]
+ContentExtractor = Callable[[Any], str]
 
 
 def run_self_harness_autopilot(
@@ -69,6 +74,8 @@ def run_self_harness_autopilot(
     base_dir: Any = None,
     receipt_runner: ReceiptRunner | None = None,
     smoke_runner: ReceiptRunner | None = None,
+    call_llm: LlmCaller | None = None,
+    extract_content: ContentExtractor | None = None,
     max_activations: int | None = 1,
 ) -> dict[str, Any]:
     """Run one full autonomous Self-Harness cycle and return a summary.
@@ -81,10 +88,18 @@ def run_self_harness_autopilot(
     runner = receipt_runner or _default_pytest_runner
     smoke = smoke_runner or runner
 
-    if events is None:
-        events = _fetch_recent_events(event_limit)
-    bundle = build_evidence_bundle(events, min_recurrence=min_recurrence)
-    candidates = build_shadow_candidates(bundle)
+    event_items = list(_fetch_recent_events(event_limit) if events is None else events)
+    bundle = _mine_evidence_bundle(
+        event_items,
+        min_recurrence=min_recurrence,
+        call_llm=call_llm,
+        extract_content=extract_content,
+    )
+    candidates = _propose_shadow_candidates(
+        bundle,
+        call_llm=call_llm,
+        extract_content=extract_content,
+    )
 
     activated: list[dict[str, Any]] = []
     held: list[dict[str, Any]] = []
@@ -129,6 +144,143 @@ def run_self_harness_autopilot(
         "skipped_unsafe": skipped_unsafe,
         "errors": errors,
     }
+
+
+def _mine_evidence_bundle(
+    events: list[dict[str, Any]],
+    *,
+    min_recurrence: int,
+    call_llm: LlmCaller | None,
+    extract_content: ContentExtractor | None,
+) -> dict[str, Any]:
+    deterministic = build_evidence_bundle(events, min_recurrence=min_recurrence)
+    refined = _call_self_harness_json(
+        WEAKNESS_MINER_TASK,
+        payload={
+            "events": events[-DEFAULT_EVENT_LIMIT:],
+            "deterministic_bundle": deterministic,
+            "contract": "Return a miho-self-harness/evidence-bundle/v1 JSON object only.",
+        },
+        call_llm=call_llm,
+        extract_content=extract_content,
+    )
+    if isinstance(refined, dict) and _valid_evidence_bundle(refined):
+        return refined
+    return deterministic
+
+
+def _propose_shadow_candidates(
+    bundle: dict[str, Any],
+    *,
+    call_llm: LlmCaller | None,
+    extract_content: ContentExtractor | None,
+) -> list[dict[str, Any]]:
+    deterministic = build_shadow_candidates(bundle)
+    refined = _call_self_harness_json(
+        PROPOSER_TASK,
+        payload={
+            "evidence_bundle": bundle,
+            "deterministic_candidates": deterministic,
+            "contract": (
+                "Return JSON with candidates: [miho-self-harness/shadow-candidate/v1]. "
+                "Every candidate must start auto_promote_allowed=false and include rollback."
+            ),
+        },
+        call_llm=call_llm,
+        extract_content=extract_content,
+    )
+    candidates = _candidate_list_from_payload(refined)
+    return candidates if candidates else deterministic
+
+
+def _call_self_harness_json(
+    task: str,
+    *,
+    payload: dict[str, Any],
+    call_llm: LlmCaller | None,
+    extract_content: ContentExtractor | None,
+) -> dict[str, Any] | list[Any] | None:
+    try:
+        if call_llm is None or extract_content is None:
+            from agent.auxiliary_client import call_llm as default_call_llm
+            from agent.auxiliary_client import extract_content_or_reasoning
+
+            call_llm = call_llm or default_call_llm
+            extract_content = extract_content or extract_content_or_reasoning
+        response = call_llm(
+            task=task,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "너는 미호 Self-Harness 에이전트다. 입력 JSON만 근거로 삼고, "
+                        "기존 런타임을 직접 바꾸지 않는 검증 가능한 JSON만 출력한다."
+                    ),
+                },
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            temperature=0.0,
+            max_tokens=1800,
+            timeout=60,
+        )
+        parsed = _parse_json_payload(str(extract_content(response) or ""))
+    except Exception as exc:
+        logger.info("self-harness LLM task %s unavailable: %s", task, exc)
+        return None
+    return parsed if isinstance(parsed, (dict, list)) else None
+
+
+def _parse_json_payload(text: str) -> Any:
+    body = str(text or "").strip()
+    if body.startswith("```"):
+        lines = body.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        body = "\n".join(lines).strip()
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError:
+        starts = [index for index in (body.find("{"), body.find("[")) if index >= 0]
+        if not starts:
+            raise
+        start = min(starts)
+        end = max(body.rfind("}"), body.rfind("]"))
+        if end <= start:
+            raise
+        return json.loads(body[start : end + 1])
+
+
+def _valid_evidence_bundle(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.get("schema_version") == "miho-self-harness/evidence-bundle/v1"
+        and isinstance(value.get("patterns"), list)
+    )
+
+
+def _candidate_list_from_payload(value: Any) -> list[dict[str, Any]]:
+    raw = value.get("candidates") if isinstance(value, dict) else value
+    if not isinstance(raw, list):
+        return []
+    candidates = [item for item in raw if isinstance(item, dict) and _valid_shadow_candidate(item)]
+    return candidates
+
+
+def _valid_shadow_candidate(candidate: dict[str, Any]) -> bool:
+    validation = candidate.get("validation")
+    source = candidate.get("source_pattern")
+    return (
+        candidate.get("schema_version") == "miho-self-harness/shadow-candidate/v1"
+        and candidate.get("status") == "shadow_candidate"
+        and candidate.get("auto_promote_allowed") is False
+        and bool(str(candidate.get("target_surface") or "").strip())
+        and bool(str(candidate.get("rollback") or "").strip())
+        and isinstance(validation, dict)
+        and isinstance(validation.get("required_tests"), list | tuple)
+        and isinstance(source, dict)
+    )
 
 
 def _process_candidate(
@@ -237,11 +389,10 @@ def register_self_harness_cron(
 ) -> dict[str, Any] | None:
     """Register (idempotently) the unattended Self-Harness autopilot cron job.
 
-    Uses a ``no_agent`` script job so the loop runs deterministically on schedule
-    without invoking an LLM. The runner is installed into ``~/.miho/scripts`` (the
-    only location cron's path guard trusts) and registered by basename, so the
-    cron scheduler actually executes it. Returns the created job, or None if it
-    already exists.
+    Uses a ``no_agent`` script job so cron starts the loop without a chat turn.
+    The loop itself still invokes its Self-Harness LLM miner/proposer agents.
+    The runner is installed into ``~/.miho/scripts`` (the only location cron's
+    path guard trusts) and registered by basename, so cron actually executes it.
     """
 
     from cron.jobs import create_job, list_jobs

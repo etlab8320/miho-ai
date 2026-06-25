@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Any, cast
 
 import plugins.governance_os.self_harness_loop as loop
 
@@ -113,6 +114,42 @@ def test_autopilot_skips_unsafe_candidate(monkeypatch) -> None:
 
     assert result["skipped_unsafe"]
     assert not result["activated"]
+
+
+def test_autopilot_uses_llm_miner_and_proposer(monkeypatch) -> None:
+    monkeypatch.setattr(loop, "activate_autonomous_candidate", lambda *a, **k: _Activation())
+    monkeypatch.setattr(loop, "rollback_on_regression", lambda *a, **k: None)
+    calls: list[str] = []
+
+    def fake_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        task = str(kwargs.get("task") or "")
+        calls.append(task)
+        messages = kwargs.get("messages")
+        assert isinstance(messages, list)
+        user_message = messages[1]
+        assert isinstance(user_message, dict)
+        typed_message = cast("dict[str, object]", user_message)
+        user_payload = json.loads(str(typed_message.get("content") or ""))
+        if task == loop.WEAKNESS_MINER_TASK:
+            payload = json.dumps(user_payload["deterministic_bundle"])
+        else:
+            payload = json.dumps({"candidates": user_payload["deterministic_candidates"]})
+        return {"content": f"```json\n{payload}\n```"}
+
+    def extract(response: object) -> str:
+        assert isinstance(response, dict)
+        typed_response = cast("dict[str, object]", response)
+        return str(typed_response.get("content") or "")
+
+    result = loop.run_self_harness_autopilot(
+        events=_events("final_qa answer mismatch"),
+        receipt_runner=_all_pass,
+        call_llm=fake_call_llm,
+        extract_content=extract,
+    )
+
+    assert calls == [loop.WEAKNESS_MINER_TASK, loop.PROPOSER_TASK]
+    assert len(result["activated"]) == 1
 
 
 def test_register_self_harness_cron_is_idempotent(monkeypatch) -> None:

@@ -174,6 +174,28 @@ def test_final_qa_repair_loop_verifies_repaired_answer_with_llm(monkeypatch) -> 
     assert calls == [final_qa.FINAL_QA_REPAIR_TASK, final_qa.FINAL_QA_TASK]
 
 
+def test_final_qa_repair_loop_rejects_internal_phrase_even_if_llm_passes(monkeypatch) -> None:
+    def fake_call(*args, **kwargs):
+        task = str(kwargs.get("task") or "")
+        if task == final_qa.FINAL_QA_REPAIR_TASK:
+            return _Resp(
+                "방금 답변은 확인 근거가 충분하지 않아 그대로 전달하지 않겠습니다. "
+                "필요한 확인을 다시 거쳐 이어서 답하겠습니다."
+            )
+        return _Resp("pass")
+
+    monkeypatch.setattr("agent.auxiliary_client.call_llm", fake_call)
+
+    repaired = final_qa.repair_answer_until_pass(
+        "미호 거버넌스 적대적 리뷰해줘",
+        "전용 도구를 다시 실행해 주세요.",
+        max_attempts=1,
+    )
+
+    assert "그대로 전달하지 않겠습니다" not in repaired
+    assert "전용 도구" not in repaired
+
+
 def test_final_qa_repair_loop_retries_when_final_qa_says_revise(monkeypatch) -> None:
     repair_count = 0
     verdict_count = 0

@@ -23,31 +23,26 @@ from .delivery_gate_constants import (
     SCORE_CLAIM_RE as _SCORE_CLAIM_RE,
     STUDENT_SCORE_CLAIM_RE as _STUDENT_SCORE_CLAIM_RE,
 )
+from .delivery_media import prepare_delivery_media
+from .delivery_safety import (
+    contains_hard_internal_leak as _contains_hard_internal_leak,
+    contains_internal_guard_leak as _shared_contains_internal_guard_leak,
+    normalized_blob as _shared_normalized_blob,
+)
 from .dispatcher import dispatch_request
 from .final_qa_runtime import repair_blocked_answer
 from .registry import GovernanceRegistry
 from .review import auxiliary_review_policy_for_playbook, evaluate_review_gate
+from .user_messages import SAFE_EVIDENCE_FALLBACK, SAFE_INTERNAL_REPAIR_FALLBACK
 from .versioning import load_runtime_registry
 
 
 FinalDeliveryAction = Literal["allow", "block"]
 
-_MEDIA_TAG_RE = re.compile(
-    r"MEDIA:\s*(?:`([^`\n]+)`|\"([^\"\n]+)\"|'([^'\n]+)'|((?:~/|/)[^\s`\"']+))"
-)
-
-# Invisible / bidi-control characters that could split a guard or score marker
-# (e.g. "후​검증") and slip past substring detection. Stripped before matching.
-_INVISIBLE_RE = re.compile(r"[​‌‍‎‏‪-‮⁠﻿]")
-
 
 def _normalized_blob(text: Any) -> str:
-    """Casefold + collapse whitespace + strip invisible/bidi chars for matching."""
+    return _shared_normalized_blob(text)
 
-    return " ".join(_INVISIBLE_RE.sub("", str(text or "")).casefold().split())
-
-
-_ATTACHMENT_UNAVAILABLE_NOTE = "(첨부 파일을 확인할 수 없어 링크를 제외했습니다)"
 
 # Admission-process-specific terms. A bare score ("95점") only force-routes to the
 # academy score playbook when one of these is present, so general tech/finance
@@ -93,10 +88,11 @@ def governance_transform_llm_output(
     user_text = str(context.get("user_message") or context.get("user_text") or "")
     original_text = str(response_text or "")
 
-    # Final Delivery Gate also owns attachment-path correction: stage real local
-    # artifacts into the safe media cache and rewrite the MEDIA tag in place.
-    attachment_fixed = _repair_attachment_paths(original_text)
-    effective_text = attachment_fixed if attachment_fixed is not None else original_text
+    # Final Delivery Gate owns the whole attachment contract. Tool media that the
+    # model omitted is appended before path repair so the gateway never receives
+    # an unchecked MEDIA directive after this hook.
+    media_prepared = prepare_delivery_media(original_text, context.get("conversation_history"))
+    effective_text = media_prepared if media_prepared is not None else original_text
 
     outcomes = context.get("governance_outcomes")
     if outcomes is None:
@@ -112,8 +108,7 @@ def governance_transform_llm_output(
         outcomes=outcomes,
     )
     if decision.action != "block":
-        # Return the attachment-corrected text when we changed it; otherwise leave unchanged.
-        return attachment_fixed
+        return media_prepared
     repaired = repair_blocked_answer(
         user_text=user_text,
         response_text=effective_text,
@@ -125,53 +120,6 @@ def governance_transform_llm_output(
     return decision.message_ko
 
 
-def _repair_attachment_paths(response_text: str) -> str | None:
-    """Stage real local artifacts referenced by MEDIA tags into the safe cache.
-
-    Returns the rewritten text if any attachment path was corrected, else None.
-    Only ``repaired`` outcomes (path actually moved) trigger a rewrite; already
-    deliverable paths and un-stageable ones are left untouched.
-    """
-
-    text = str(response_text or "")
-    if "MEDIA:" not in text:
-        return None
-    matches = list(_MEDIA_TAG_RE.finditer(text))
-    if not matches:
-        return None
-
-    from .final_delivery_repair import repair_artifact_delivery
-
-    replacements: list[tuple[str, str]] = []
-    for match in matches:
-        raw_path = next((group for group in match.groups() if group), "").strip()
-        if not raw_path:
-            continue
-        try:
-            repair = repair_artifact_delivery(raw_path)
-        except Exception:
-            # On a repair error we cannot trust the path: drop the broken tag
-            # rather than ship an undeliverable attachment to the user.
-            replacements.append((match.group(0), _ATTACHMENT_UNAVAILABLE_NOTE))
-            continue
-        if (
-            repair.status == "repaired"
-            and repair.artifact_path
-            and repair.artifact_path != raw_path
-        ):
-            replacements.append((match.group(0), f"MEDIA:`{repair.artifact_path}`"))
-        elif repair.status == "blocked":
-            # Path is missing / unsafe / un-stageable — never leak a dead MEDIA tag.
-            replacements.append((match.group(0), _ATTACHMENT_UNAVAILABLE_NOTE))
-
-    if not replacements:
-        return None
-    result = text
-    for old, new in replacements:
-        result = result.replace(old, new, 1)
-    return result
-
-
 def evaluate_final_delivery(
     registry: GovernanceRegistry,
     *,
@@ -179,18 +127,22 @@ def evaluate_final_delivery(
     user_text: str = "",
     outcomes: Any = None,
 ) -> FinalDeliveryDecision:
-    if _is_governance_review_context(registry, user_text=user_text, response_text=response_text):
-        return FinalDeliveryDecision(action="allow", reason="governance_review_context")
-
-    if _contains_internal_guard_leak(response_text):
+    review_context = _is_governance_review_context(
+        registry,
+        user_text=user_text,
+        response_text=response_text,
+    )
+    if _contains_hard_internal_leak(response_text) or (
+        _contains_internal_guard_leak(response_text)
+        and not _is_review_quote_context(review_context, response_text)
+    ):
         return FinalDeliveryDecision(
             action="block",
             reason="internal_guard_leak",
-            message_ko=(
-                "방금 답변에 내부 점검 안내가 섞여 그대로 전달하지 않겠습니다. "
-                "질문에 맞춰 다시 정리해 답하겠습니다."
-            ),
+            message_ko=SAFE_INTERNAL_REPAIR_FALLBACK,
         )
+    if review_context:
+        return FinalDeliveryDecision(action="allow", reason="governance_review_context")
 
     playbook_key = _playbook_key(registry, user_text=user_text, response_text=response_text)
     if not playbook_key:
@@ -222,10 +174,7 @@ def evaluate_final_delivery(
         action="block",
         reason="review_evidence_missing",
         playbook_key=playbook_key,
-        message_ko=(
-            "방금 답변은 확인 근거가 충분하지 않아 그대로 전달하지 않겠습니다. "
-            "필요한 확인을 다시 거쳐 이어서 답하겠습니다."
-        ),
+        message_ko=SAFE_EVIDENCE_FALLBACK,
         retry_tools=playbook.required_tools,
     )
 
@@ -331,17 +280,16 @@ def _contains_internal_guard_leak(response_text: str) -> bool:
     필요합니다") do not match because the markers are full instruction clauses.
     """
 
-    blob = _normalized_blob(response_text)
-    if not blob:
+    return _shared_contains_internal_guard_leak(response_text)
+
+
+def _is_review_quote_context(review_context: bool, response_text: str) -> bool:
+    if not review_context:
         return False
-    if any(marker.casefold() in blob for marker in _INTERNAL_GUARD_LEAK_MARKERS):
-        return True
-    if any(key.casefold() in blob for key in _GOVERNANCE_JSON_LEAK_KEYS):
-        return True
-    return any(
-        left.casefold() in blob and right.casefold() in blob
-        for left, right in _GOVERNANCE_JSON_LEAK_PAIRS
-    )
+    blob = _normalized_blob(response_text)
+    if not any(marker in blob for marker in ("차단 문구", "금지 문구", "인용", "quote")):
+        return False
+    return any(mark in str(response_text or "") for mark in ("'", '"', "`", "“", "”", "‘", "’"))
 
 
 def _is_safe_non_delivery_response(response_text: str) -> bool:
