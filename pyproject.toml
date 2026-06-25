@@ -73,6 +73,8 @@ anthropic = ["anthropic==0.86.0"]
 # On-device embeddings (fastembed / ONNX, no torch) — enables keyless semantic
 # routing and memory RAG. embed_text falls back to local-hash when absent.
 local-embeddings = ["fastembed==0.8.0"]
+# Sports motion analysis - opt-in because Sports2D pulls OpenCV/OpenSim/GUI deps.
+sports-motion = ["sports2d==0.8.32", "rtmlib==0.0.15"]
 # Web search backends — each only loaded when the user picks it as their
 # search provider (configured via `miho tools` or config.yaml).
 exa = ["exa-py==2.10.2"]

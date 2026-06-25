@@ -1,0 +1,20 @@
+name: sports_performance
+version: 0.1.0
+description: "Sports motion-analysis coaching and reviewer agents for PE entrance exam training."
+author: "ET Lab"
+kind: backend
+tools:
+  - sports_motion_schema
+  - sports_pe_brain_evidence
+  - sports_motion_feedback
+  - sports_video_analyze
+provides_tools:
+  - sports_motion_schema
+  - sports_pe_brain_evidence
+  - sports_motion_feedback
+  - sports_video_analyze
+provides_hooks:
+  - transform_tool_result
+provides_auxiliary_tasks:
+  - sports_performance_coach
+  - sports_performance_reviewer
