@@ -13,6 +13,11 @@ from .grade_engine import _score_from_grade_table
 from .utils import _first_number
 
 
+_PREV_YEAR_DB = "26susi"
+_SAFE_TERM_RE = _re.compile(r"[^\w가-힣%·()\s.-]")
+_PREV_PRACTICAL_MAX_CACHE: dict[str, float | None] = {}
+
+
 def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: float, record_only: bool = False) -> dict[str, Any] | None:
     """추측 금지 원칙의 코드판: (내신환산 + 실기만점)이 전년도 최종합 총점에
     닿는지 판정해 숫자와 함께 돌려준다. 설명문 룰은 도구를 안 부르는 턴에는
@@ -56,11 +61,22 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
         cut = cut if isinstance(cut, dict) else {}
         total_raw = _first_number(cut.get("total_score"))
         record_raw = _first_number(cut.get("record_score"))
+        practical_raw = _first_number(cut.get("practical_score"))
         grade = _first_number(cut.get("grade"))
         rec_olscale = None
         if grade is not None and grade_points:
             rec_olscale = _score_from_grade_table(grade, grade_points)
         if total_raw is not None:
+            practical_scale_mismatch = (
+                practical_raw is not None
+                and practical_max is not None
+                and practical_max > 0
+                and practical_raw > practical_max + 0.01
+            )
+            if practical_scale_mismatch:
+                practical_rescaled = _rescaled_practical_score(university_id, practical_raw, practical_max)
+                if practical_rescaled is not None and rec_olscale is not None:
+                    return round(rec_olscale + practical_rescaled, 2), rec_olscale, None
             # 비율(만점 스케일) 판정: 작년 총점이 올해 총점 만점과 같은 스케일이면(비율 유사)
             # 재환산하지 않고 작년 총점을 그대로 쓴다 (사장님 룰 2026-06-16: 무조건 재환산 금지).
             # 명백히 다를 때만(안양대 작년 100점 vs 올해 1000점) grade 기반 재환산.
@@ -94,7 +110,12 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
     meta = _json_loads(row["admission_meta_json"], {}) or {}
     stage1_meta = meta.get("stage1") if isinstance(meta.get("stage1"), dict) else {}
     stage1_multiple = _first_number((stage1_meta or {}).get("multiple"))
-    info["stage1_uses_record"] = bool(stage1_multiple and stage1_multiple > 0) and (prev_first_rec is not None)
+    stage1_record_weight = _first_number((stage1_meta or {}).get("student_record"))
+    info["stage1_uses_record"] = (
+        bool(stage1_multiple and stage1_multiple > 0)
+        and bool(stage1_record_weight and stage1_record_weight > 0)
+        and (prev_first_rec is not None)
+    )
     if info["stage1_uses_record"]:
         info["stage1_record_reachable"] = record_score >= prev_first_rec
     if not reachable:
@@ -105,15 +126,45 @@ def _vs_prev_year(conn: sqlite3.Connection, university_id: str, record_score: fl
     return info
 
 
+def _rescaled_practical_score(
+    university_id: str,
+    practical_score: float | None,
+    current_practical_max: float | None,
+) -> float | None:
+    if practical_score is None or current_practical_max is None or current_practical_max <= 0:
+        return None
+    prev_max = _previous_practical_max(university_id)
+    if prev_max is None or prev_max <= 0:
+        return None
+    if abs(prev_max - current_practical_max) < 0.01:
+        return practical_score
+    return practical_score / prev_max * current_practical_max
+
+
+def _previous_practical_max(university_id: str) -> float | None:
+    key = str(university_id or "").strip()
+    if not key or not key.isdigit():
+        return None
+    if key in _PREV_PRACTICAL_MAX_CACHE:
+        return _PREV_PRACTICAL_MAX_CACHE[key]
+    try:
+        rows = _vultr_mysql(
+            f"SELECT 실기만점 FROM `{_PREV_YEAR_DB}`.`대학정보` WHERE 대학ID = '{key}' LIMIT 1",
+            timeout=8,
+        )
+    except Exception:
+        _PREV_PRACTICAL_MAX_CACHE[key] = None
+        return None
+    value = _first_number(rows[0][0]) if rows and rows[0] else None
+    _PREV_PRACTICAL_MAX_CACHE[key] = value
+    return value
+
+
 # ---------------------------------------------------------------------------
 # 전년도(26susi) 원본 조회 — Vultr DB read-only
 # ---------------------------------------------------------------------------
 # 추천 크로스체크용: 작년 전형 구조(내신:실기 비중, 실기만점, 정원, 실기 종목)를
 # 원본에서 직접 확인한다. 사장님 승인(2026-06-12) — ssh vultr 경유 read-only SELECT.
-
-
-_PREV_YEAR_DB = "26susi"
-_SAFE_TERM_RE = _re.compile(r"[^\w가-힣%·()\s.-]")
 
 
 def _safe_like_term(value: str | None) -> str | None:

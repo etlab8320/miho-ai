@@ -76,6 +76,7 @@ def _base_content(stage: str = "grade3") -> dict:
             ],
             "interview_rows": [{"question": "탐구 과정 설명", "point": school_body}],
             "final_judgment": {"body": school_body},
+            "gap_plan": _gap_plan(),
             "checklist": {
                 "title": "지원 전 체크리스트",
                 "bullets": ["세특 입력 완료", "면접 준비"],
@@ -86,8 +87,38 @@ def _base_content(stage: str = "grade3") -> dict:
     }
 
 
+def _gap_plan() -> dict:
+    return {
+        "title": "남은 학기 과세특·활동 프로젝트 설계",
+        "subjects": [
+            _gap_subject("체육", "기존 세특의 체력측정 기록", "스포츠과학과 최신 연구 흐름"),
+            _gap_subject("과학", "생기부 탐구 활동의 회복 관심", "교수 논문 기반 운동회복 주제"),
+            _gap_subject("수학", "활동 기록의 기록 정리 경험", "학과 교육과정의 데이터 분석"),
+        ],
+    }
+
+
+def _gap_subject(field: str, current: str, direction: str) -> dict:
+    return {
+        "field": field,
+        "current_record": f"{current}을 출발점으로 삼아 학생 생기부와 연결한다.",
+        "school_direction": f"{direction}에 맞춰 새 프로젝트를 설계한다.",
+        "steps": [
+            "기존 기록을 기준으로 측정 항목을 정하고 주차별 데이터를 기록한다.",
+            "수집한 데이터를 그래프로 정리하고 변화 원인을 비교 분석한다.",
+            "분석 결과를 보고서와 발표로 정리해 학습 성찰까지 남긴다.",
+        ],
+        "eval_axis": "진로역량",
+        "expected_effect": "기록과 연구 흐름을 함께 보여 전공적합성과 탐구 지속성을 설명할 근거가 된다.",
+    }
+
+
 def _base_evidence() -> list[str]:
-    return ["life_record_lookup", "qualitative_profile"]
+    return ["life_record_lookup", "qualitative_profile", "hakjong_storm_prewrite"]
+
+
+def _strip_gap_plan(content: dict) -> None:
+    content["strategy_section"].pop("gap_plan", None)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +223,7 @@ def test_short_total_text_fails() -> None:
         a["body"] = short
     content["strategy_section"]["interview_rows"] = [{"question": short, "point": short}]
     content["strategy_section"]["final_judgment"]["body"] = short
+    _strip_gap_plan(content)
     content["strategy_section"]["checklist"]["bullets"] = [short]
     content["strategy_section"]["footnote"] = short
     ok, errors = validate_content(content, student_stage="grade3", evidence_tools=_base_evidence())
@@ -205,6 +237,17 @@ def test_banned_wording_fails() -> None:
     ok, errors = validate_content(content, student_stage="grade3", evidence_tools=_base_evidence())
     assert ok is False
     assert any("프리미엄" in e for e in errors)
+
+
+def test_strategy_action_rejects_csat_minimum_mixed_into_setuk_plan() -> None:
+    content = _base_content()
+    content["strategy_section"]["actions"][1]["title"] = "과학 연결"
+    content["strategy_section"]["actions"][1]["body"] = (
+        "에너지대사와 근피로를 본인의 운동 경험과 수능최저 3개 합 9 방어로 연결한다."
+    )
+    ok, errors = validate_content(content, student_stage="grade3", evidence_tools=_base_evidence())
+    assert ok is False
+    assert any("수능최저" in e and "보완 전략" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------
@@ -227,14 +270,14 @@ def test_grade1_content_passes_with_consultation_evidence() -> None:
     content["strategy_section"]["final_judgment"]["body"] = grade1_body
     content["track_section"]["rows"][0]["judgment"] = grade1_body
     ok, errors = validate_content(
-        content, student_stage="grade1", evidence_tools=["consultation_note", "qualitative_profile"]
+        content, student_stage="grade1", evidence_tools=["consultation_note", "qualitative_profile", "hakjong_storm_prewrite"]
     )
     assert ok is True, errors
 
 
 def test_grade3_missing_life_record_fails() -> None:
     ok, errors = validate_content(
-        _base_content(), student_stage="grade3", evidence_tools=["qualitative_profile"]
+        _base_content(), student_stage="grade3", evidence_tools=["qualitative_profile", "hakjong_storm_prewrite"]
     )
     assert ok is False
     assert any("life_record" in e for e in errors)
@@ -242,7 +285,40 @@ def test_grade3_missing_life_record_fails() -> None:
 
 def test_missing_hakjong_evidence_fails() -> None:
     ok, errors = validate_content(
-        _base_content(), student_stage="grade3", evidence_tools=["life_record_lookup"]
+        _base_content(), student_stage="grade3", evidence_tools=["life_record_lookup", "hakjong_storm_prewrite"]
     )
     assert ok is False
     assert any("학종" in e or "프로파일" in e for e in errors)
+
+
+def test_missing_storm_prewrite_fails() -> None:
+    ok, errors = validate_content(
+        _base_content(), student_stage="grade3", evidence_tools=["life_record_lookup", "qualitative_profile"]
+    )
+    assert ok is False
+    assert any("STORM" in e for e in errors)
+
+
+def test_enrolled_gap_plan_requires_three_projects() -> None:
+    content = _base_content()
+    content["strategy_section"]["gap_plan"]["subjects"] = content["strategy_section"]["gap_plan"]["subjects"][:2]
+    ok, errors = validate_content(content, student_stage="grade3", evidence_tools=_base_evidence())
+    assert ok is False
+    assert any("3개 이상" in e for e in errors)
+
+
+def test_interview_rows_required_only_when_official_interview_exists() -> None:
+    content = _base_content()
+    content["track_section"]["info_cards"][0]["value"] = "1단계 서류 100%, 2단계 면접 30%"
+    content["strategy_section"]["interview_rows"] = []
+    ok, errors = validate_content(content, student_stage="grade3", evidence_tools=_base_evidence())
+    assert ok is False
+    assert any("면접 반영 전형" in e for e in errors)
+
+
+def test_no_interview_track_allows_empty_interview_rows() -> None:
+    content = _base_content()
+    content["track_section"]["info_cards"][0]["value"] = "서류 100%, 면접 없음"
+    content["strategy_section"]["interview_rows"] = []
+    ok, errors = validate_content(content, student_stage="grade3", evidence_tools=_base_evidence())
+    assert ok is True, errors

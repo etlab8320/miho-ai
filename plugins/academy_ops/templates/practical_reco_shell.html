@@ -76,14 +76,28 @@
       font-size: 9.8px; color: var(--max-muted);
     }
     /* ── 표지 ── */
-    .identityCard {
-      border: 1px solid #dbeafe; border-radius: 18px; padding: 8mm;
-      background: linear-gradient(135deg, #f6faff 0%, #ffffff 60%, #f8fafc 100%);
-      display: flex; flex-direction: column; gap: 3mm; position: relative;
+    .coverSheet {
+      border: 1px solid #dbeafe; border-radius: 12px; padding: 7mm;
+      background: linear-gradient(135deg, #f6faff 0%, #ffffff 58%, #f8fafc 100%);
+      display: grid; grid-template-columns: minmax(0, 1fr) 50mm; gap: 7mm; min-height: 96mm;
     }
-    .identityCard .label { font-size: 10.5px; color: var(--max-muted); font-weight: 700; }
-    .identityCard .name { font-size: 27px; font-weight: 900; letter-spacing: -0.01em; }
-    .identityCard .target { font-size: 13.5px; font-weight: 800; }
+    .coverLead { display: flex; flex-direction: column; gap: 3.8mm; }
+    .coverLabel { font-size: 10.5px; color: var(--max-muted); font-weight: 800; }
+    .coverName { font-size: 29px; font-weight: 900; line-height: 1.18; }
+    .coverTarget { font-size: 13.5px; font-weight: 800; color: var(--max-ink); }
+    .coverStats {
+      border: 1px solid #d8e2ee; border-radius: 10px; padding: 4mm;
+      background: #ffffff; display: flex; flex-direction: column;
+    }
+    .coverStats .title { font-size: 10px; color: var(--max-muted); font-weight: 900; margin-bottom: 1.5mm; }
+    .coverStat { padding: 3mm 0; border-bottom: 1px solid #edf2f7; }
+    .coverStat:last-child { border-bottom: 0; padding-bottom: 0; }
+    .coverStat .t { font-size: 9.7px; color: var(--max-muted); font-weight: 800; margin-bottom: 1mm; }
+    .coverStat .v { font-size: 16px; color: var(--max-ink); font-weight: 900; }
+    .coverNotes { margin-top: auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+    .coverNote { border-top: 1px solid #d8e2ee; padding-top: 3mm; }
+    .coverNote b { display: block; font-size: 10px; color: var(--max-muted); margin-bottom: 1.2mm; }
+    .coverNote span { display: block; font-size: 11.5px; color: var(--max-ink); font-weight: 900; line-height: 1.35; }
     .pillrow { display: flex; flex-wrap: wrap; gap: 2.2mm; }
     .pill {
       display: inline-flex; align-items: center; border: 1px solid #bfdbfe;
@@ -91,15 +105,19 @@
       color: var(--max-accent); background: var(--max-accent-soft);
     }
     .keyJudgment {
-      border-left: 4px solid #2563eb; background: var(--max-accent-soft);
-      border-radius: 0 14px 14px 0; padding: 5mm 6mm;
-      display: flex; flex-direction: column; gap: 2mm;
+      border: 1px solid #bfdbfe; background: var(--max-accent-soft);
+      border-radius: 10px; padding: 5mm 6mm; display: grid;
+      grid-template-columns: 28mm minmax(0, 1fr); gap: 5mm; align-items: start;
     }
-    .keyJudgment .headline { font-size: 13.5px; font-weight: 900; color: #1e3a8a; }
-    .metricsRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
-    .metricCard { border: 1px solid var(--max-line); border-radius: 14px; padding: 4.5mm 5mm; background: #fff; }
-    .metricCard .t { font-size: 10px; color: var(--max-muted); font-weight: 700; margin-bottom: 1.2mm; }
-    .metricCard .v { font-size: 17px; font-weight: 900; letter-spacing: -0.01em; }
+    .keyJudgment .label { font-size: 10px; color: var(--max-accent); font-weight: 900; }
+    .keyJudgment .headline { font-size: 14px; font-weight: 900; color: #1e3a8a; margin-bottom: 1.5mm; }
+    .coverMap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+    .coverMap div {
+      border: 1px solid var(--max-line); border-radius: 10px; padding: 4mm;
+      background: #ffffff; min-height: 21mm;
+    }
+    .coverMap b { display: block; font-size: 10px; color: var(--max-accent); margin-bottom: 1.5mm; }
+    .coverMap span { display: block; font-size: 11.2px; font-weight: 900; color: var(--max-ink); }
     /* ── 비교표 ── */
     .table {
       width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10.4px;
@@ -113,6 +131,16 @@
     .table th { background: #f8fafc; font-weight: 800; white-space: nowrap; }
     .table td.head { font-weight: 800; }
     .table td.num { font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
+    .table td.events { font-size: 9.3px; color: var(--max-muted); }
+    .csatNote { display: block; margin-top: 1mm; font-size: 8.4px; color: #475569; font-weight: 800; }
+    .compactReport .page { gap: 4.5mm; padding: 13mm 14mm 11mm; }
+    .compactReport h2 { font-size: 18px; }
+    .compactReport .table { font-size: 8.7px; }
+    .compactReport .table th { font-size: 8.3px; }
+    .compactReport .table th,
+    .compactReport .table td { padding: 1.45mm 1.65mm; }
+    .compactReport .table td.events { font-size: 8.1px; }
+    .compactReport .csatNote { font-size: 7.6px; }
     .verdict {
       display: inline-flex; align-items: center; border-radius: 999px;
       padding: 1.2mm 3mm; font-size: 9.6px; font-weight: 900; white-space: nowrap;
@@ -173,7 +201,7 @@
     <div class="footer"><span>{{ left_text }}</span><span>{{ right_text }}</span></div>
 {%- endmacro %}
 {%- macro verdict_pill(v) %}<span class="verdict {{ 'up' if v == '상향' else 'fit' }}">{{ v }}</span>{%- endmacro %}
-<body class="maxReport">
+<body class="maxReport {{ 'compactReport' if data.report_mode == 'all_candidates' else '' }}">
 
   {#- ───────── 표지 ───────── #}
   <section class="page">
@@ -184,44 +212,107 @@
       <h1>{% for line in data.title_lines %}{{ line }}{% if not loop.last %}<br/>{% endif %}{% endfor %}</h1>
     </div>
 
-    <div class="identityCard">
-      <div class="label">{{ data.student.name }} 학생을 위한 수시 실기전형 추천 리포트</div>
-      <div class="name">{{ data.student.name }} 학생</div>
-      <div class="target">{{ data.student.basis_label }}{% if data.student.avg_grade %} · 평균등급 {{ data.student.avg_grade }}{% endif %}</div>
-      <div class="pillrow">
-        {% for pill in data.cover.pills %}<span class="pill">{{ pill }}</span>{% endfor %}
+    <div class="coverSheet">
+      <div class="coverLead">
+        <div class="coverLabel">{{ data.student.name }} 학생을 위한 수시 실기전형 추천 리포트</div>
+        <div class="coverName">{{ data.student.name }} 학생</div>
+        <div class="coverTarget">{{ data.student.basis_label }}{% if data.student.avg_grade %} · 평균등급 {{ data.student.avg_grade }}{% endif %}</div>
+        <div class="pillrow">
+          {% for pill in data.cover.pills %}<span class="pill">{{ pill }}</span>{% endfor %}
+        </div>
+        <div class="coverNotes">
+          <div class="coverNote"><b>산출</b><span>생기부 환산점수</span></div>
+          <div class="coverNote"><b>비교</b><span>최초합·최종합</span></div>
+          <div class="coverNote"><b>검토</b><span>실기종목·수능최저</span></div>
+        </div>
+      </div>
+      <div class="coverStats">
+        <div class="title">계산 기준</div>
+        {% for m in data.cover.metrics %}
+        <div class="coverStat"><div class="t">{{ m.label }}</div><div class="v">{{ m.value }}</div></div>
+        {% endfor %}
       </div>
     </div>
 
     <div class="keyJudgment">
-      <div class="headline">핵심 판단: {{ data.cover.key_judgment.headline }}</div>
-      <p>{{ data.cover.key_judgment.body }}</p>
+      <div class="label">핵심 판단</div>
+      <div>
+        <div class="headline">{{ data.cover.key_judgment.headline }}</div>
+        <p>{{ data.cover.key_judgment.body }}</p>
+      </div>
     </div>
 
-    <div class="metricsRow">
-      {% for m in data.cover.metrics %}
-      <div class="metricCard"><div class="t">{{ m.label }}</div><div class="v">{{ m.value }}</div></div>
-      {% endfor %}
+    <div class="coverMap">
+      <div><b>01</b><span>내신환산</span></div>
+      <div><b>02</b><span>전년도 컷</span></div>
+      <div><b>03</b><span>실기종목</span></div>
+      <div><b>04</b><span>지역별 판단</span></div>
     </div>
 
     {{ footer(brand_text, "학생·학부모 확인용 · " ~ report_date) }}
   </section>
 
   {#- ───────── 01 · 한눈 비교 ───────── #}
+  {% set comparison_rows = data.comparison.rows %}
+  {% set comparison_batch_size = data.comparison.batch_size | default(8) %}
+  {% set show_events = data.comparison.show_events | default(false) %}
+  {% set show_minimum_csat = data.comparison.show_minimum_csat | default(false) %}
+  {% if data.report_mode == 'all_candidates' and data.comparison.groups %}
+  {% for group in data.comparison.groups %}
+  {% set group_batches = group.rows | batch(comparison_batch_size) | list %}
+  {% for comparison_batch in group_batches %}
   <section class="page">
-    {{ topbar("01 · 추천 학교 한눈 비교") }}
-    <h2>{{ data.student.name }} 학생 추천 {{ data.comparison.rows | length }}개교 — 환산점수와 전년도 결과</h2>
+    {{ topbar("01 · 지역별 후보 비교 · " ~ group.region ~ (" · " ~ loop.index ~ "/" ~ (group_batches | length) if group.rows | length > comparison_batch_size else "")) }}
+    <h2>{{ group.region }} {{ group.count }}개 전형 — 적정 {{ group.fit_count }} · 상향 {{ group.up_count }}</h2>
 
     <table class="table">
       <tr>
         <th>대학 · 학과</th><th>전형</th>
+        {% if show_events %}<th>실기종목</th>{% endif %}
         <th>내신환산</th><th>실기만점 합산</th>
         <th>전년도 최초합</th><th>전년도 최종합</th><th>판정</th>
       </tr>
-      {% for r in data.comparison.rows %}
+      {% for r in comparison_batch %}
       <tr>
         <td class="head">{{ r.school }} {{ r.department }}</td>
         <td>{{ r.track }}</td>
+        {% if show_events %}<td class="events">{{ r.events | default("-") }}{% if show_minimum_csat and r.minimum_csat and r.minimum_csat != "-" %}<span class="csatNote">* 수능최저: {{ r.minimum_csat }}</span>{% endif %}</td>{% endif %}
+        <td class="num">{{ r.converted }}</td>
+        <td class="num">{{ r.max_total }}</td>
+        <td class="num">{{ r.first_cut }}</td>
+        <td class="num">{{ r.final_cut }}</td>
+        <td>{{ verdict_pill(r.verdict) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <div class="legend">
+      <b>지역별 전체 후보</b> · 같은 지역 안에서 필요한 실기율, 전년도 최종합, 실기종목을 함께 비교한다.
+      {% if data.comparison.note %}<br/>{{ data.comparison.note }}{% endif %}
+    </div>
+
+    {{ footer(data.footnote, group.region ~ " · " ~ loop.index) }}
+  </section>
+  {% endfor %}
+  {% endfor %}
+  {% else %}
+  {% for comparison_batch in comparison_rows | batch(comparison_batch_size) %}
+  <section class="page">
+    {{ topbar("01 · 추천 학교 한눈 비교" ~ (" · " ~ loop.index ~ "/" ~ (comparison_rows | batch(comparison_batch_size) | list | length) if comparison_rows | length > comparison_batch_size else "")) }}
+    <h2>{{ data.student.name }} 학생 추천 {{ comparison_rows | length }}개 전형 — 환산점수와 전년도 결과</h2>
+
+    <table class="table">
+      <tr>
+        <th>대학 · 학과</th><th>전형</th>
+        {% if show_events %}<th>실기종목</th>{% endif %}
+        <th>내신환산</th><th>실기만점 합산</th>
+        <th>전년도 최초합</th><th>전년도 최종합</th><th>판정</th>
+      </tr>
+      {% for r in comparison_batch %}
+      <tr>
+        <td class="head">{{ r.school }} {{ r.department }}</td>
+        <td>{{ r.track }}</td>
+        {% if show_events %}<td class="events">{{ r.events | default("-") }}{% if show_minimum_csat and r.minimum_csat and r.minimum_csat != "-" %}<span class="csatNote">* 수능최저: {{ r.minimum_csat }}</span>{% endif %}</td>{% endif %}
         <td class="num">{{ r.converted }}</td>
         <td class="num">{{ r.max_total }}</td>
         <td class="num">{{ r.first_cut }}</td>
@@ -237,8 +328,10 @@
       {% if data.comparison.note %}<br/>{{ data.comparison.note }}{% endif %}
     </div>
 
-    {{ footer(data.footnote, "1") }}
+    {{ footer(data.footnote, loop.index) }}
   </section>
+  {% endfor %}
+  {% endif %}
 
   {#- ───────── 02 · 최종 정리 ───────── #}
   <section class="page">

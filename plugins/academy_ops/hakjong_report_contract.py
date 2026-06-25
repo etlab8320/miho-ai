@@ -173,7 +173,7 @@ def truncation_errors(content: Any, pdf_text: str, errors: list) -> None:
         # 표 셀이 좁아 여러 줄로 렌더되면 pdftotext가 옆 열 텍스트를 줄 단위로 끼워 넣어
         # 연속 매칭이 깨진다(2026-06-13 false positive: "…수렴," 다음 줄에 다른 열이 삽입).
         # 구두점·공백으로 쪼갠 조각(4자+)이 모두 PDF에 있으면 인쇄된 것으로 본다.
-        frags = [f for f in re.split(r"[\s,.;:/()\[\]··]+", text) if len("".join(f.split())) >= 4]
+        frags = [f for f in re.split(r"[\s,.;:/&()\[\]··]+", text) if len("".join(f.split())) >= 4]
         return bool(frags) and all("".join(f.split()) in haystack for f in frags)
 
     def walk(obj: Any) -> None:

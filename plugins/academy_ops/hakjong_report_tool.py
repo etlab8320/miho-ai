@@ -26,7 +26,9 @@ from . import hakjong_report_contract as _contract
 from .pdf_autocorrect import autocorrect as _autocorrect
 from .hakjong_report_contract import BRAND_TEXT
 from .hakjong_live_research import apply_live_research_enrichment as _apply_live_research_enrichment
-from .hakjong_report_schema import validate_content
+from .hakjong_manifest import build_hakjong_manifest, collect_pdf_checks
+from .hakjong_grounding import apply_gap_plan_grounding, validate_gap_plan_grounding
+from .hakjong_report_schema import validate_content_with_checks
 from .hakjong_stage_contract import normalize_student_stage
 from .report_fonts import report_font_css
 from .student_card_capture import find_browser_executable
@@ -97,15 +99,48 @@ def _chromium_print_to_pdf(html_path: Path, pdf_path: Path) -> None:
         raise RuntimeError(
             "PDF 생성에 필요한 브라우저를 찾지 못했다. Chrome 또는 Edge 설치가 필요하다."
         )
-    import sys
+    import shutil
+    import subprocess
 
+    playwright = shutil.which("playwright") or "/opt/homebrew/bin/playwright"
+    if Path(playwright).exists():
+        command = [
+            playwright,
+            "pdf",
+            "--paper-format",
+            "A4",
+            "--timeout",
+            "60000",
+            html_path.as_uri(),
+            str(pdf_path),
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(f"PDF 생성이 시간 안에 끝나지 않았다: {exc}") from exc
+        if result.returncode != 0 or not pdf_path.exists():
+            detail = (result.stderr or result.stdout or "").strip()
+            suffix = f" ({detail[:200]})" if detail else ""
+            raise RuntimeError(f"Chromium PDF 생성 실패.{suffix}")
+        return
+
+    import sys
+    import tempfile
+
+    # Use an isolated Chrome profile for one-shot PDF rendering. On macOS, a
+    # running/headless Chrome profile can hold the default profile lock and make
+    # --print-to-pdf hang until our 60s timeout even for tiny HTML files.
+    user_data_dir = tempfile.mkdtemp(prefix="miho-hakjong-chrome-")
     command = [
         browser,
         "--headless=new",
         "--disable-gpu",
         "--disable-dev-shm-usage",
+        "--disable-extensions",
+        "--disable-background-networking",
         "--no-first-run",
         "--no-default-browser-check",
+        f"--user-data-dir={user_data_dir}",
         f"--print-to-pdf={pdf_path}",
         "--print-to-pdf-no-header",
         html_path.as_uri(),
@@ -409,13 +444,12 @@ def _grounding_errors(
         if grade is not None and grade <= 3:
             gap = (content.get("strategy_section") or {}).get("gap_plan")
             gap_subjects = (gap or {}).get("subjects") if isinstance(gap, dict) else None
-            # 분야 개수는 강제하지 않는다 — 미호가 전공에 닿는 만큼 자율 판단(사장님 2026-06-13).
-            # 각 분야는 ①학생 실제 기록(출발점) ②학과 방향 ③탐구 단계(2개+)를 갖춘 1페이지 설계.
+            # 각 분야는 ①학생 실제 기록(출발점) ②학과/연구 방향 ③탐구 단계(3개+)를 갖춘 1페이지 설계.
             ok_gap = (
                 isinstance(gap, dict)
                 and _nonempty(gap.get("title"))
                 and isinstance(gap_subjects, list)
-                and len(gap_subjects) >= 1
+                and len(gap_subjects) >= 3
                 and all(
                     isinstance(r, dict)
                     and _nonempty(r.get("field"))
@@ -441,10 +475,12 @@ def _grounding_errors(
                     f"이 학생은 {grade}학년 세특이 일부 입력돼 있다 — 남은 학기에 기존 세특을 학교 평가 방향으로 "
                     "보강·재서술하고 추가 탐구를 얹는 '세특 설계'가 리포트의 핵심이다."
                     if has_current else
-                    f"이 학생은 {grade}학년 세특이 아직 입력되지 않았다 — 공백을 채울 설계가 리포트의 핵심이다."
+                    f"이 학생은 {grade}학년 세특이 아직 입력되지 않았지만, 공백 자체는 반려 사유가 아니다 — "
+                    "남은 3학년 1학기에 채울 구체 프로젝트와 과세특 설계가 리포트의 핵심이다."
                 )
                 errors.append(
                     f"{_gap_lead} "
+                    "반려 사유는 세특 공백이 아니라 gap_plan의 개수·깊이·근거가 부족한 것이다. "
                     "이건 일반 조언이 아니라 이 학생만의 맞춤 상담 — 학생마다 답이 같으면 의미가 없다. "
                     "strategy_section.gap_plan.subjects는 분야별 1페이지 상세 세특 설계다. 분야는 이 학생의 "
                     "세특에 그 과목의 전공 관련 탐구·활동이 실제로 있는 과목만 잡아라 — 수업 성실·어휘 노력·감상문 "
@@ -452,7 +488,8 @@ def _grounding_errors(
                     "분야로 만들지 마라. 분야가 적어도 세특 근거가 분명한 게 낫다. 단 학년에 따라 창체를 다르게 다룬다: "
                     "고1·2 학생은 창체(동아리·자율·진로) 활동도 어느 정도 독립 분야로 제시하라 — 아직 신규 설계가 가능한 시기다 / "
                     "고3·N수는 창체를 교과 세특에 녹이거나 기존활동 활용 전략으로 다뤄도 된다(굳이 독립 분야로 안 만들어도 됨). "
-                    "개수는 강제하지 않는다 — 전공에 진짜 닿는 만큼만. "
+                    "과세특·활동 프로젝트는 최소 3개 이상 제시하라 — 기존 생기부 연계 프로젝트와 "
+                    "학과/교수논문/최신뉴스 기반 신규 프로젝트를 섞어야 한다. "
                     "이건 유료 프리미엄 컨설팅 문서다 — 한 과목 디벨롭이 100자대로 휑하면 반려된다. 한 분야 본문은 "
                     "500자 이상의 깊이로 채워라. 각 분야는 다음을 갖춘다: "
                     "field(분야명) · current_record(이 학생이 지금까지 해온 활동을 실제 기록에서 구체 인용, 40자+) · "
@@ -605,11 +642,20 @@ def _grounding_errors(
         try:
             from .hakjong_qualitative_tool import lookup_profiles
 
+            dept_name = str(university.get("department") or "").strip() or None
+            track_name = str(university.get("track") or "").strip() or None
             prof_rows = lookup_profiles(
                 university=uni_name,
-                admission_track=str(university.get("track") or "").strip() or None,
+                department=dept_name,
+                admission_track=track_name,
                 limit=1,
             ).get("profiles") or []
+            if not prof_rows and track_name:
+                prof_rows = lookup_profiles(
+                    university=uni_name,
+                    admission_track=track_name,
+                    limit=1,
+                ).get("profiles") or []
         except Exception:
             prof_rows = []
         if prof_rows:
@@ -655,6 +701,7 @@ def _grounding_errors(
                         "(hakjong_qualitative_profile)이 있는데 본문이 그 평가 기준에 발 딛고 있지 않다 — "
                         f"이 대학이 생기부에서 찾는 키워드를 2개 이상 진단·전략에 녹여라. 키워드: {sample}"
                     )
+            errors.extend(validate_gap_plan_grounding(content, prof, student_stage=student_stage))
     return errors
 
 
@@ -776,22 +823,21 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
     except Exception:
         matched_profile = None
     live_research_applied = _apply_live_research_enrichment(content, matched_profile)
+    live_research_applied = apply_gap_plan_grounding(content, matched_profile) or live_research_applied
 
     # T3 step 1: schema + quality validation
-    ok, schema_errors = validate_content(
+    ok, schema_errors, schema_checks = validate_content_with_checks(
         content,
         student_stage=student_stage,
         evidence_tools=evidence_tools,
     )
     if not ok:
         return json.dumps(
-            {
-                "ok": False,
-                "message": "학종 리포트 내용 검증 실패. 아래 항목을 수정한 뒤 다시 호출하라.",
-                "errors": schema_errors,
-                "warnings": [],
-                "checks": {},
-            },
+            _repairable_rejection(
+                "학종 리포트 내용 검증 실패. 아래 항목을 수정한 뒤 같은 턴에서 이 도구를 다시 호출하라.",
+                schema_errors,
+                schema_checks,
+            ),
             ensure_ascii=False,
         )
 
@@ -808,14 +854,12 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
         )
     if grounding:
         return json.dumps(
-            {
-                "ok": False,
-                "message": "학종 리포트 내용이 데이터에 발 딛고 있지 않다. 아래를 보강해 다시 호출하라. "
+            _repairable_rejection(
+                "학종 리포트 내용이 데이터에 발 딛고 있지 않다. 아래를 보강해 같은 턴에서 이 도구를 다시 호출하라. "
                 "terminal/execute_code로 PDF를 직접 만드는 것은 금지다.",
-                "errors": grounding,
-                "warnings": [],
-                "checks": {},
-            },
+                grounding,
+                {},
+            ),
             ensure_ascii=False,
         )
 
@@ -881,25 +925,24 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
 
     # T3 step 5: write manifest
     manifest_path = packaged_pdf.with_suffix(".hakjong_validation.json")
+    live_research_bundle_path = (
+        str((matched_profile or {}).get("live_research", {}).get("bundle_path"))
+        if isinstance((matched_profile or {}).get("live_research"), dict)
+        else ""
+    )
+    manifest = build_hakjong_manifest(
+        pdf_path=packaged_pdf,
+        html_path=packaged_html,
+        student_name=student_name,
+        university_names=university_names,
+        student_stage=student_stage,
+        schema_checks=schema_checks,
+        pdf_checks=collect_pdf_checks(packaged_pdf),
+        live_research_applied=live_research_applied,
+        live_research_bundle_path=live_research_bundle_path,
+    )
     manifest_path.write_text(
-        json.dumps(
-            {
-                "ok": True,
-                "pdf_path": str(packaged_pdf),
-                "html_path": str(packaged_html),
-                "student_name": student_name,
-                "university_names": university_names,
-                "student_stage": student_stage,
-                "live_research_applied": live_research_applied,
-                "live_research_bundle_path": (
-                    str((matched_profile or {}).get("live_research", {}).get("bundle_path"))
-                    if isinstance((matched_profile or {}).get("live_research"), dict)
-                    else ""
-                ),
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
+        json.dumps(manifest, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
@@ -912,17 +955,7 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
             "html_path": str(packaged_html),
             "manifest_path": str(manifest_path),
             "media_tag": media_tag,
-            "checks": {
-                "student_name": student_name,
-                "university_names": university_names,
-                "student_stage": student_stage,
-                "live_research_applied": live_research_applied,
-                "live_research_bundle_path": (
-                    str((matched_profile or {}).get("live_research", {}).get("bundle_path"))
-                    if isinstance((matched_profile or {}).get("live_research"), dict)
-                    else ""
-                ),
-            },
+            "checks": manifest["checks"],
         },
         ensure_ascii=False,
     )
@@ -955,7 +988,8 @@ def register_hakjong_report_tool(ctx: Any) -> None:
                     "type": "array",
                     "description": (
                         "실제 근거 조회에 사용한 도구/소스 이름. "
-                        "3학년/N수생은 life_record_* 계열이 필수다."
+                        "3학년/N수생은 life_record_* 계열이 필수이고, 모든 학종 PDF는 "
+                        "hakjong_storm_prewrite를 필수로 포함한다."
                     ),
                     "items": {"type": "string"},
                 },
@@ -969,13 +1003,14 @@ def register_hakjong_report_tool(ctx: Any) -> None:
                         "track_section{heading, info_cards[{label,value,sub}]x3, rows[{label,official,judgment}], "
                         "strong_points{title,bullets[]}, caution_points{title,bullets[]}, footnote} · "
                         "diagnosis_section{heading, strength{headline,body}, risk{headline,body}, "
-                        "rows[{area,record,interpretation,check}], gauges[{label,level,note,tone(orange|blue|red),percent}]x3, footnote} · "
+                        "rows[{area,record,interpretation,check}], gauges[{label,level,note,tone(red|orange|blue|green; danger/warn/medium aliases accepted),percent}]x3, footnote} · "
                         "strategy_section{heading, actions[{title,body}]x4(=전반 실행 로드맵·우선순위·일정·태도. 뒤의 분야별 세특/활동 설계 페이지와 중복되는 분야 미리보기로 쓰지 마라), interview_rows[{question,point}], "
                         "final_judgment{body}, checklist{title,bullets[],tags[]}, footnote, "
-                        "gap_plan{title, subjects[{field, current_record, school_direction, steps[](2개+), eval_axis}]}"
+                        "gap_plan{title, subjects[{field, current_record, school_direction, steps[](3개+), eval_axis, expected_effect}]}"
                         "(재학생 필수, 분야별 1페이지 상세 세특 설계로 렌더된다; 있으면 checklist 대신). "
                         "분야는 이 학생 세특에 그 과목의 전공 관련 탐구가 실제로 있는 과목만(수업 성실·어휘 노력 같은 "
-                        "일반 기록만 있고 전공과 약하게 끼워맞춰야 하는 과목은 분야로 만들지 마라). 개수 강제 X, 전공에 진짜 닿는 만큼만. "
+                        "일반 기록만 있고 전공과 약하게 끼워맞춰야 하는 과목은 분야로 만들지 마라). "
+                        "재학생은 3개 이상, 기존 생기부 연계 프로젝트와 학과/논문/뉴스 기반 신규 프로젝트를 섞는다. "
                         "용어 주의: '세특(세부능력 및 특기사항)'은 교과 전용이다 — 창체(자율·동아리·진로·봉사)는 "
                         "'세특'이 아니라 '활동'이다. field를 창체로 잡으면 활동 설계로 쓴다. 각 분야: "
                         "field=분야명 · current_record=이 학생이 지금까지 해온 활동을 실제 기록에서 인용 · school_direction=학과가 원하는 방향 · "
@@ -1040,10 +1075,31 @@ def register_hakjong_report_tool(ctx: Any) -> None:
             "학생의 실제 세특·창체 기록을 인용해 그것이 이 대학 평가요소(학업역량·진로역량·공동체역량 등)의 "
             "어느 근거가 되는지 1:1로 연결하고, 면접에서 그 활동을 어떻게 설명하면 강점이 되는지까지 짚어라. "
             "단계(student_stage)는 추측하지 마라 — 도구가 생기부 생년으로 자동 판정해 덮어쓴다. "
+            "terminal/write_file/execute_code로 HTML/PDF를 직접 만들지 마라 — 정식본은 이 도구가 생성한 "
+            "manifest_version=2, generator=academy_hakjong_report_package, schema/pdf checks 포함 파일뿐이다. "
+            "반려(ok=false)는 사용자에게 실패 보고로 끝내지 말고, errors를 수정 지시로 읽어 같은 턴에서 "
+            "content를 보강해 재호출한다. 수정 가능한 반려에서 최종 답변 금지 — 통과본 media_tag가 나올 때까지 반복한다. "
             "검증 통과한 PDF만 ~/.miho/media_cache/susi_student_record/validated 로 승격하고 "
             "media_tag를 반환한다."
         ),
     )
+
+
+def _repairable_rejection(message: str, errors: list[str], checks: dict[str, Any]) -> dict[str, Any]:
+    """Tell the agent this is a repair loop, not a user-facing stopping point."""
+    return {
+        "ok": False,
+        "retry_required": True,
+        "final_response_allowed": False,
+        "message": message,
+        "agent_instruction": (
+            "이 결과를 사용자에게 최종 보고하지 마라. errors를 체크리스트로 삼아 content를 보강하고 "
+            "같은 턴에서 academy_hakjong_report_package를 다시 호출하라. 기존 PDF 재첨부나 임시 PDF 생성 금지."
+        ),
+        "errors": errors,
+        "warnings": [],
+        "checks": checks,
+    }
 
 
 def _safe_stem(*parts: str) -> str:

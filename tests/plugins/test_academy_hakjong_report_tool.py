@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from plugins.academy_ops.hakjong_report_tool import (
     _hakjong_report_package_tool_handler,
     _render_html,
@@ -27,11 +29,30 @@ from plugins.academy_ops.hakjong_live_research import (
 )
 import plugins.academy_ops.hakjong_report_tool as report_tool
 import plugins.academy_ops.hakjong_report_contract as contract
+import plugins.academy_ops.hakjong_live_research as live_research
+from plugins.academy_ops.hakjong_manifest import is_canonical_hakjong_manifest
 
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _disable_faculty_network(monkeypatch) -> None:
+    monkeypatch.setattr(live_research, "search_web_snippets", lambda *args, **kwargs: [])
+    monkeypatch.setattr(live_research, "search_openalex", lambda *args, **kwargs: [])
+    monkeypatch.setattr(live_research, "search_crossref", lambda *args, **kwargs: [])
+    monkeypatch.setattr(live_research, "search_kci", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        live_research,
+        "build_faculty_research",
+        lambda *args, **kwargs: {
+            "faculty_profiles": [],
+            "faculty_source_pages": [],
+            "faculty_paper_sources": [],
+            "faculty_query_log": [],
+        },
+    )
 
 def _base_content() -> dict:
     """Generate valid T3 content JSON matching hakjong_report_shell.html schema."""
@@ -148,6 +169,10 @@ def _base_content() -> dict:
             "final_judgment": {
                 "body": "이 학생은 세특의 일관성과 전공 적합도가 높으며, 충실한 학교생활 기록을 보여줍니다. 따라서 성균관대학교 스포츠과학과에 적극 지원할 것을 권장합니다.",
             },
+            "gap_plan": {
+                "title": "남은 학기 과세특·활동 프로젝트 설계",
+                "subjects": [_base_gap_subject(field) for field in ("체육", "과학", "수학")],
+            },
             "checklist": {
                 "title": "최종 체크리스트",
                 "bullets": [
@@ -163,11 +188,27 @@ def _base_content() -> dict:
     }
 
 
+def _base_gap_subject(field: str) -> dict:
+    return {
+        "field": field,
+        "current_record": f"{field} 분야 기존 세특과 생기부 활동 기록을 출발점으로 잡아 학생의 관심을 구체화합니다.",
+        "school_direction": "스포츠과학과 최신 연구와 교수 논문 흐름에 맞춰 새 프로젝트로 확장합니다.",
+        "steps": [
+            "기존 기록에서 출발해 측정 항목과 비교 기준을 정하고 매주 데이터를 기록합니다.",
+            "수집한 데이터를 그래프로 정리하고 변화 원인을 분석해 학과 관심 주제와 연결합니다.",
+            "분석 결과를 보고서와 발표로 정리하고 한계와 다음 개선 방향까지 성찰합니다.",
+            "면접이 있는 전형이면 면접관 꼬리질문에 대비해 연구 방법과 실패 보완 과정을 답변 카드로 정리합니다.",
+        ],
+        "eval_axis": "진로역량",
+        "expected_effect": "기존 생기부와 신규 연구 설계를 함께 보여 전공적합성과 탐구 지속성을 설명할 근거가 됩니다.",
+    }
+
+
 def _base_args() -> dict:
     return {
         "student_name": "홍길동",
         "student_stage": "grade3",
-        "evidence_tools": ["life_record_lookup", "qualitative_profile"],
+        "evidence_tools": ["life_record_lookup", "qualitative_profile", "hakjong_storm_prewrite"],
         "content": _base_content(),
     }
 
@@ -286,7 +327,31 @@ def test_manifest_written_on_success(monkeypatch, tmp_path) -> None:
 
     manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
     assert manifest["ok"] is True
+    assert manifest["manifest_version"] == 2
+    assert manifest["generator"] == "academy_hakjong_report_package"
     assert "성균관대학교" in manifest["university_names"]
+    assert manifest["checks"]["schema"]["visible_text_chars"] >= contract.MIN_VISIBLE_TEXT_CHARS
+    assert manifest["checks"]["schema"]["evidence_tools"] == [
+        "hakjong_storm_prewrite",
+        "life_record_lookup",
+        "qualitative_profile",
+    ]
+    assert manifest["checks"]["pdf"]["pages"] == 4
+    assert manifest["checks"]["pdf"]["printed_text_chars"] > 0
+    assert is_canonical_hakjong_manifest(manifest) is True
+
+
+def test_minimal_legacy_hakjong_manifest_is_not_canonical() -> None:
+    legacy_manifest = {
+        "ok": True,
+        "pdf_path": "/tmp/유가은_서울시립대학교_스포츠과학과.pdf",
+        "html_path": "/tmp/유가은_서울시립대학교_스포츠과학과.html",
+        "student_name": "유가은",
+        "university_names": ["서울시립대학교"],
+        "student_stage": "grade3",
+    }
+
+    assert is_canonical_hakjong_manifest(legacy_manifest) is False
 
 
 # ---------------------------------------------------------------------------
@@ -359,10 +424,23 @@ def test_missing_student_stage_rejected() -> None:
 
 def test_missing_life_record_evidence_rejected() -> None:
     args = _base_args()
-    args["evidence_tools"] = ["qualitative_profile"]
+    args["evidence_tools"] = ["qualitative_profile", "hakjong_storm_prewrite"]
     result = json.loads(_hakjong_report_package_tool_handler(args))
     assert result["ok"] is False
     assert any("life_record" in e for e in result["errors"])
+
+
+def test_repairable_rejection_requires_same_turn_retry() -> None:
+    args = _base_args()
+    args["student_stage"] = ""
+
+    result = json.loads(_hakjong_report_package_tool_handler(args))
+
+    assert result["ok"] is False
+    assert result["retry_required"] is True
+    assert result["final_response_allowed"] is False
+    assert "같은 턴" in result["agent_instruction"]
+    assert "다음 턴" not in result["agent_instruction"]
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +542,141 @@ def test_enrolled_grade3_gap_plan_not_blocked_as_graduate(monkeypatch, tmp_path)
     content["strategy_section"]["actions"][0]["body"] = "생명과학 세특을 운동생리 주제로 정리한다."
     errors = _grounding_errors("없는학생", "grade3", content)
     assert not any("설계 언어" in e for e in errors)
+
+
+def test_grade3_missing_current_notes_allowed_with_deep_gap_plan(monkeypatch, tmp_path) -> None:
+    import sqlite3
+
+    db = tmp_path / "central.sqlite3"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT, birth_masked TEXT)")
+    conn.execute("CREATE TABLE central_notes (student_id INTEGER, grade INTEGER, subject TEXT, note_text TEXT)")
+    conn.execute("CREATE TABLE central_grades (student_id INTEGER, subject TEXT)")
+    conn.execute("INSERT INTO students (id, name, birth_masked) VALUES (1, '고삼공백', '080101-*******')")
+    rows = [
+        (1, 1, "수학", "농구 슛 궤적을 이차함수로 모델링하고 성공률 변화를 분석함."),
+        (1, 2, "체육", "배드민턴 팀 전술을 정리하고 팀원 장단점을 분석함."),
+        (1, 2, "물리학Ⅰ", "충격량 개념으로 골키퍼 안전수트 설계를 탐구함."),
+    ]
+    conn.executemany("INSERT INTO central_notes VALUES (?, ?, ?, ?)", rows)
+    conn.executemany("INSERT INTO central_grades VALUES (?, ?)", [(1, "수학"), (1, "체육"), (1, "물리학Ⅰ")])
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(report_tool, "_CENTRAL_LIFE_DB", db)
+
+    content = _base_content()
+    content["university"]["name"] = "없는대학교"
+    content["university"]["track"] = "학생부종합"
+    content["strategy_section"]["final_judgment"]["body"] = (
+        "1학년 수학, 2학년 체육, 2학년 물리학Ⅰ 기록을 보면 3학년 1학기 세특은 "
+        "농구 슛 궤적, 배드민턴 전술, 충격량 안전수트 탐구를 더 깊게 이어가면 된다."
+    )
+    content["strategy_section"]["gap_plan"]["subjects"] = [
+        _deep_gap_subject("수학", "1학년 수학 농구 슛 궤적 모델링"),
+        _deep_gap_subject("체육", "2학년 체육 배드민턴 팀 전술 분석"),
+        _deep_gap_subject("물리학Ⅰ", "2학년 물리학Ⅰ 충격량 안전수트 설계"),
+    ]
+
+    errors = _grounding_errors("고삼공백", "grade3", content)
+
+    assert errors == []
+
+
+def test_grade3_missing_current_notes_error_blames_gap_plan_not_blank_notes(monkeypatch, tmp_path) -> None:
+    import sqlite3
+
+    db = tmp_path / "central.sqlite3"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT, birth_masked TEXT)")
+    conn.execute("CREATE TABLE central_notes (student_id INTEGER, grade INTEGER, subject TEXT, note_text TEXT)")
+    conn.execute("CREATE TABLE central_grades (student_id INTEGER, subject TEXT)")
+    conn.execute("INSERT INTO students (id, name, birth_masked) VALUES (1, '고삼공백', '080101-*******')")
+    conn.executemany(
+        "INSERT INTO central_notes VALUES (?, ?, ?, ?)",
+        [
+            (1, 1, "수학", "농구 슛 궤적을 이차함수로 모델링함."),
+            (1, 2, "체육", "배드민턴 팀 전술을 분석함."),
+            (1, 2, "물리학Ⅰ", "충격량 안전수트 설계를 탐구함."),
+        ],
+    )
+    conn.executemany("INSERT INTO central_grades VALUES (?, ?)", [(1, "수학"), (1, "체육"), (1, "물리학Ⅰ")])
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(report_tool, "_CENTRAL_LIFE_DB", db)
+
+    content = _base_content()
+    content["university"]["name"] = "없는대학교"
+    content["university"]["track"] = "학생부종합"
+    content["strategy_section"]["final_judgment"]["body"] = "1학년 수학, 2학년 체육, 2학년 물리학Ⅰ 기록을 바탕으로 본다."
+    content["strategy_section"]["gap_plan"]["subjects"] = [_base_gap_subject("체육")]
+
+    errors = _grounding_errors("고삼공백", "grade3", content)
+    joined = "\n".join(errors)
+
+    assert "공백 자체는 반려 사유가 아니다" in joined
+    assert "반려 사유는 세특 공백이 아니라 gap_plan" in joined
+
+
+def test_grounding_uses_department_specific_qualitative_profile(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(report_tool, "_CENTRAL_LIFE_DB", tmp_path / "nope.sqlite3")
+
+    def fake_lookup_profiles(**kwargs):
+        if kwargs.get("department") == "체육학과":
+            return {
+                "profiles": [
+                    {
+                        "admission_track": "네오르네상스",
+                        "evaluation_elements": [],
+                        "desired_record_keywords": ["운동역학 분석", "경기력 분석"],
+                    }
+                ]
+            }
+        return {
+            "profiles": [
+                {
+                    "admission_track": "네오르네상스",
+                    "evaluation_elements": [],
+                    "desired_record_keywords": ["운동처방", "재활운동 프로그램 설계"],
+                }
+            ]
+        }
+
+    monkeypatch.setattr("plugins.academy_ops.hakjong_qualitative_tool.lookup_profiles", fake_lookup_profiles)
+    content = _base_content()
+    content["university"]["name"] = "경희대학교"
+    content["university"]["department"] = "체육학과"
+    content["university"]["track"] = "네오르네상스"
+    content["diagnosis_section"]["strength"]["body"] = "체육 세특의 운동역학 분석과 경기력 분석 기록이 강점이다."
+    content["strategy_section"]["final_judgment"]["body"] = "운동역학 분석과 경기력 분석 중심으로 지원 가능성 판단을 한다."
+
+    errors = _grounding_errors("없는학생", "grade3", content)
+
+    assert not any("운동처방" in error or "재활운동" in error for error in errors)
+
+
+def _deep_gap_subject(field: str, current: str) -> dict:
+    return {
+        "field": field,
+        "current_record": (
+            f"{current} 기록을 출발점으로 삼아 학생 생기부의 실제 활동을 이어 간다. "
+            "3학년 1학기에는 새 이야기를 꾸미는 것이 아니라 기존 탐구를 더 정확한 측정과 분석으로 깊게 만든다. "
+            "기존 활동의 동기와 시행착오를 함께 살려 학생 고유의 흐름을 유지한다."
+        ),
+        "school_direction": (
+            "학과 교육과정, 교수 연구, 논문, 최신 뉴스 흐름은 측정 기반 탐구와 문제해결 과정을 중시한다. "
+            "학생 기록과 닿는 지점만 골라 학교 평가요소와 연결한다. 막연한 관심이 아니라 자료 수집과 해석을 요구한다."
+        ),
+        "steps": [
+            "기존 활동에서 측정 가능한 변수를 고르고 주차별 기록표를 만들어 데이터를 꾸준히 모은다. 기록 기준을 먼저 정해 흔들리지 않게 한다.",
+            "수집한 데이터를 그래프로 정리한 뒤 성공과 실패가 갈리는 조건을 비교 분석한다. 차이가 난 이유를 가설로 세우고 다시 확인한다.",
+            "분석 과정에서 막힌 점과 바꾼 방법을 보고서에 적고 다음 탐구 질문까지 정리한다. 결과보다 개선 과정을 중심에 둔다.",
+        ],
+        "eval_axis": "진로역량",
+        "expected_effect": (
+            "학생의 기존 기록이 3학년 1학기 과세특 프로젝트로 자연스럽게 이어지고, "
+            "면접에서 동기와 한계, 개선 과정을 구체적으로 설명할 근거가 된다. 학교가 보는 탐구 지속성과 문제해결력을 함께 보완한다."
+        ),
+    }
 
 
 def test_field_of_maps_subject_to_field() -> None:

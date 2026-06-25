@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from .practical_reco_schema import _first_number
-from ..susi_ops.service import recommend_candidates
+from plugins.susi_ops.service import recommend_candidates
 
 
 _FIELD_CHECKS = (

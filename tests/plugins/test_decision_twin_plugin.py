@@ -409,6 +409,15 @@ def test_core_domain_contracts_are_not_generic_fallbacks() -> None:
         assert contract["domain"]
 
 
+def test_hakjong_contract_forbids_final_answer_on_repairable_rejection() -> None:
+    purpose = decision_tool_contracts()["academy_hakjong_report_package"]["purpose"]
+
+    assert "반려" in purpose
+    assert "같은 턴" in purpose
+    assert "최종 답변 금지" in purpose
+    assert "다음 턴" not in purpose
+
+
 def test_domain_guard_module_absent() -> None:
     """domain_guard.py가 삭제됐으므로 import가 실패해야 한다."""
     import importlib

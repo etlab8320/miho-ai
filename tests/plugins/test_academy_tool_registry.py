@@ -49,7 +49,7 @@ def test_academy_plugin_yaml_matches_runtime_registered_tools() -> None:
 
     assert _plugin_yaml_tools() == ctx.tools
     assert "academy_staff_attendance_range" in ctx.tools
-    # T4: guard hooks removed — only pre_gateway_dispatch remains
-    assert "pre_tool_call" not in ctx.hooks
+    assert "pre_tool_call" in ctx.hooks
+    assert "transform_tool_result" in ctx.hooks
     assert "post_tool_call" not in ctx.hooks
     assert "pre_gateway_dispatch" in ctx.hooks

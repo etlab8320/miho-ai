@@ -193,6 +193,16 @@ def _fake_chromium(html_path: Path, pdf_path: Path) -> None:
     pdf_path.write_bytes(pdf_content)
 
 
+def test_truncation_errors_accepts_ampersand_split_event_text() -> None:
+    content = {"events": "제자리멀리뛰기, 20m왕복달리기, 농구(드리블 후 레이업슛&골밑슛)"}
+    pdf_text = "제자리멀리뛰기 20m왕복달리기 농구 드리블 후 레이업슛 골밑슛"
+    errors: list[str] = []
+
+    _contract.truncation_errors(content, pdf_text, errors)
+
+    assert errors == []
+
+
 # ---------------------------------------------------------------------------
 # Schema: valid content passes
 # ---------------------------------------------------------------------------

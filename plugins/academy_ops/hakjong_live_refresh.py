@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import os
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 
 _SECTION_TTL_DEFAULTS = {"faculty": 168.0, "paper": 24.0, "news": 0.0}
+_PROFILE_NOISE = {
+    "인사말", "교수진", "공지사항", "교과과정", "메뉴닫기", "전공소개", "연구실적",
+    "학력", "연혁", "강의체험", "학사일정", "학부소개", "갤러리", "동영상",
+    "졸업", "학사안내", "교육과정", "겸임", "주임",
+}
+_MAJOR_NOISE = ("소개", "분야", "안내", "교과목안내", "CDR", "행사", "공지사항", "역량", "세부영역", "별강의")
 
 
 def _env_hours(name: str, default: float) -> float:
@@ -57,3 +65,32 @@ def failed_results(items: list[dict[str, Any]]) -> bool:
 def copy_section(bundle: dict[str, Any] | None, key: str) -> list[dict[str, Any]]:
     raw = bundle.get(key) if isinstance(bundle, dict) else None
     return [dict(item) for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+
+
+def _has_usable_faculty(data: dict[str, Any]) -> bool:
+    if data.get("faculty_paper_sources"):
+        return True
+    for profile in data.get("faculty_profiles") or []:
+        if not isinstance(profile, dict):
+            continue
+        name = str(profile.get("name") or profile.get("english_name") or "")
+        major = str(profile.get("major") or "")
+        if name and name not in _PROFILE_NOISE and not any(noise in major for noise in _MAJOR_NOISE):
+            return True
+    return False
+
+
+def choose_best_bundle(candidates: list[Path]) -> tuple[Path, dict[str, Any]] | None:
+    fallback: tuple[Path, dict[str, Any]] | None = None
+    for path in sorted(set(candidates), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if fallback is None:
+            fallback = (path, data)
+        if _has_usable_faculty(data):
+            return path, data
+    return fallback

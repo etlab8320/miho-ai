@@ -24,7 +24,7 @@
       diagnosis_section: {heading,
                       strength{headline,body}, risk{headline,body},
                       rows[{area,record,interpretation,check}],
-                      gauges[{label,level,note,tone,percent}]x3,   # tone: orange|blue|red
+                      gauges[{label,level,note,tone,percent}]x3,   # tone: orange|blue|red|green or semantic aliases
                       footnote}
       strategy_section: {heading, actions[{title,body}]x4,
                       interview_rows[{question,point}],
@@ -106,24 +106,32 @@
       font-size: 9.8px; color: var(--max-muted);
     }
     /* ── 표지 ── */
-    .identityCard {
-      border: 1px solid #dbeafe; border-radius: 18px; padding: 8mm;
-      background: linear-gradient(135deg, #f6faff 0%, #ffffff 60%, #f8fafc 100%);
-      display: flex; flex-direction: column; gap: 3mm;
-      position: relative;
+    .coverSheet {
+      border: 1px solid #dbeafe; border-radius: 12px; padding: 7mm;
+      background: linear-gradient(135deg, #f6faff 0%, #ffffff 58%, #fff7ed 100%);
+      display: grid; grid-template-columns: minmax(0, 1fr) 50mm; gap: 7mm; min-height: 96mm;
     }
-    .identityCard .label { font-size: 10.5px; color: var(--max-muted); font-weight: 700; }
-    .identityCard .name { font-size: 27px; font-weight: 900; letter-spacing: -0.01em; }
-    .identityCard .target { font-size: 13.5px; font-weight: 800; color: var(--max-ink); }
-    .stamp {
-      position: absolute; top: 8mm; right: 8mm;
-      border: 2.5px solid #ea580c; color: #ea580c; border-radius: 50%;
-      width: 34mm; height: 21mm;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 900; line-height: 1.3;
-      transform: rotate(-8deg); background: rgba(255,255,255,0.75);
-      text-align: center;
+    .coverLead { display: flex; flex-direction: column; gap: 3.8mm; }
+    .coverLabel { font-size: 10.5px; color: var(--max-muted); font-weight: 800; }
+    .coverName { font-size: 29px; font-weight: 900; line-height: 1.18; }
+    .coverTarget { font-size: 13.5px; font-weight: 800; color: var(--max-ink); line-height: 1.45; }
+    .coverStats {
+      border: 1px solid #d8e2ee; border-radius: 10px; padding: 4mm;
+      background: #ffffff; display: flex; flex-direction: column;
     }
+    .coverBadge {
+      border: 1px solid #fed7aa; border-radius: 10px; padding: 3.2mm;
+      background: var(--max-warm-soft); color: #9a3412;
+      font-size: 12px; font-weight: 900; line-height: 1.4; margin-bottom: 1.5mm;
+    }
+    .coverStat { padding: 2.7mm 0; border-bottom: 1px solid #edf2f7; }
+    .coverStat:last-child { border-bottom: 0; padding-bottom: 0; }
+    .coverStat .t { font-size: 9.7px; color: var(--max-muted); font-weight: 800; margin-bottom: 1mm; }
+    .coverStat .v { font-size: 15.5px; color: var(--max-ink); font-weight: 900; }
+    .coverNotes { margin-top: auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+    .coverNote { border-top: 1px solid #d8e2ee; padding-top: 3mm; }
+    .coverNote b { display: block; font-size: 10px; color: var(--max-muted); margin-bottom: 1.2mm; }
+    .coverNote span { display: block; font-size: 11.5px; color: var(--max-ink); font-weight: 900; line-height: 1.35; }
     .pillrow { display: flex; flex-wrap: wrap; gap: 2.2mm; }
     .pill {
       display: inline-flex; align-items: center; border: 1px solid #bfdbfe;
@@ -131,18 +139,19 @@
       color: var(--max-accent); background: var(--max-accent-soft);
     }
     .keyJudgment {
-      border-left: 4px solid #f97316; background: var(--max-warm-soft);
-      border-radius: 0 14px 14px 0; padding: 5mm 6mm;
-      display: flex; flex-direction: column; gap: 2mm;
+      border: 1px solid #fed7aa; background: var(--max-warm-soft);
+      border-radius: 10px; padding: 5mm 6mm; display: grid;
+      grid-template-columns: 28mm minmax(0, 1fr); gap: 5mm; align-items: start;
     }
-    .keyJudgment .headline { font-size: 13.5px; font-weight: 900; color: #9a3412; }
-    .metricsRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
-    .metricCard {
-      border: 1px solid var(--max-line); border-radius: 14px; padding: 4.5mm 5mm;
-      background: #ffffff;
+    .keyJudgment .label { font-size: 10px; color: #9a3412; font-weight: 900; }
+    .keyJudgment .headline { font-size: 14px; font-weight: 900; color: #9a3412; margin-bottom: 1.5mm; }
+    .coverMap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+    .coverMap div {
+      border: 1px solid var(--max-line); border-radius: 10px; padding: 4mm;
+      background: #ffffff; min-height: 21mm;
     }
-    .metricCard .t { font-size: 10px; color: var(--max-muted); font-weight: 700; margin-bottom: 1.2mm; }
-    .metricCard .v { font-size: 17px; font-weight: 900; letter-spacing: -0.01em; }
+    .coverMap b { display: block; font-size: 10px; color: #9a3412; margin-bottom: 1.5mm; }
+    .coverMap span { display: block; font-size: 11.2px; font-weight: 900; color: var(--max-ink); }
     /* ── 공용 ── */
     .infoCards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
     .infoCard {
@@ -182,18 +191,19 @@
     .gaugeCard .barwrap { display: flex; align-items: center; gap: 3mm; }
     .gaugeCard .bar { flex: 1; height: 3mm; border-radius: 999px; background: #e8edf4; overflow: hidden; }
     .gaugeCard .fill { height: 100%; border-radius: 999px; }
-    .gaugeCard .fill.orange { background: #f97316; }
-    .gaugeCard .fill.blue { background: #2563eb; }
-    .gaugeCard .fill.red { background: #ef4444; }
+    .gaugeCard .fill.orange, .gaugeCard .fill.warn, .gaugeCard .fill.warning { background: #f97316; }
+    .gaugeCard .fill.blue, .gaugeCard .fill.medium, .gaugeCard .fill.neutral { background: #2563eb; }
+    .gaugeCard .fill.red, .gaugeCard .fill.danger, .gaugeCard .fill.critical { background: #ef4444; }
+    .gaugeCard .fill.green, .gaugeCard .fill.success, .gaugeCard .fill.good { background: var(--max-green); }
     .gaugeCard .lv { font-size: 13px; font-weight: 900; white-space: nowrap; }
     .gaugeCard .note { font-size: 10px; color: var(--max-muted); margin-top: 1.5mm; }
     /* ── 전략 ── */
-    .actionGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+    .actionGrid { display: grid; grid-template-columns: 1fr; gap: 3mm; }
     .actionCard {
-      border: 1px solid #dbeafe; border-radius: 14px; padding: 5mm;
+      border: 1px solid #dbeafe; border-radius: 12px; padding: 3.6mm 4.2mm;
       background: linear-gradient(160deg, #f8fbff, #ffffff);
     }
-    .actionCard .title { font-size: 12.5px; font-weight: 900; margin-bottom: 1.8mm; }
+    .actionCard .title { font-size: 12px; font-weight: 900; margin-bottom: 1.2mm; }
     .finalBox {
       border: 2px solid var(--max-ink); border-radius: 18px; padding: 6mm 7mm;
       display: flex; flex-direction: column; gap: 2mm;
@@ -250,25 +260,41 @@
       <h1>{% for line in data.title_lines %}{{ line }}{% if not loop.last %}<br/>{% endif %}{% endfor %}</h1>
     </div>
 
-    <div class="identityCard">
-      <div class="label">{{ data.student.name }} 학생을 위한 학생부종합전형 리포트</div>
-      <div class="name">{{ data.student.name }} 학생</div>
-      <div class="target">{{ data.university.name }} {{ data.university.department }} · {{ data.university.track }}</div>
-      <div class="stamp">{{ data.badge.grade }}<br/>{{ data.badge.action }}</div>
-      <div class="pillrow">
-        {% for pill in data.cover.pills %}<span class="pill">{{ pill }}</span>{% endfor %}
+    <div class="coverSheet">
+      <div class="coverLead">
+        <div class="coverLabel">{{ data.student.name }} 학생을 위한 학생부종합전형 리포트</div>
+        <div class="coverName">{{ data.student.name }} 학생</div>
+        <div class="coverTarget">{{ data.university.name }} {{ data.university.department }} · {{ data.university.track }}</div>
+        <div class="pillrow">
+          {% for pill in data.cover.pills %}<span class="pill">{{ pill }}</span>{% endfor %}
+        </div>
+        <div class="coverNotes">
+          <div class="coverNote"><b>근거</b><span>학생부 기록</span></div>
+          <div class="coverNote"><b>비교</b><span>대학 평가축</span></div>
+          <div class="coverNote"><b>검토</b><span>면접·보완점</span></div>
+        </div>
+      </div>
+      <div class="coverStats">
+        <div class="coverBadge">{{ data.badge.grade }}<br/>{{ data.badge.action }}</div>
+        {% for m in data.cover.metrics %}
+        <div class="coverStat"><div class="t">{{ m.label }}</div><div class="v">{{ m.value }}</div></div>
+        {% endfor %}
       </div>
     </div>
 
     <div class="keyJudgment">
-      <div class="headline">핵심 판단: {{ data.cover.key_judgment.headline }}</div>
-      <p>{{ data.cover.key_judgment.body }}</p>
+      <div class="label">핵심 판단</div>
+      <div>
+        <div class="headline">{{ data.cover.key_judgment.headline }}</div>
+        <p>{{ data.cover.key_judgment.body }}</p>
+      </div>
     </div>
 
-    <div class="metricsRow">
-      {% for m in data.cover.metrics %}
-      <div class="metricCard"><div class="t">{{ m.label }}</div><div class="v">{{ m.value }}</div></div>
-      {% endfor %}
+    <div class="coverMap">
+      <div><b>01</b><span>전형 구조</span></div>
+      <div><b>02</b><span>학생부 근거</span></div>
+      <div><b>03</b><span>평가축 분석</span></div>
+      <div><b>04</b><span>보완 전략</span></div>
     </div>
 
     {{ footer(brand_text, "학생·학부모 확인용 · " ~ report_date) }}
@@ -366,12 +392,14 @@
       {% endfor %}
     </div>
 
+    {%- if data.strategy_section.interview_rows %}
     <table class="table">
       <tr><th style="width:42%">면접 질문축</th><th>답변에서 보여야 할 것</th></tr>
       {% for row in data.strategy_section.interview_rows %}
       <tr><td class="head">{{ row.question }}</td><td>{{ row.point }}</td></tr>
       {% endfor %}
     </table>
+    {%- endif %}
 
     <div class="finalBox">
       <div class="title">최종 판단</div>

@@ -154,7 +154,12 @@ def test_recommend_candidates_filters_unreachable(monkeypatch) -> None:
             university="가능대",
             department="체육",
             admission_track="실기",
-            practical_events_json=None,
+            practical_events_json=(
+                '{"events":[{"name":"스포츠분야 분석 및 질의응답"}],'
+                '"stage1_events":[{"name":"제자리멀리뛰기"},{"name":"메디신볼던지기"},'
+                '{"name":"10m왕복달리기"},{"name":"좌전굴"}],'
+                '"selection_rule":"1단계 과목측정은 400% 선발용, 2단계는 스포츠분야 분석 및 질의응답 800점"}'
+            ),
             calculation_test_json=None,
             raw_json='{"정원": "10", "내신교과": "200", "실기만점": "800"}',
         ),
@@ -176,11 +181,25 @@ def test_recommend_candidates_filters_unreachable(monkeypatch) -> None:
                     return rules
 
                 def fetchone(self_inner) -> list[str]:
-                    return ['{"final_pass_cutoff": {"total_score": 900.0, "record_score": 150.0}}', "{}"]
+                    return [
+                        '{"final_pass_cutoff": {"total_score": 900.0, "record_score": 150.0}}',
+                        '{"minimum_csat": {"has_minimum": true, "detail": "상위 2개 영역 합 6등급 이내"}}',
+                    ]
 
             return Cursor()
 
     monkeypatch.setattr(recommendation, "_connect", lambda: FakeConn())
+    monkeypatch.setattr(
+        recommendation,
+        "_track_cuts",
+        lambda uid: (
+            {"final_cut_total": 800.0, "events": ["기초체력"], "n_students": 4},
+            [
+                {"final_cut_total": 800.0, "events": ["기초체력"], "n_students": 4},
+                {"final_cut_total": 920.0, "events": ["전공실기"], "n_students": 4},
+            ],
+        ) if uid == "u1" else (None, []),
+    )
 
     def fake_calc(uid: str, grades: list[dict[str, Any]], att: dict[str, Any], prac: dict[str, Any]) -> dict[str, Any]:
         base: dict[str, Any] = {"status": "calculated", "student_record_score": 160.0}
@@ -211,7 +230,13 @@ def test_recommend_candidates_filters_unreachable(monkeypatch) -> None:
     names = [c["university"] for c in result["candidates"]]
     assert "가능대" in names and "불가대" not in names
     assert result["skipped"]["unreachable"] == 1
+    assert result["candidates"][0]["prev_final_total"] == 800.0
+    assert "기초체력" in result["candidates"][0]["track_note"]
     assert result["candidates"][0]["suggested_verdict"] == "적정"
+    assert result["candidates"][0]["practical_events"][0].startswith("1단계:")
+    assert result["candidates"][0]["practical_events"][1] == "2단계: 스포츠분야 분석·질의응답"
+    assert "실기 100%" in result["candidates"][0]["practical_event_note"]
+    assert result["candidates"][0]["minimum_csat"] == "상위 2개 영역 합 6등급 이내"
 
 
 def test_recommend_candidates_requires_region() -> None:
@@ -220,6 +245,129 @@ def test_recommend_candidates_requires_region() -> None:
     result = recommend_candidates("아무개")
     assert result.get("need_region") is True
     assert "지역" in result.get("message", "")
+
+
+def test_recommend_candidates_does_not_filter_generic_practical_category(monkeypatch) -> None:
+    from plugins.susi_ops import recommendation
+
+    captured: dict[str, Any] = {}
+
+    class FakeConn:
+        def execute(self, sql: str, params: list[Any]):
+            captured["sql"] = sql
+            captured["params"] = params
+
+            class Cursor:
+                def fetchall(self_inner) -> list[dict[str, Any]]:
+                    return []
+
+            return Cursor()
+
+    monkeypatch.setattr(
+        recommendation,
+        "_student_grades_from_central",
+        lambda q: ("홍예지", [{"교과": "국어", "과목": "국어", "이수단위": 4, "등급": "5"}]),
+    )
+    monkeypatch.setattr(recommendation, "_connect", lambda: FakeConn())
+
+    for label in (
+        "실기", "실기전형", "수시 실기", "전국 실기", "전체 실기", "실기 추천",
+        "전국 실기 추천", "전국 실기전형 추천", "전체 실기 추천", "전국 수시 실기",
+    ):
+        recommendation.recommend_candidates("홍예지", region="전국", admission_track=label)
+        assert "c.admission_track LIKE" not in captured["sql"]
+        assert captured["params"] == []
+
+    recommendation.recommend_candidates("홍예지", region="전국", admission_track="실기우수자")
+
+    assert "c.admission_track LIKE" in captured["sql"]
+    assert captured["params"] == ["%실기우수자%"]
+
+
+def test_recommend_candidates_excludes_record_only_rows_for_practical_category(monkeypatch) -> None:
+    from plugins.susi_ops import recommendation
+
+    class FakeRow(dict):
+        def __getitem__(self, key: str) -> Any:
+            return dict.__getitem__(self, key)
+
+    rules = [
+        FakeRow(
+            university_id="practical",
+            university="실기대",
+            department="체육학과",
+            admission_track="학교장추천",
+            confidence="verified",
+            score_logic_json="{}",
+            practical_events_json='{"events":[{"name":"제자리멀리뛰기"}]}',
+            calculation_test_json='{"plugin_practical_full_score":800}',
+            raw_json='{"정원": "10", "내신교과": "200", "실기만점": "800"}',
+        ),
+        FakeRow(
+            university_id="record",
+            university="교과대",
+            department="체육학과",
+            admission_track="학생부교과 일반",
+            confidence="verified",
+            score_logic_json="{}",
+            practical_events_json=None,
+            calculation_test_json='{"plugin_practical_full_score":0}',
+            raw_json='{"정원": "5", "내신교과": "1000", "실기만점": "0"}',
+        ),
+    ]
+
+    class FakeConn:
+        def execute(self, sql: str, params: list[Any] | tuple[Any, ...] = ()):
+            class Cursor:
+                def fetchall(self_inner) -> list[FakeRow]:
+                    return rules
+
+                def fetchone(self_inner) -> list[str]:
+                    return ['{"final_pass_cutoff": {"total_score": 900.0}}', "{}"]
+
+            return Cursor()
+
+    monkeypatch.setattr(
+        recommendation,
+        "_student_grades_from_central",
+        lambda q: ("홍예지", [{"교과": "국어", "과목": "국어", "이수단위": 4, "등급": "5"}]),
+    )
+    monkeypatch.setattr(recommendation, "_connect", lambda: FakeConn())
+    monkeypatch.setattr(recommendation, "_region_map", lambda: {"practical": "경기", "record": "경기"})
+    monkeypatch.setattr(recommendation, "_track_cuts", lambda uid: (None, []))
+
+    def fake_calc(uid: str, grades: list[dict[str, Any]], att: dict[str, Any], prac: dict[str, Any]) -> dict[str, Any]:
+        assert uid == "practical"
+        return {
+            "status": "calculated",
+            "student_record_score": 160.0,
+            "vs_prev_year": {
+                "practical_max": 800.0,
+                "max_possible_total": 960.0,
+                "prev_final_total": 900.0,
+                "prev_first_total": None,
+                "reachable_at_full_practical": True,
+            },
+        }
+
+    monkeypatch.setattr(recommendation, "calculate_score", fake_calc)
+
+    result = recommendation.recommend_candidates("홍예지", region="전국", admission_track="수시 실기")
+
+    assert [candidate["university"] for candidate in result["candidates"]] == ["실기대"]
+    assert result["skipped"]["non_practical"] == 1
+
+
+def test_practical_verdict_uses_needed_practical_rate() -> None:
+    from plugins.susi_ops.recommendation_verdict import practical_verdict
+
+    assert practical_verdict(0.0) == "적정"
+    assert practical_verdict(85.0) == "적정"
+    assert practical_verdict(85.1) == "상향"
+    assert practical_verdict(99.0) == "상향"
+    assert practical_verdict(90.9, margin_at_full_practical=54.51, practical_max=600.0) == "적정"
+    assert practical_verdict(93.2, margin_at_full_practical=47.83, practical_max=700.0) == "적정"
+    assert practical_verdict(94.8, margin_at_full_practical=41.47, practical_max=800.0) == "상향"
 
 
 def test_recommend_candidates_treats_social_care_as_restricted_track() -> None:

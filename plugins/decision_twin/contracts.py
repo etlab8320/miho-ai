@@ -50,9 +50,11 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         "purpose": (
             "수시 실기전형 추천·내신환산 산출물(표/재계산표/리포트 무엇이든)은 반드시 이 도구로 만든다 — "
             "academy_render_image/academy_report_image로 표를 직접 그리지 말 것(로고·푸터 누락, 메타 노출, A4 잘림 발생). "
-            "수시 실기전형 추천 결과를 고정 템플릿 PDF로 만든다. "
+            "사용자가 추천 개수를 지정했거나 상담용 핵심 추천 최대 8개를 원할 때 고정 템플릿 PDF로 만든다. "
             "추천 후보·환산점수·전년도 수치는 susi27_recommend_candidates 단일 파이프라인 결과값만 사용. "
             "susi27_rule_lookup/susi27_score_calculate를 손으로 조립해 추천 목록을 만들지 말 것. "
+            "사용자가 개수를 지정하지 않고 '지역 안 가능한 학교 전부/전체'를 원하면 "
+            "academy_practical_reco_all_candidates를 사용한다. "
             "상향은 (내신환산+실기만점) ≥ 전년도 최종합 학교만 — 만점으로도 못 닿는 학교는 절대 싣지 않는다. "
             "선별 과정은 리포트에 쓰지 않는다: 제외 학교·검토 수·과정 설명 금지, 추천 학교 이야기만. "
             "톤은 선생님이 학생·학부모에게 설명하듯 자연스럽게. "
@@ -60,6 +62,18 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
             "media_tag를 반환한다."
         ),
         "requires": ["student_name", "content"],
+    },
+    "academy_practical_reco_all_candidates": {
+        "domain": "academy_ops",
+        "purpose": (
+            "수시 실기전형 추천 PDF에서 사용자가 추천 개수를 지정하지 않고 지역 전체 후보를 원할 때 쓴다. "
+            "예: '수도권·강원·충청 가능한 학교 다 PDF로 줘', '지역 설정한 모든 학교 보여줘'. "
+            "학생명과 사용자가 말한 region만 넘긴다. 학교 행·환산점수·전년도 컷·실기종목은 "
+            "susi27_recommend_candidates 단일 파이프라인 결과로 코드가 직접 만든다. "
+            "academy_practical_reco_package와 같은 practical_reco_shell.html 브랜드 템플릿을 compact 다중 페이지로 쓰므로 "
+            "임시 HTML/PDF를 직접 만들지 말 것."
+        ),
+        "requires": ["student_name", "region"],
     },
     "hakjong_qualitative_profile": {
         "domain": "academy_ops",
@@ -72,17 +86,34 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "requires": ["university"],
     },
+    "hakjong_storm_prewrite": {
+        "domain": "academy_ops",
+        "purpose": (
+            "학종 PDF 작성 전 안전한 사전조사/질문 설계 도구. "
+            "life_record_lookup/search/summary, hakjong_qualitative_profile, susi27_rule_lookup으로 근거를 확인한 뒤 "
+            "관점별 질문·근거 슬롯·아웃라인·과잉해석 리스크를 만든다. "
+            "이 출력만으로 합불/추천/최종판단/PDF를 만들지 말고, academy_hakjong_report_package에 넣을 근거 구조를 정리하는 용도로만 쓴다."
+        ),
+        "requires": ["student_stage", "qualitative_profile", "student_record_facts"],
+    },
     "academy_hakjong_report_package": {
         "domain": "academy_ops",
         "purpose": (
             "내용 JSON만 주면 껍데기(로고/푸터/브랜딩)는 고정 템플릿이 보장한다. "
             "호출 전 hakjong_qualitative_profile로 해당 전형의 평가 기준(검토축·생기부 키워드)을 "
             "반드시 먼저 확인하고, 전형 구조(susi27_rule_lookup)와 생기부(life_record_lookup/search/summary)를 "
-            "근거로 섹션 내용을 작성하라. "
+            "근거로 섹션 내용을 작성하라. hakjong_storm_prewrite는 선택이 아니라 필수다. "
+            "관점별 질문·근거 슬롯·과잉해석 리스크를 먼저 정리한 뒤, 근거 있는 내용만 이 PDF 패키지에 넣는다. "
             "글쓰기 톤: 학원 선생님이 학생·학부모에게 상담하며 설명하는 따뜻하고 자연스러운 말투 — "
             "딱딱한 보고서체('~한다/~이다' 나열) 금지. "
             "내부 판단 과정·배제 설명('OO 분야는 제외하고' 류)은 쓰지 말고, "
             "사용자가 지정한 학교·학과 내용만 직접적으로 쓴다. "
+            "terminal/write_file/execute_code로 HTML/PDF를 직접 만들지 마라 — "
+            "정식본은 이 도구가 생성한 manifest_version=2, generator=academy_hakjong_report_package, "
+            "schema/pdf checks 포함 파일뿐이다. "
+            "도구가 반려(ok=false)하면 사용자에게 실패 보고로 끝내지 말고 errors를 수정 체크리스트로 삼아 "
+            "같은 턴에서 content를 보강해 재호출한다. 수정 가능한 반려에서 최종 답변 금지 — "
+            "통과본 media_tag가 나올 때까지 반복한다. "
             "검증 통과한 PDF만 ~/.miho/media_cache/susi_student_record/validated 로 승격하고 "
             "media_tag를 반환한다."
         ),

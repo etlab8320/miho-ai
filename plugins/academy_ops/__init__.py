@@ -11,8 +11,10 @@ from .brand_logo_tool import register_brand_logo_tools
 from .commentary_config import plan_commentary_aux_defaults
 from .consultation_notes_tool import register_consultation_note_tool
 from .hakjong_report_tool import register_hakjong_report_tool
+from .practical_reco_all_candidates import register_practical_reco_all_candidates_tool
 from .practical_reco_tool import register_practical_reco_tool
 from .hakjong_qualitative_tool import register_hakjong_qualitative_tool
+from .hakjong_storm_tool import register_hakjong_storm_tool
 from .gateway_dispatch import (
     _academy_command,
     _academy_pre_gateway_dispatch,
@@ -48,6 +50,10 @@ from .student_record_chart_tool import register_student_record_chart_tool
 from .student_records_tool import register_student_records_tool
 from .report_render_tool import register_report_image_tool
 from .render_image_tool import register_render_image_tool
+from .result_reviewer import (
+    block_academy_handrolled_outputs,
+    make_result_review_hook,
+)
 
 
 def _catalog_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
@@ -63,6 +69,14 @@ def register(ctx: Any) -> None:
         args_hint="[요청]",
     )
     ctx.register_hook("pre_gateway_dispatch", _academy_pre_gateway_dispatch)
+    ctx.register_hook("pre_tool_call", block_academy_handrolled_outputs)
+    ctx.register_hook("transform_tool_result", make_result_review_hook(getattr(ctx, "llm", None)))
+    ctx.register_auxiliary_task(
+        key="academy_result_reviewer",
+        display_name="Academy result reviewer",
+        description="학종·실기·생기부·수시 결과물을 전달 전 재검수하는 LLM reviewer",
+        defaults={"provider": "auto", "timeout": 120},
+    )
     ctx.register_auxiliary_task(
         key="academy_plan_commentary",
         display_name="Academy plan commentary",
@@ -171,7 +185,9 @@ def register(ctx: Any) -> None:
     register_brand_logo_tools(ctx)
     register_hakjong_report_tool(ctx)
     register_practical_reco_tool(ctx)
+    register_practical_reco_all_candidates_tool(ctx)
     register_hakjong_qualitative_tool(ctx)
+    register_hakjong_storm_tool(ctx)
     register_api_query_tool(ctx)
     register_expense_tools(ctx)
     ctx.register_tool(

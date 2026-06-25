@@ -54,10 +54,10 @@ async def try_student_record_chart_fast_path(
 ) -> str | None:
     """Handle student record chart image requests without the body agent."""
 
-    if not _is_record_chart_lookup(text):
-        return None
     handler = handlers.get("academy_student_record_chart_image")
     if handler is None:
+        return None
+    if not _is_record_chart_lookup(text):
         return None
     args = {
         "student_query": text,
@@ -88,10 +88,10 @@ async def try_student_record_fast_path(
 ) -> str | None:
     """Handle plain student record lookups without falling into the body agent."""
 
-    if not _is_plain_record_lookup(text):
-        return None
     handler = handlers.get("academy_student_record_lookup")
     if handler is None:
+        return None
+    if not _is_plain_record_lookup(text):
         return None
     args = {
         "student_query": text,

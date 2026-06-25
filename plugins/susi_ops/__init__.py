@@ -157,7 +157,7 @@ def register(ctx: Any) -> None:
                     "type": "string",
                     "description": "광역 지역 (쉼표 구분, 예: '강원, 경기, 서울, 인천') 또는 '전국'. 없이 호출하면 결과 대신 '사용자에게 지역을 물어라' 지시가 돌아온다.",
                 },
-                "max_candidates": {"type": "integer", "default": 30, "minimum": 1, "maximum": 60},
+                "max_candidates": {"type": "integer", "default": 30, "minimum": 1, "maximum": 400},
             },
             "required": ["student_query"],
             "additionalProperties": False,
