@@ -90,6 +90,7 @@ from .views import (
     define_discord_view_classes,
 )
 from .helpers import (
+    _DISCORD_CHANNEL_TYPE_PROBE_CACHE,
     _clean_discord_id,
     _clean_discord_user_ids,
     _derive_forum_thread_name,
@@ -400,18 +401,6 @@ if DISCORD_AVAILABLE:
 # This block was previously hosted in ``tools/send_message_tool.py`` as
 # ``_send_discord``.  It moved into the plugin so all Discord-specific HTTP
 # logic lives next to the adapter — same shape as Teams' ``_standalone_send``.
-
-# Process-local cache for Discord channel-type probes.  Avoids re-probing the
-# same channel on every send when the directory cache has no entry (e.g. fresh
-# install, or channel created after the last directory build).
-_DISCORD_CHANNEL_TYPE_PROBE_CACHE: Dict[str, bool] = {}
-
-
-
-
-
-
-
 
 
 

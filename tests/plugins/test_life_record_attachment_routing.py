@@ -161,8 +161,9 @@ def test_discord_cached_mhtml_txt_auto_routes_by_content(monkeypatch, tmp_path) 
     event.media_urls = [str(cached)]
     result = asyncio.run(_capture_gateway_context(event, gateway=_authed_gateway()))
 
-    assert result["action"] == "respond"
-    assert "생기부 원본" in result["text"]
+    assert result["action"] == "rewrite"
+    assert "life_record_ingest_pdf" in result["text"]
+    assert str(cached) in result["text"]
 
 
 def test_unknown_suffix_mhtml_auto_routes_by_content(monkeypatch, tmp_path) -> None:
@@ -176,8 +177,9 @@ def test_unknown_suffix_mhtml_auto_routes_by_content(monkeypatch, tmp_path) -> N
     event.media_urls = [str(cached)]
     result = asyncio.run(_capture_gateway_context(event, gateway=_authed_gateway()))
 
-    assert result["action"] == "respond"
-    assert "생기부 원본" in result["text"]
+    assert result["action"] == "rewrite"
+    assert "life_record_ingest_pdf" in result["text"]
+    assert str(cached) in result["text"]
 
 
 def test_mhtml_ingest_preserves_original_as_primary_document(monkeypatch, tmp_path) -> None:

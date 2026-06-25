@@ -1,0 +1,168 @@
+"""Pre-tool guard backed by Governance OS playbook contracts."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from .policy import evaluate_tool_call
+from .versioning import load_runtime_registry
+
+
+_GOVERNANCE_DEV_TARGETS = (
+    "plugins/governance_os",
+    "plugins.governance_os",
+    "tests/plugins/test_governance_os",
+    "tests/e2e/test_governance_os",
+    "tests/e2e/test_discord_governance_delivery.py",
+    "docs/governance-os",
+    "governance_os",
+)
+_DEV_VERIFICATION_COMMANDS = (
+    "python -m pytest",
+    "pytest ",
+    "pytest\n",
+    "rg ",
+    "git diff",
+    "git status",
+    "sed -n",
+    "nl -ba",
+    "wc -l",
+    "python - <<",
+)
+_DESTRUCTIVE_COMMAND_MARKERS = (
+    "git reset",
+    "git checkout --",
+    "rm -rf",
+)
+_ARTIFACT_GENERATION_MARKERS = (
+    "reportlab",
+    "weasyprint",
+    "fpdf",
+    "chromium",
+    "write_file",
+    "open(",
+    ".write(",
+    "직접 생성",
+    "직접 만들",
+    "생성 완료",
+    "작성 완료",
+    "첨부 완료",
+    "완료했습니다",
+    "파일 생성",
+    "pdf 생성",
+    "리포트 생성",
+    "추천 pdf",
+)
+
+
+def governance_pre_tool_call(tool_name: Any = None, args: Any = None, **_: Any) -> dict[str, str] | None:
+    name = str(tool_name or "").strip()
+    if not name:
+        return None
+    registry = load_runtime_registry()
+    payload = _search_blob(args)
+    if _is_governance_dev_verification_call(name, args, registry=registry, payload=payload):
+        return None
+    for playbook in registry.playbooks.values():
+        arg_decision = evaluate_tool_call(
+            registry,
+            playbook_key=playbook.key,
+            tool_name=name,
+            args=args if isinstance(args, dict) else {},
+        )
+        if arg_decision.action == "block" and _blocked_by_arg_contract(arg_decision.evidence):
+            return {"action": "block", "message": arg_decision.message_ko}
+        if name not in playbook.forbidden_tools:
+            continue
+        if not _matches_playbook(payload, playbook.triggers):
+            continue
+        if not _looks_like_artifact_bypass(payload):
+            continue
+        decision = evaluate_tool_call(
+            registry,
+            playbook_key=playbook.key,
+            tool_name=name,
+            args=args if isinstance(args, dict) else {},
+        )
+        if decision.action == "block":
+            return {"action": "block", "message": decision.message_ko}
+    return None
+
+
+def _is_governance_dev_verification_call(
+    tool_name: str,
+    args: Any,
+    *,
+    registry: Any,
+    payload: str,
+) -> bool:
+    name = tool_name.casefold().strip()
+    blob = payload or _search_blob(args)
+    if not any(target in blob for target in _GOVERNANCE_DEV_TARGETS):
+        return False
+    if any(marker in blob for marker in _DESTRUCTIVE_COMMAND_MARKERS):
+        return False
+    if _matches_non_dev_artifact_generation(registry, blob):
+        return False
+    if name in {"read_file", "search_files"}:
+        return True
+    if name != "terminal":
+        return False
+    return any(marker in blob for marker in _DEV_VERIFICATION_COMMANDS)
+
+
+def _matches_non_dev_artifact_generation(registry: Any, blob: str) -> bool:
+    if not any(marker in blob for marker in _ARTIFACT_GENERATION_MARKERS):
+        return False
+    for playbook in registry.playbooks.values():
+        if getattr(playbook, "domain", "") == "dev":
+            continue
+        if _matches_playbook(blob, playbook.triggers) and _looks_like_artifact_bypass(blob):
+            return True
+    return False
+
+
+def _blocked_by_arg_contract(evidence: tuple[str, ...]) -> bool:
+    return any(item.startswith("matched_forbidden_arg=") for item in evidence)
+
+
+def _looks_like_artifact_bypass(blob: str) -> bool:
+    markers = (
+        ".pdf",
+        "pdf",
+        ".xlsx",
+        "excel",
+        "엑셀",
+        "reportlab",
+        "weasyprint",
+        "fpdf",
+        "chromium",
+        "html",
+        "파일 생성",
+        "직접 만들",
+        "직접 생성",
+        "직접 계산",
+        "환산",
+    )
+    return any(marker in blob for marker in markers)
+
+
+def _matches_playbook(blob: str, triggers: tuple[str, ...]) -> bool:
+    if not blob:
+        return False
+    for trigger in triggers:
+        needle = trigger.casefold().strip()
+        if needle and needle in blob:
+            return True
+        words = [part for part in needle.split() if len(part) >= 2]
+        if len(words) >= 2 and all(word in blob for word in words):
+            return True
+    return False
+
+
+def _search_blob(value: Any) -> str:
+    try:
+        return json.dumps(value or {}, ensure_ascii=False, sort_keys=True, default=str).casefold()
+    except (TypeError, ValueError):
+        return str(value or "").casefold()

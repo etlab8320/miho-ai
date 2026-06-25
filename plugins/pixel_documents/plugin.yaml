@@ -1,0 +1,7 @@
+name: pixel_documents
+version: 0.1.0
+description: "Pixel document evidence engine for visual-grounded PDF/web/scan analysis."
+author: "ET Lab"
+kind: backend
+provides_auxiliary_tasks:
+  - pixel_document_reviewer

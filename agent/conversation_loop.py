@@ -4090,6 +4090,8 @@ def run_conversation(
             _transform_results = _invoke_hook(
                 "transform_llm_output",
                 response_text=final_response,
+                user_message=original_user_message,
+                conversation_history=list(messages),
                 session_id=agent.session_id or "",
                 model=agent.model,
                 platform=getattr(agent, "platform", None) or "",

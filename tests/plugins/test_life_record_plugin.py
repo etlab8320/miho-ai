@@ -393,7 +393,8 @@ def test_text_layer_pdf_uses_text_extraction_not_vision(monkeypatch, tmp_path) -
 # ----------------------------------------------------------------- T-13/T-14 PDF auto-route
 
 def test_attached_pdf_auto_routes_to_ingest_without_tool_name(monkeypatch, tmp_path) -> None:
-    # User attaches a 생기부 PDF with no tool name — gateway must auto-ingest.
+    # User attaches a 생기부 PDF with no tool name — gateway must route to the
+    # visible tool loop so Governance OS reviewer/ledger hooks can run.
     from plugins.life_record import _capture_gateway_context
     import plugins.life_record.service as service_module
     import plugins.life_record.vision_extractor as vision_module
@@ -415,9 +416,9 @@ def test_attached_pdf_auto_routes_to_ingest_without_tool_name(monkeypatch, tmp_p
     event = _event("thread-a")
     event.media_urls = [str(pdf)]
     result = asyncio.run(_capture_gateway_context(event, gateway=_authed_gateway()))
-    assert result["action"] == "respond"
-    assert "생기부" in result["text"]
-    assert "홍길동" in result["text"]
+    assert result["action"] == "rewrite"
+    assert "life_record_ingest_pdf" in result["text"]
+    assert str(pdf) in result["text"]
 
 
 def test_unauthorized_sender_pdf_is_not_auto_ingested(monkeypatch, tmp_path) -> None:

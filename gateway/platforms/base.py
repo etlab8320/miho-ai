@@ -20,6 +20,7 @@ import uuid
 from abc import ABC, abstractmethod
 from urllib.parse import urlsplit
 
+from gateway.attachment_extensions import ADDITIONAL_DOCUMENT_MIME_TYPES, ATTACHMENT_EXTENSION_PATTERN
 from utils import normalize_proxy_url
 
 logger = logging.getLogger(__name__)
@@ -843,6 +844,12 @@ MEDIA_DELIVERY_SAFE_ROOTS = (
     DOCUMENT_CACHE_DIR,
     SCREENSHOT_CACHE_DIR,
     MEDIA_CACHE_DIR,
+    # Always allow the consolidated media cache path even when legacy
+    # ~/.miho/media_cache exists and get_miho_dir() resolves MEDIA_CACHE_DIR
+    # to the legacy location. Agents and users often refer to the documented
+    # ~/.miho/cache/media path explicitly; without this, Discord document
+    # attachments can be stripped as unsafe and only the text reply is sent.
+    _MIHO_HOME / "cache" / "media",
     _MIHO_HOME / "image_cache",
     _MIHO_HOME / "audio_cache",
     _MIHO_HOME / "video_cache",
@@ -1023,6 +1030,7 @@ SUPPORTED_DOCUMENT_TYPES = {
     ".ts": "text/plain",
     ".py": "text/plain",
     ".sh": "text/plain",
+    **ADDITIONAL_DOCUMENT_MIME_TYPES,
 }
 
 
@@ -2379,11 +2387,13 @@ class BasePlatformAdapter(ABC):
         # ``content`` for it (so they can still react to it); here we just
         # keep it out of the user-visible cleaned text.
         cleaned = cleaned.replace("[[as_document]]", "")
-        
+
         # Extract MEDIA:<path> tags, allowing optional whitespace after the colon
         # and quoted/backticked paths for LLM-formatted outputs.
         media_pattern = re.compile(
-            r'''[`"']?MEDIA:\s*(?P<path>`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|(?:(?:~/|/|[A-Za-z]:[\\/]|\\\\)[^`"'\n]*?|[\w.\-]+(?:/[\w.\-]+)*)\.(?:png|jpe?g|gif|webp|mp4|mov|avi|mkv|webm|ogg|opus|mp3|wav|m4a|flac|epub|pdf|zip|rar|7z|docx?|xlsx?|pptx?|txt|csv|apk|ipa)(?=[\s`"',;:)\]}]|$))[`"']?'''
+            r'''[`"']?MEDIA:\s*(?P<path>`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|(?:(?:~/|/|[A-Za-z]:[\\/]|\\\\)[^`"'\n]*?|[\w.\-]+(?:/[\w.\-]+)*)\.(?:'''
+            + ATTACHMENT_EXTENSION_PATTERN
+            + r''')(?=[\s`"',;:)\]}]|$))[`"']?'''
         )
         for match in media_pattern.finditer(content):
             path = match.group("path").strip()
@@ -2397,7 +2407,7 @@ class BasePlatformAdapter(ABC):
         if media:
             cleaned = media_pattern.sub('', cleaned)
             cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
-        
+
         return media, cleaned
 
     @staticmethod
@@ -2425,25 +2435,7 @@ class BasePlatformAdapter(ABC):
             Tuple of (list of expanded file paths, cleaned text with the
             raw path strings removed).
         """
-        _LOCAL_MEDIA_EXTS = (
-            # Images (embed inline)
-            '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.svg',
-            # Video (embed inline where supported)
-            '.mp4', '.mov', '.avi', '.mkv', '.webm',
-            # Audio (delivered as voice/audio where supported)
-            '.mp3', '.wav', '.ogg', '.m4a', '.flac',
-            # Documents (uploaded as file attachments)
-            '.pdf', '.docx', '.doc', '.odt', '.rtf', '.txt', '.md',
-            # Spreadsheets / data
-            '.xlsx', '.xls', '.ods', '.csv', '.tsv', '.json', '.xml', '.yaml', '.yml',
-            # Presentations
-            '.pptx', '.ppt', '.odp', '.key',
-            # Archives
-            '.zip', '.tar', '.gz', '.tgz', '.bz2', '.xz', '.7z', '.rar',
-            # Web / rendered output
-            '.html', '.htm',
-        )
-        ext_part = '|'.join(e.lstrip('.') for e in _LOCAL_MEDIA_EXTS)
+        ext_part = ATTACHMENT_EXTENSION_PATTERN
 
         # (?<![/:\w.]) prevents matching inside URLs (e.g. https://…/img.png)
         #             and relative paths (./foo.png)

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .context import THREAD_ID, capture_gateway_context, current_life_record_dir
+from .context import capture_gateway_context
 from .tools import (
     _confirm_tool_handler,
     _delete_tool_handler,
@@ -124,31 +124,17 @@ async def _capture_gateway_context(event: Any = None, gateway: Any = None, **_: 
             logger.info("life_record auto-route skipped: sender not authorized for 생기부 PII")
             return {"action": "allow"}
         logger.info("life_record pre-dispatch: document detected (%s) — running 생기부 vision gate", document.name)
-        from .service import format_ingest_summary, ingest_life_record, looks_like_life_record
+        from .service import looks_like_life_record
 
         is_lr = await looks_like_life_record(document)
         logger.info("life_record pre-dispatch: looks_like_life_record=%s", is_lr)
         if not is_lr:
             return {"action": "allow"}
-        if _should_rewrite_to_life_record_tool(gateway, event):
-            return {
-                "action": "rewrite",
-                "text": _tool_request_text(event, document),
-                "route": "life_record",
-                "reason": "supported_document",
-                "intent": "life_record.ingest",
-                "confidence": 0.99,
-                "evidence": ["supported_attachment", document.suffix.lower()],
-                "required_tool": "life_record_ingest_pdf",
-                "priority": _ROUTE_PRIORITY,
-            }
-        result = await ingest_life_record(document, current_life_record_dir(), source_thread=THREAD_ID.get())
-        logger.info("life_record pre-dispatch: auto-ingested document_id=%s", result.get("document_id"))
         return {
-            "action": "respond",
-            "text": format_ingest_summary(result),
+            "action": "rewrite",
+            "text": _tool_request_text(event, document),
             "route": "life_record",
-            "reason": "supported_document_direct_ingest",
+            "reason": "supported_document",
             "intent": "life_record.ingest",
             "confidence": 0.99,
             "evidence": ["supported_attachment", document.suffix.lower()],
@@ -158,14 +144,6 @@ async def _capture_gateway_context(event: Any = None, gateway: Any = None, **_: 
     except Exception as exc:  # never block other plugins on a routing failure
         logger.info("life_record auto-route skipped: %s", exc)
         return {"action": "allow"}
-
-
-def _should_rewrite_to_life_record_tool(gateway: Any, event: Any) -> bool:
-    source = getattr(event, "source", None)
-    if gateway is None or source is None:
-        return False
-    adapter = getattr(gateway, "adapters", {}).get(source.platform)
-    return adapter is not None
 
 
 def _tool_request_text(event: Any, document: Path) -> str:

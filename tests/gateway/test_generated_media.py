@@ -2,6 +2,7 @@ import json
 
 import gateway.generated_media as generated_media
 from gateway.generated_media import append_missing_generated_media_directives
+from gateway.media_cache_manager import managed_media_dir
 
 
 def _tool_message(content, tool_name="image_generate"):
@@ -14,6 +15,10 @@ def _tool_message(content, tool_name="image_generate"):
 
 def _user_message(content):
     return {"role": "user", "content": content}
+
+
+def _gateway_promoted_dir(media_root):
+    return managed_media_dir("gateway_promoted", root=media_root)
 
 
 def test_appends_image_generate_url_when_final_text_omits_it():
@@ -85,6 +90,41 @@ def test_appends_academy_consultation_candidate_media_when_final_text_omits_it()
     assert response.endswith("MEDIA:/tmp/consultation-candidates.png")
 
 
+def test_appends_document_media_tag_with_web_archive_extension():
+    result = json.dumps(
+        {
+            "ok": True,
+            "document_path": "/tmp/ignored/report.mhtml",
+            "media_tag": "MEDIA:/tmp/서연_학종_리포트.mhtml",
+        },
+        ensure_ascii=False,
+    )
+
+    response = append_missing_generated_media_directives(
+        "학종 리포트 만들었어.",
+        [_tool_message(result, "media_delivery_contract")],
+    )
+
+    assert response.endswith("MEDIA:/tmp/서연_학종_리포트.mhtml")
+
+
+def test_appends_backticked_document_media_tag_from_contract_tool():
+    result = json.dumps(
+        {
+            "success": True,
+            "media_tag": "MEDIA:`/tmp/서연_학종_리포트.mhtml`",
+        },
+        ensure_ascii=False,
+    )
+
+    response = append_missing_generated_media_directives(
+        "학종 리포트 만들었어.",
+        [_tool_message(result, "media_delivery_contract")],
+    )
+
+    assert response.endswith("MEDIA:/tmp/서연_학종_리포트.mhtml")
+
+
 def test_only_promotes_current_turn_tool_media(tmp_path, monkeypatch):
     miho_home = tmp_path / ".miho"
     old_image = miho_home / "cache" / "media" / "academy_consultation_candidates" / "old.png"
@@ -92,7 +132,7 @@ def test_only_promotes_current_turn_tool_media(tmp_path, monkeypatch):
     old_image.parent.mkdir(parents=True)
     old_image.write_bytes(b"old")
     current_image.write_bytes(b"current")
-    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", miho_home / "cache" / "media" / "gateway_promoted")
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_ROOT", miho_home / "cache" / "media")
     old_result = json.dumps(
         {"ok": True, "message": f"예전 이미지\nMEDIA:{old_image}", "media_tag": f"MEDIA:{old_image}"},
         ensure_ascii=False,
@@ -120,8 +160,8 @@ def test_appends_generated_discord_export_image_path_from_tool_output(tmp_path, 
     image = miho_home / "discord_exports" / "attendance_2026-05-29_table.png"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"\x89PNG\r\n\x1a\n")
-    promoted_dir = miho_home / "cache" / "media" / "gateway_promoted"
-    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", promoted_dir)
+    media_root = miho_home / "cache" / "media"
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_ROOT", media_root)
     tool_output = json.dumps({"path": str(image), "status": "created"}, ensure_ascii=False)
 
     response = append_missing_generated_media_directives(
@@ -129,7 +169,7 @@ def test_appends_generated_discord_export_image_path_from_tool_output(tmp_path, 
         [_tool_message(tool_output, "terminal")],
     )
 
-    promoted = promoted_dir / image.name
+    promoted = _gateway_promoted_dir(media_root) / image.name
     assert response.endswith(f"MEDIA:{promoted}")
     assert promoted.read_bytes() == b"\x89PNG\r\n\x1a\n"
 
@@ -158,7 +198,7 @@ def test_ignores_media_paths_inside_current_turn_read_file_output(tmp_path, monk
     old_image = miho_home / "cache" / "media" / "academy_attendance_days" / "old.png"
     old_image.parent.mkdir(parents=True)
     old_image.write_bytes(b"old")
-    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", miho_home / "cache" / "media" / "gateway_promoted")
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_ROOT", miho_home / "cache" / "media")
     tool_output = json.dumps(
         {
             "content": f"과거 답변: MEDIA:{old_image}\n또 다른 경로 {old_image}",
@@ -180,7 +220,7 @@ def test_ignores_media_paths_inside_current_turn_execute_code_output(tmp_path, m
     old_image = miho_home / "cache" / "media" / "gateway_promoted" / "old.png"
     old_image.parent.mkdir(parents=True)
     old_image.write_bytes(b"old")
-    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", miho_home / "cache" / "media" / "gateway_promoted")
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_ROOT", miho_home / "cache" / "media")
     tool_output = json.dumps(
         {"status": "success", "output": f"debug output includes {old_image}"},
         ensure_ascii=False,
@@ -214,8 +254,8 @@ def test_appends_health_card_png_from_media_cache_when_final_text_omits_it(tmp_p
     image = miho_home / "media_cache" / "health-nightly" / "2026-05-31-health-card.png"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"\x89PNG\r\n\x1a\n")
-    promoted_dir = miho_home / "cache" / "media" / "gateway_promoted"
-    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", promoted_dir)
+    media_root = miho_home / "cache" / "media"
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_ROOT", media_root)
     tool_output = json.dumps({"path": str(image), "status": "created"}, ensure_ascii=False)
 
     response = append_missing_generated_media_directives(
@@ -223,7 +263,7 @@ def test_appends_health_card_png_from_media_cache_when_final_text_omits_it(tmp_p
         [_tool_message(tool_output, "terminal")],
     )
 
-    promoted = promoted_dir / image.name
+    promoted = _gateway_promoted_dir(media_root) / image.name
     assert response.endswith(f"MEDIA:{promoted}")
     assert promoted.read_bytes() == b"\x89PNG\r\n\x1a\n"
 
@@ -233,8 +273,8 @@ def test_does_not_duplicate_media_already_present_from_structured_tool_output(tm
     image = miho_home / "media_cache" / "academy_reports" / "assignment.png"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"\x89PNG\r\n\x1a\n")
-    promoted_dir = miho_home / "cache" / "media" / "gateway_promoted"
-    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", promoted_dir)
+    media_root = miho_home / "cache" / "media"
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_ROOT", media_root)
     tool_output = json.dumps(
         {
             "ok": True,
@@ -252,7 +292,7 @@ def test_does_not_duplicate_media_already_present_from_structured_tool_output(tm
     )
 
     assert response == final
-    assert not (promoted_dir / image.name).exists()
+    assert not (_gateway_promoted_dir(media_root) / image.name).exists()
 
 
 def test_does_not_duplicate_original_when_promoted_copy_is_already_present(tmp_path, monkeypatch):
@@ -260,11 +300,12 @@ def test_does_not_duplicate_original_when_promoted_copy_is_already_present(tmp_p
     image = miho_home / "media_cache" / "academy_reports" / "assignment.png"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"\x89PNG\r\n\x1a\nsame")
-    promoted_dir = miho_home / "cache" / "media" / "gateway_promoted"
-    promoted_dir.mkdir(parents=True)
+    media_root = miho_home / "cache" / "media"
+    promoted_dir = _gateway_promoted_dir(media_root)
+    promoted_dir.mkdir(parents=True, exist_ok=True)
     promoted = promoted_dir / image.name
     promoted.write_bytes(image.read_bytes())
-    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", promoted_dir)
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_ROOT", media_root)
     tool_output = json.dumps(
         {
             "ok": True,
@@ -292,7 +333,7 @@ def test_ignores_media_cache_path_in_stdout_text_not_structured(tmp_path, monkey
     image = miho_home / "media_cache" / "health-nightly" / "old.png"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"old")
-    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_DIR", miho_home / "cache" / "media" / "gateway_promoted")
+    monkeypatch.setattr(generated_media, "_MEDIA_CACHE_ROOT", miho_home / "cache" / "media")
     tool_output = json.dumps(
         {"status": "success", "output": f"saved chart to {image}"},
         ensure_ascii=False,

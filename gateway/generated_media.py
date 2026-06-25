@@ -10,18 +10,21 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from miho_constants import get_miho_dir
+from gateway.attachment_extensions import ATTACHMENT_EXTENSION_PATTERN
+from gateway.media_cache_manager import managed_media_dir
 
 
 _TOOL_MEDIA_RE = re.compile(
-    r"MEDIA:((?:/|~/)\S+\.(?:png|jpe?g|gif|webp|"
-    r"mp4|mov|avi|mkv|webm|ogg|opus|mp3|wav|m4a|"
-    r"flac|epub|pdf|zip|rar|7z|docx?|xlsx?|pptx?|"
-    r"txt|csv|apk|ipa))",
+    (
+        r'''MEDIA:\s*(?P<path>`(?:/|~/)[^`\n]+?\.(?:{ext})`|'''
+        r'''"(?:/|~/)[^"\n]+?\.(?:{ext})"|'''
+        r"""'(?:/|~/)[^'\n]+?\.(?:{ext})'|"""
+        r'''(?:/|~/)\S+\.(?:{ext}))'''
+    ).format(ext=ATTACHMENT_EXTENSION_PATTERN),
     re.IGNORECASE,
 )
 _TOOL_LOCAL_MEDIA_RE = re.compile(
-    r"(?P<path>(?:/|~/)\S+\.(?:png|jpe?g|gif|webp|mp4|mov|avi|mkv|webm|"
-    r"ogg|opus|mp3|wav|m4a|flac|pdf|zip|docx?|xlsx?|pptx?|txt|csv))",
+    r"(?P<path>(?:/|~/)\S+\.(?:{ext}))".format(ext=ATTACHMENT_EXTENSION_PATTERN),
     re.IGNORECASE,
 )
 _TOOL_LOCAL_MEDIA_SAFE_PARTS = (
@@ -33,7 +36,8 @@ _TOOL_LOCAL_MEDIA_SAFE_PARTS = (
     # promote a structured path the skill exposed so the image still ships turn 1.
     "/.miho/media_cache/",
 )
-_MEDIA_CACHE_DIR = get_miho_dir("cache/media", "media_cache") / "gateway_promoted"
+_MEDIA_CACHE_ROOT = get_miho_dir("cache/media", "media_cache")
+_MEDIA_CACHE_DIR: Path | None = None
 _RAW_MEDIA_TOOL_NAMES = {"tts", "text_to_speech", "text_to_speech_tool"}
 _MEDIA_TAG_KEYS = {"media_tag"}
 _MEDIA_PATH_KEYS = {"image_path", "file_path", "audio_path", "video_path", "document_path", "path"}
@@ -250,13 +254,13 @@ def _promoted_equivalent_path(path: str) -> str:
         return str(resolved)
     if not _is_safe_generated_media_path(str(resolved)):
         return ""
-    return str(_MEDIA_CACHE_DIR / resolved.name)
+    return str(_gateway_promoted_dir() / resolved.name)
 
 
 def _media_paths_from_tool_content(content: str) -> list[str]:
     paths: list[str] = []
     for match in _TOOL_MEDIA_RE.finditer(content):
-        path = match.group(1).strip().rstrip('",}')
+        path = _clean_path(match.group("path"))
         if path:
             paths.append(path)
     return paths
@@ -274,7 +278,10 @@ def _local_media_paths_from_tool_content(content: str) -> list[str]:
 
 
 def _clean_path(path: str) -> str:
-    return os.path.expanduser(path.strip().rstrip('",}.)]'))
+    clean = path.strip()
+    if len(clean) >= 2 and clean[0] == clean[-1] and clean[0] in "`\"'":
+        clean = clean[1:-1].strip()
+    return os.path.expanduser(clean.rstrip('",}.)]'))
 
 
 def _is_safe_generated_media_path(path: str) -> bool:
@@ -297,12 +304,19 @@ def _delivery_path_for_generated_media(path: str) -> str:
     if "/.miho/cache/media/" in normalized:
         return str(resolved)
     try:
-        _MEDIA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        target = _MEDIA_CACHE_DIR / resolved.name
+        target_dir = _gateway_promoted_dir()
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / resolved.name
         shutil.copy2(resolved, target)
     except OSError:
         return ""
     return str(target)
+
+
+def _gateway_promoted_dir() -> Path:
+    if _MEDIA_CACHE_DIR is not None:
+        return Path(_MEDIA_CACHE_DIR)
+    return managed_media_dir("gateway_promoted", root=_MEDIA_CACHE_ROOT)
 
 
 def _is_image_generate_result(msg: dict[str, Any], content: str) -> bool:

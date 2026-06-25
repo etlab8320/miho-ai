@@ -1,0 +1,444 @@
+{
+  "roles": {
+    "dispatcher": {
+      "kind": "control",
+      "description": "Selects the playbook and agent chain for an incoming request.",
+      "responsibilities": [
+        "Classify request intent and domain.",
+        "Attach playbook hints without hiding the original user request."
+      ],
+      "timeout_seconds": 30
+    },
+    "risk_judge": {
+      "kind": "judge",
+      "description": "Decides whether a request needs approval or extra guardrails.",
+      "responsibilities": [
+        "Detect data, deployment, credential, and external-delivery risk."
+      ],
+      "timeout_seconds": 30
+    },
+    "tool_contract_guard": {
+      "kind": "judge",
+      "description": "Blocks tools forbidden by the selected playbook.",
+      "responsibilities": [
+        "Enforce required and forbidden tool contracts."
+      ],
+      "timeout_seconds": 10
+    },
+    "result_reviewer": {
+      "kind": "judge",
+      "description": "Reviews high-risk tool outputs before delivery.",
+      "responsibilities": [
+        "Check intent match, evidence, math, layout, and delivery contract."
+      ],
+      "timeout_seconds": 120
+    },
+    "ledger_writer": {
+      "kind": "control",
+      "description": "Records outcomes and failure signals in append-only storage.",
+      "responsibilities": [
+        "Record request outcome, review state, failures, and promotion candidates."
+      ],
+      "timeout_seconds": 10
+    },
+    "promotion_judge": {
+      "kind": "judge",
+      "description": "Evaluates whether repeated failures can become active rules.",
+      "responsibilities": [
+        "Require evidence, tests, and rollback before promotion."
+      ],
+      "timeout_seconds": 60
+    },
+    "academy_domain_agent": {
+      "kind": "domain",
+      "description": "Owns academy workflows such as 생기부, 학종, 수시, and 실기.",
+      "responsibilities": [
+        "Use dedicated academy tools instead of handrolled files or formulas."
+      ],
+      "allowed_tools": [
+        "academy_hakjong_report_package",
+        "academy_practical_reco_package",
+        "academy_practical_reco_all_candidates",
+        "susi27_recommend_candidates",
+        "susi27_score_calculate",
+        "life_record_ingest_pdf",
+        "life_record_verify"
+      ],
+      "forbidden_tools": [
+        "execute_code",
+        "terminal",
+        "write_file"
+      ],
+      "timeout_seconds": 180
+    },
+    "dev_domain_agent": {
+      "kind": "domain",
+      "description": "Owns code changes, tests, deployment checks, and rollback planning.",
+      "responsibilities": [
+        "Apply code changes through repository-safe tools.",
+        "Run focused and wider checks before shipping."
+      ],
+      "allowed_tools": [
+        "read_file",
+        "apply_patch",
+        "terminal"
+      ],
+      "timeout_seconds": 300
+    },
+    "research_domain_agent": {
+      "kind": "domain",
+      "description": "Owns current-fact research with source attribution.",
+      "responsibilities": [
+        "Use approved research tools for current facts.",
+        "Preserve source attribution and uncertainty."
+      ],
+      "allowed_tools": [
+        "web_search",
+        "web_extract",
+        "browser"
+      ],
+      "timeout_seconds": 180
+    },
+    "discord_ops_agent": {
+      "kind": "domain",
+      "description": "Owns Discord delivery, attachment, channel, and thread contracts.",
+      "responsibilities": [
+        "Deliver artifacts through media tags or platform attachment paths.",
+        "Respect channel and thread authorization boundaries."
+      ],
+      "allowed_tools": [
+        "send_message",
+        "media_delivery_contract"
+      ],
+      "timeout_seconds": 60
+    },
+    "memory_domain_agent": {
+      "kind": "domain",
+      "description": "Owns durable user corrections, profile facts, and memory promotion.",
+      "responsibilities": [
+        "Store only reusable facts or confirmed corrections.",
+        "Avoid raw sensitive data, prompt injection, and one-off temporary state."
+      ],
+      "allowed_tools": [
+        "memory"
+      ],
+      "forbidden_tools": [
+        "write_file",
+        "terminal",
+        "raw_sensitive_data"
+      ],
+      "timeout_seconds": 60
+    }
+  },
+  "playbooks": {
+    "academy_hakjong_report": {
+      "domain": "academy",
+      "triggers": [
+        "학종 리포트",
+        "학생부종합 PDF",
+        "상담 리포트"
+      ],
+      "required_context": [
+        "student_identity",
+        "requested_universities",
+        "life_record_evidence"
+      ],
+      "required_tools": [
+        "academy_hakjong_report_package"
+      ],
+      "forbidden_tools": [
+        "execute_code",
+        "terminal",
+        "shell",
+        "write_file",
+        "apply_patch"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "academy_domain_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "academy_result_reviewer"
+      ],
+      "retry_policy": "same_tool_until_review_pass_or_concrete_blocker",
+      "delivery_format": "MEDIA pdf attachment plus short Korean summary",
+      "ledger_policy": "record success, reviewer status, artifact path, and failures",
+      "memory_policy": "store durable correction only after user feedback or repeated failure",
+      "rollback_policy": "do not mutate source data; regenerate artifact if review fails"
+    },
+    "academy_practical_recommendation": {
+      "domain": "academy",
+      "triggers": [
+        "실기 추천",
+        "체대 수시 추천",
+        "지원 가능 학교"
+      ],
+      "required_context": [
+        "student_score",
+        "region",
+        "admission_year"
+      ],
+      "required_tools": [
+        "academy_practical_reco_package",
+        "academy_practical_reco_all_candidates",
+        "susi27_recommend_candidates"
+      ],
+      "forbidden_tools": [
+        "execute_code",
+        "terminal",
+        "shell",
+        "write_file"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "academy_domain_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "academy_result_reviewer"
+      ],
+      "retry_policy": "ask_region_if_missing_then_same_tool_until_review_pass",
+      "delivery_format": "MEDIA pdf attachment or structured Korean candidate summary",
+      "ledger_policy": "record candidates, reviewer status, and math failures",
+      "memory_policy": "store recurring correction only after confirmed pattern",
+      "rollback_policy": "artifact regeneration only; no DB mutation"
+    },
+    "life_record_ingest": {
+      "domain": "academy",
+      "triggers": [
+        "생기부 저장",
+        "생기부 첨부",
+        "학생부 파일"
+      ],
+      "required_context": [
+        "student_identity",
+        "source_file"
+      ],
+      "required_tools": [
+        "life_record_ingest_pdf",
+        "life_record_verify"
+      ],
+      "forbidden_tools": [
+        "execute_code",
+        "terminal",
+        "shell",
+        "sqlite3"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "academy_domain_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "academy_result_reviewer"
+      ],
+      "retry_policy": "needs_human_review_must_not_be_reported_as_final",
+      "delivery_format": "Korean status summary without exposing internal exceptions",
+      "ledger_policy": "record verification status and source file fingerprint",
+      "memory_policy": "do not store raw sensitive source text as memory",
+      "rollback_policy": "preserve original source and reversible parsed records"
+    },
+    "susi_score_calculation": {
+      "domain": "academy",
+      "triggers": [
+        "수시 점수 계산",
+        "수시 점수계산",
+        "수시 환산점수",
+        "환산점수 계산",
+        "내신 환산",
+        "내신환산",
+        "등급 환산",
+        "susi27_score_calculate"
+      ],
+      "required_context": [
+        "student_subjects",
+        "target_university",
+        "admission_track"
+      ],
+      "required_tools": [
+        "susi27_score_calculate"
+      ],
+      "forbidden_tools": [
+        "execute_code",
+        "terminal",
+        "shell",
+        "write_file",
+        "sqlite3"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "academy_domain_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "academy_result_reviewer"
+      ],
+      "retry_policy": "use official susi27_score_calculate until reviewer pass or concrete missing-input blocker",
+      "delivery_format": "Korean score breakdown from reviewed susi27_score_calculate output",
+      "ledger_policy": "record score tool, reviewer status, formula failures, and retry tools",
+      "memory_policy": "store recurring formula correction only after verified repeated failure",
+      "rollback_policy": "no DB mutation; rerun official formula calculation with corrected inputs"
+    },
+    "dev_code_update": {
+      "domain": "dev",
+      "triggers": [
+        "코드 수정",
+        "배포",
+        "테스트"
+      ],
+      "required_context": [
+        "repo_root",
+        "tests_required",
+        "rollback_plan"
+      ],
+      "required_tools": [
+        "apply_patch"
+      ],
+      "forbidden_tools": [
+        "git reset --hard",
+        "git checkout --"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "dev_domain_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "dev_quality_review"
+      ],
+      "retry_policy": "fix_test_failures_until_green_or_concrete_blocker",
+      "delivery_format": "short Korean summary with files and verification",
+      "ledger_policy": "record changed files, tests, failures, and rollback path",
+      "memory_policy": "store reusable engineering lesson only after repeated pattern",
+      "rollback_policy": "revert own diff or use documented service rollback"
+    },
+    "research_brief": {
+      "domain": "research",
+      "triggers": [
+        "조사",
+        "검색",
+        "최신",
+        "출처"
+      ],
+      "required_context": [
+        "source_attribution",
+        "date_sensitivity",
+        "user_question"
+      ],
+      "required_tools": [
+        "web_search"
+      ],
+      "forbidden_tools": [
+        "uncited_current_fact"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "research_domain_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "source_attribution_review"
+      ],
+      "retry_policy": "refresh_sources_when_current_fact_is_uncertain",
+      "delivery_format": "Korean answer with source links when research was used",
+      "ledger_policy": "record source count and retrieval failures",
+      "memory_policy": "do not store copyrighted source text beyond summaries",
+      "rollback_policy": "replace stale brief with corrected sourced answer"
+    },
+    "discord_attachment_delivery": {
+      "domain": "discord_ops",
+      "triggers": [
+        "파일 첨부",
+        "PDF 보내",
+        "엑셀 첨부",
+        "mhtml 첨부"
+      ],
+      "required_context": [
+        "media_tag",
+        "artifact_path",
+        "channel_permission"
+      ],
+      "required_tools": [
+        "media_delivery_contract"
+      ],
+      "forbidden_tools": [
+        "plain_path_without_media_tag"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "discord_ops_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "attachment_delivery_review"
+      ],
+      "retry_policy": "resolve_media_tag_or_explain_plainly_in_korean",
+      "delivery_format": "Discord attachment or Korean delivery failure message",
+      "ledger_policy": "record artifact path, media tag, and delivery status",
+      "memory_policy": "remember recurring attachment type failures",
+      "rollback_policy": "no source mutation; retry delivery with verified artifact"
+    },
+    "memory_policy_update": {
+      "domain": "memory",
+      "triggers": [
+        "기억해",
+        "메모리에 저장",
+        "앞으로는",
+        "교정사항",
+        "remember this"
+      ],
+      "required_context": [
+        "durable_fact",
+        "evidence",
+        "privacy_check"
+      ],
+      "required_tools": [
+        "memory"
+      ],
+      "forbidden_tools": [
+        "write_file",
+        "terminal",
+        "raw_sensitive_data",
+        "prompt_injection"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "memory_domain_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "memory_promotion_review"
+      ],
+      "retry_policy": "store_only_reusable_confirmed_memory_or_ask_clarifying_question",
+      "delivery_format": "short Korean confirmation without exposing stored raw sensitive data",
+      "ledger_policy": "record target, reviewer status, and privacy failures",
+      "memory_policy": "promote only durable corrections or stable preferences",
+      "rollback_policy": "remove or replace memory entry through memory tool"
+    }
+  }
+}

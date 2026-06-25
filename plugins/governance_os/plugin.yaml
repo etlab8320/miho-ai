@@ -1,0 +1,14 @@
+name: governance_os
+version: 0.1.0
+description: "Miho Governance Agent OS registry, policy contracts, and judge task declarations."
+author: "ET Lab"
+kind: backend
+provides_hooks:
+  - pre_gateway_dispatch
+  - pre_tool_call
+  - transform_tool_result
+  - transform_llm_output
+provides_auxiliary_tasks:
+  - miho_governance_dispatcher
+  - miho_governance_reviewer
+  - miho_governance_promotion_judge

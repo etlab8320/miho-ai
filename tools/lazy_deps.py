@@ -165,6 +165,12 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # ─── Tools ─────────────────────────────────────────────────────────────
     # Korean school-life-record PDFs: text layer + embedded student photo.
     "tool.life_record": ("PyMuPDF==1.26.6",),
+    # Page-grounded document evidence: PDF rendering plus optional native macOS OCR.
+    "tool.pixel_documents_pdf": ("PyMuPDF==1.26.6",),
+    "tool.pixel_documents_apple_vision": (
+        "pyobjc-framework-Vision==11.1",
+        "pyobjc-framework-Quartz==11.1",
+    ),
     # ACP adapter (VS Code / Zed / JetBrains integration)
     "tool.acp": ("agent-client-protocol==0.9.0",),
     # Dashboard (`miho dashboard`)

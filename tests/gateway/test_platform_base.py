@@ -478,6 +478,13 @@ class TestMediaDeliveryPathValidation:
 
         assert "media_cache" in roots
 
+    def test_default_roots_include_consolidated_cache_media(self):
+        from gateway.platforms import base
+
+        roots = {str(root) for root in base.MEDIA_DELIVERY_SAFE_ROOTS}
+
+        assert str(base._MIHO_HOME / "cache" / "media") in roots
+
 
 # ---------------------------------------------------------------------------
 # should_send_media_as_audio

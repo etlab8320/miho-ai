@@ -40,6 +40,16 @@ def _goal_continuation_event(source, goal="finish the task"):
     )
 
 
+def _assert_thread_metadata_call(call):
+    assert call["chat_id"] == "parent-channel"
+    assert call["content"] == "✓ Goal achieved: done"
+    assert call["reply_to"] is None
+    metadata = call["metadata"]
+    assert metadata["thread_id"] == "thread-123"
+    assert len(metadata["media_delivery_roots"]) == 1
+    assert "thread-123__thread-123" in metadata["media_delivery_roots"][0]
+
+
 @pytest.mark.asyncio
 async def test_goal_status_notice_uses_adapter_send_with_thread_metadata():
     """Regression: /goal judge status must use BasePlatformAdapter.send().
@@ -60,14 +70,8 @@ async def test_goal_status_notice_uses_adapter_send_with_thread_metadata():
 
     await runner._send_goal_status_notice(source, "✓ Goal achieved: done")
 
-    assert adapter.calls == [
-        {
-            "chat_id": "parent-channel",
-            "content": "✓ Goal achieved: done",
-            "reply_to": None,
-            "metadata": {"thread_id": "thread-123"},
-        }
-    ]
+    assert len(adapter.calls) == 1
+    _assert_thread_metadata_call(adapter.calls[0])
 
 
 @pytest.mark.asyncio
@@ -100,14 +104,8 @@ async def test_goal_status_notice_defers_until_post_delivery_callback():
     if hasattr(result, "__await__"):
         await result
 
-    assert adapter.calls == [
-        {
-            "chat_id": "parent-channel",
-            "content": "✓ Goal achieved: done",
-            "reply_to": None,
-            "metadata": {"thread_id": "thread-123"},
-        }
-    ]
+    assert len(adapter.calls) == 1
+    _assert_thread_metadata_call(adapter.calls[0])
 
 
 def test_clear_goal_pending_continuations_removes_slot_and_overflow_only():

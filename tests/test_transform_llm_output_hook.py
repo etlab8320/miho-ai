@@ -16,9 +16,11 @@ contract for the generic tool-result seam.
 """
 
 from pathlib import Path
+import inspect
 
 import yaml
 
+from agent import conversation_loop
 import miho_cli.plugins as plugins_mod
 from miho_cli.plugins import PluginManager, VALID_HOOKS
 
@@ -73,6 +75,17 @@ def test_hook_receives_expected_kwargs(tmp_path, monkeypatch):
         platform="cli",
     )
     assert results == ["hello world|s1|anthropic/claude-sonnet-4.6|cli"]
+
+
+def test_conversation_loop_passes_original_user_message_to_transform_hook():
+    source = inspect.getsource(conversation_loop.run_conversation)
+    start = source.index('_transform_results = _invoke_hook(')
+    end = source.index("# Plugin hook: post_llm_call", start)
+    transform_block = source[start:end]
+
+    assert '"transform_llm_output"' in transform_block
+    assert "user_message=original_user_message" in transform_block
+    assert "conversation_history=list(messages)" in transform_block
 
 
 def test_first_non_empty_string_wins_semantics():
