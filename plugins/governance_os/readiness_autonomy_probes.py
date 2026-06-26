@@ -108,6 +108,52 @@ def self_harness_autonomy_probe_passed() -> bool:
             reset_miho_home_override(token)
 
 
+def self_harness_runtime_feedback_probe_passed() -> bool:
+    from miho_constants import reset_miho_home_override, set_miho_home_override
+
+    from .self_harness_loop import PROPOSER_TASK, WEAKNESS_MINER_TASK
+    from .self_harness_runtime import run_feedback_improvement_loop
+
+    with tempfile.TemporaryDirectory(prefix="miho-governance-runtime-feedback-") as tmp:
+        token = set_miho_home_override(Path(tmp) / ".miho")
+        try:
+            calls: list[str] = []
+
+            def fake_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+                calls.append(str(kwargs.get("task") or ""))
+                return _agentic_self_harness_payload(kwargs)
+
+            result = run_feedback_improvement_loop(
+                request_id="readiness-runtime-feedback",
+                playbook_key="designed_pdf_artifact",
+                failure_signature="pdf_footer_overflow",
+                user_feedback="PDF footer overflow during readiness probe",
+                artifact_paths=("/tmp/probe.pdf",),
+                recent_events=(
+                    _feedback_probe_event(
+                        1,
+                        "designed_pdf_artifact",
+                        "pdf_footer_overflow",
+                    ),
+                ),
+                receipt_runner=lambda _target: (0, "passed"),
+                smoke_runner=lambda _target: (0, "passed"),
+                call_llm=fake_call_llm,
+                extract_content=_extract_content,
+            )
+            return (
+                result["status"] == "activated"
+                and result["self_harness_triggered"] is True
+                and result["user_visible_message_allowed"] is False
+                and bool(result["recorded_event_id"])
+                and calls == [WEAKNESS_MINER_TASK, PROPOSER_TASK]
+            )
+        except Exception:
+            return False
+        finally:
+            reset_miho_home_override(token)
+
+
 def _passing_receipts(candidate: dict[str, object]) -> tuple[dict[str, object], ...]:
     validation = candidate.get("validation")
     typed_validation = cast("dict[str, object]", validation) if isinstance(validation, dict) else {}
@@ -140,3 +186,43 @@ def _promotion_probe_event(event_id: int, playbook_key: str, failure: str) -> di
             }
         },
     }
+
+
+def _feedback_probe_event(event_id: int, playbook_key: str, failure: str) -> dict[str, object]:
+    return {
+        "id": event_id,
+        "metadata": {
+            "governance_outcome": {
+                "request_id": f"readiness-feedback-{event_id}",
+                "playbook_key": playbook_key,
+                "review_status": "user_reported_failure",
+                "failures": [failure],
+                "artifact_paths": ["/tmp/probe.pdf"],
+                "user_feedback": "PDF footer overflow",
+            }
+        },
+    }
+
+
+def _agentic_self_harness_payload(kwargs: object) -> dict[str, object]:
+    import json
+
+    typed = kwargs if isinstance(kwargs, dict) else {}
+    messages = typed.get("messages")
+    if not isinstance(messages, list) or len(messages) < 2:
+        return {"content": "{}"}
+    user_message = messages[1]
+    if not isinstance(user_message, dict):
+        return {"content": "{}"}
+    payload = json.loads(str(user_message.get("content") or "{}"))
+    if typed.get("task") == "miho_self_harness_weakness_miner":
+        content = payload.get("deterministic_bundle", {})
+    else:
+        content = {"candidates": payload.get("deterministic_candidates", [])}
+    return {"content": json.dumps(content, ensure_ascii=False)}
+
+
+def _extract_content(response: object) -> str:
+    if isinstance(response, dict):
+        return str(response.get("content") or "")
+    return str(response or "")

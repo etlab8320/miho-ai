@@ -5,8 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from .contract_schema import normalize_tool_contract
+
 
 logger = logging.getLogger(__name__)
+_DISCOVERY_ATTEMPTED = False
 
 
 _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -75,6 +78,36 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "requires": ["student_name", "region"],
     },
+    "susi27_recommend_candidates": {
+        "domain": "susi_ops",
+        "purpose": (
+            "수시 실기/교과 추천의 시작점. 학생 성적 조회, 학교별 환산, 전년도 도달성 필터, "
+            "지역 필터, 상향/적정 제안을 한 번에 반환한다. 추천 요청에서 룰/계산 도구를 손으로 "
+            "조립하지 말고 이 도구를 먼저 사용한다."
+        ),
+        "requires": ["student_query", "region"],
+        "output": "candidate rows with score, full-practical reachability, region, verdict evidence",
+        "reviewer": "academy_result_reviewer",
+        "retry": "ask for missing region/student, then rerun susi27_recommend_candidates",
+        "delivery": "structured Korean table or source payload for practical recommendation PDF",
+        "blocking_rules": [
+            "do not mention schools absent from the returned candidate list",
+            "do not include schools unreachable even with full practical score",
+        ],
+    },
+    "susi27_score_calculate": {
+        "domain": "susi_ops",
+        "purpose": (
+            "verified 수시 룰로 특정 대학/학과의 학생 교과·출결·실기 환산점수를 계산한다. "
+            "전체 추천 후보 생성이 아니라 개별 점수 검증과 재계산에 사용한다."
+        ),
+        "requires": ["university_id", "grades"],
+        "output": "verified score calculation payload with vs_prev_year reachability",
+        "reviewer": "academy_result_reviewer",
+        "retry": "fix university_id or student score inputs and rerun susi27_score_calculate",
+        "delivery": "Korean score breakdown only after review pass",
+        "blocking_rules": ["do not invent score values without this payload"],
+    },
     "hakjong_qualitative_profile": {
         "domain": "academy_ops",
         "purpose": (
@@ -137,6 +170,31 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "requires": ["columns", "rows"],
     },
+    "html_pdf_quality_gate": {
+        "domain": "artifact",
+        "purpose": (
+            "새로 제작하는 한국어 상담자료·운동 프로그램·교육 가이드·업무 제안 PDF의 기본 경로다. "
+            "사용자가 처음부터 PDF를 달라고 하거나, 직전 답변/스레드 내용을 PDF로 정리해달라고 하면 "
+            "본문 에이전트는 먼저 자체 포함 HTML을 만들고 이 HTML-first 품질 게이트를 호출한다. "
+            "이 도구는 PDF 렌더링, 메타데이터 제거, 페이지 PNG/contact sheet 생성, 기본 검수를 수행한다. "
+            "PyMuPDF/ReportLab/fitz 좌표 그리기 스크립트로 새 PDF를 직접 만들지 말고, "
+            "통과한 pdf_path만 media_delivery_contract로 첨부한다. "
+            "이미 존재하는 고정 입시 패키지는 이 도구가 아니라 academy_hakjong_report_package 또는 "
+            "academy_practical_reco_package/all_candidates를 쓴다."
+        ),
+        "requires": ["self-contained html_path", "pdf_path"],
+    },
+    "html_pdf_autocorrect": {
+        "domain": "artifact",
+        "purpose": (
+            "html_pdf_quality_gate의 contact sheet/vision reviewer가 footer 밀림, 줄 정렬, "
+            "텍스트 겹침, 페이지 잘림, 디자인 품질 문제를 지적했을 때 HTML 원본에 "
+            "print-safe CSS와 footer/page-break guard를 주입한다. "
+            "의미 내용을 새로 쓰는 도구가 아니며, 보정 후 반드시 html_pdf_quality_gate와 "
+            "vision_analyze를 다시 통과시킨 뒤 media_delivery_contract로 첨부한다."
+        ),
+        "requires": ["html_path", "visual_review"],
+    },
     "jungsi_login": {
         "domain": "jungsi_excel_importer",
         "purpose": (
@@ -187,6 +245,36 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "requires": ["file under Miho media cache or allowed media dir"],
     },
+    "apply_patch": {
+        "domain": "dev_tools",
+        "purpose": "승인된 코드 변경 범위에서 repository patch를 적용한다. 일반 상담/학원 산출물에는 사용하지 않는다.",
+        "requires": ["unified patch", "repo scope"],
+        "output": "patch application result",
+        "reviewer": "dev_result_reviewer",
+        "retry": "fix patch conflicts and rerun focused tests",
+        "delivery": "code diff summary after tests",
+        "blocking_rules": ["do not use for academy artifact generation"],
+    },
+    "web_search": {
+        "domain": "research",
+        "purpose": "최신/외부 사실 확인이 필요한 리서치에서 source attribution을 확보한다.",
+        "requires": ["current-fact query"],
+        "output": "cited current-fact evidence",
+        "reviewer": "research_result_reviewer",
+        "retry": "search more authoritative sources when evidence is weak",
+        "delivery": "Korean answer with source links and uncertainty",
+        "blocking_rules": ["do not invent current facts without sources"],
+    },
+    "memory": {
+        "domain": "memory",
+        "purpose": "사용자가 확인한 재사용 가능 사실과 반복 실패 교정을 저장한다. 임시 원문이나 민감정보 저장 금지.",
+        "requires": ["confirmed durable memory fact"],
+        "output": "memory write confirmation",
+        "reviewer": "memory_result_reviewer",
+        "retry": "redact or narrow memory content before retry",
+        "delivery": "short Korean confirmation only when user-facing",
+        "blocking_rules": ["do not store raw sensitive data or one-off temporary state"],
+    },
 }
 
 
@@ -208,10 +296,14 @@ def decision_tool_contracts() -> dict[str, dict[str, Any]]:
             )
     except Exception as exc:
         logger.debug("decision twin academy contracts unavailable: %s", exc)
-    return contracts
+    return {
+        name: normalize_tool_contract(name, contract, source=_contract_source(name, contract))
+        for name, contract in sorted(contracts.items())
+    }
 
 
 def _registered_tool_contracts() -> dict[str, dict[str, Any]]:
+    _ensure_tool_discovery()
     try:
         from tools.registry import registry
     except ImportError as exc:
@@ -228,8 +320,28 @@ def _registered_tool_contracts() -> dict[str, dict[str, Any]]:
             "domain": entry.toolset,
             "purpose": _purpose(entry.description, schema, name, entry.toolset),
             "args": _schema_args(schema),
+            "schema_required": _schema_required(schema),
         }
     return contracts
+
+
+def _ensure_tool_discovery() -> None:
+    global _DISCOVERY_ATTEMPTED
+    if _DISCOVERY_ATTEMPTED:
+        return
+    _DISCOVERY_ATTEMPTED = True
+    try:
+        from tools.registry import discover_builtin_tools
+
+        discover_builtin_tools()
+    except Exception as exc:
+        logger.debug("decision twin builtin tool discovery unavailable: %s", exc)
+    try:
+        from miho_cli.plugins import discover_plugins
+
+        discover_plugins()
+    except Exception as exc:
+        logger.debug("decision twin plugin discovery unavailable: %s", exc)
 
 
 def _purpose(description: str, schema: dict[str, Any], name: str, toolset: str) -> str:
@@ -244,6 +356,25 @@ def _schema_args(schema: dict[str, Any]) -> list[str]:
     if not isinstance(properties, dict):
         return []
     return [str(name) for name in properties.keys()]
+
+
+def _schema_required(schema: dict[str, Any]) -> list[str]:
+    required = schema.get("required")
+    if not isinstance(required, list):
+        params = schema.get("parameters")
+        if isinstance(params, dict):
+            required = params.get("required")
+    if not isinstance(required, list):
+        return []
+    return [str(name) for name in required if str(name or "").strip()]
+
+
+def _contract_source(name: str, contract: dict[str, Any]) -> str:
+    if name in _CORE_CONTRACTS:
+        return "decision_twin_core"
+    if "aliases" in contract:
+        return "academy_tool_registry"
+    return "tool_registry"
 
 
 def _compact(value: str, limit: int = 360) -> str:

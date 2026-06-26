@@ -105,7 +105,9 @@ def _owner_context(text: str, builder: Any = None) -> str:
 
 def _turn_context(event: Any) -> dict[str, Any]:
     media = [_media_summary(item) for item in getattr(event, "media_urls", None) or []]
+    source = getattr(event, "source", None)
     return {
+        "thread_id": _compact(getattr(source, "thread_id", "")),
         "media": [item for item in media if item],
         "reply_to_text": _compact(getattr(event, "reply_to_text", "")),
         "channel_context": _compact(getattr(event, "channel_context", "")),

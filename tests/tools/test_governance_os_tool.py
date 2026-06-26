@@ -53,6 +53,11 @@ def test_governance_tool_status_reports_readiness(tmp_path, monkeypatch) -> None
     assert result["readiness"]["retry_instruction_probe_passed"] is True
     assert result["readiness"]["transform_ledger_probe_passed"] is True
     assert result["readiness"]["final_delivery_probe_passed"] is True
+    assert result["readiness"]["final_delivery_retry_probe_passed"] is True
+    assert result["readiness"]["final_delivery_repair_probe_passed"] is True
+    assert result["readiness"]["final_qa_repair_probe_passed"] is True
+    assert result["readiness"]["self_harness_autonomy_probe_passed"] is True
+    assert result["readiness"]["self_harness_runtime_feedback_probe_passed"] is True
     assert result["readiness"]["evolution_rollback_probe_passed"] is True
     assert result["readiness"]["hook_probe_passed"] is True
     assert result["readiness"]["manifest_probe_passed"] is True

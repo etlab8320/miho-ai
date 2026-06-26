@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # 내부 재시도 지시(assistant_instruction)와 사용자 노출 문구(user_safe_message)를
 # 명시적으로 분리한다. 사용자에게 보여도 안전한 평문만 user_safe_message로 둔다.
-_USER_SAFE_RETRY_MESSAGE = "확인을 한 번 더 거쳐 정리해서 이어 답하겠습니다."
+_USER_SAFE_RETRY_MESSAGE = "최종 결과 없음.\n필요한 입력: 검수 통과 산출물."
 
 _SELF_REVIEWED_TOOL_PLAYBOOKS: dict[str, tuple[str, ...]] = {
     "academy_hakjong_report_package": ("academy_hakjong_report",),
@@ -25,8 +25,10 @@ _SELF_REVIEWED_TOOL_PLAYBOOKS: dict[str, tuple[str, ...]] = {
     "susi27_score_calculate": ("susi_score_calculation",),
     "life_record_ingest_pdf": ("life_record_ingest",),
     "life_record_verify": ("life_record_ingest",),
+    "html_pdf_quality_gate": ("designed_pdf_artifact",),
     "media_delivery_contract": ("discord_attachment_delivery",),
 }
+_SUPPORT_RETRY_TOOLS = frozenset({"html_pdf_autocorrect", "vision_analyze"})
 
 
 def governance_transform_tool_result(
@@ -37,6 +39,8 @@ def governance_transform_tool_result(
 ) -> str | None:
     playbook_keys = _SELF_REVIEWED_TOOL_PLAYBOOKS.get(str(tool_name or ""))
     if not playbook_keys:
+        return None
+    if _is_tool_repair_contract(result):
         return None
 
     registry = load_runtime_registry()
@@ -205,12 +209,23 @@ def _loads_object(value: Any) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _is_tool_repair_contract(result: Any) -> bool:
+    payload = _loads_object(result)
+    if payload is None or payload.get("ok") is not False:
+        return False
+    if payload.get("retry_required") is True:
+        return True
+    if payload.get("final_response_allowed") is False:
+        return True
+    return str(payload.get("next_action") or "").strip() == "retry_required"
+
+
 def _retry_tools(failures: list[dict[str, Any]]) -> list[str]:
     tools: list[str] = []
     for failure in failures:
         for tool in failure.get("retry_tools") or []:
             text = str(tool).strip()
-            if text and text not in tools:
+            if text:
                 tools.append(text)
     return tools
 
@@ -280,9 +295,14 @@ def _run_auto_retry_executor(
 
     attempts: list[dict[str, Any]] = []
     max_attempts = max(1, int(executor.get("max_attempts") or 1))
+    prior_results: dict[str, dict[str, Any]] = {}
     for attempt in range(1, max_attempts + 1):
         for index, retry_tool in enumerate(retry_tools):
-            args = retry_args[min(index, len(retry_args) - 1)]
+            args = _retry_args_with_prior_result(
+                retry_tool=retry_tool,
+                args=retry_args[min(index, len(retry_args) - 1)],
+                prior_results=prior_results,
+            )
             try:
                 retry_result = _dispatch_retry_tool(retry_tool, args, context=context)
             except Exception as exc:
@@ -295,6 +315,7 @@ def _run_auto_retry_executor(
                     }
                 )
                 continue
+            prior_results[retry_tool] = _loads_object(retry_result) or {"raw": retry_result}
             status, reason = _review_retry_result(
                 registry=registry,
                 retry_tool=retry_tool,
@@ -309,11 +330,58 @@ def _run_auto_retry_executor(
                     "reason": reason,
                 }
             )
-            if status == "pass":
+            if status == "pass" and index == len(retry_tools) - 1:
                 executor["attempts"] = attempts
                 return retry_result
     executor["attempts"] = attempts
     return None
+
+
+def _retry_args_with_prior_result(
+    *,
+    retry_tool: str,
+    args: dict[str, Any],
+    prior_results: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    next_args = dict(args)
+    if retry_tool == "html_pdf_quality_gate":
+        if autocorrect := prior_results.get("html_pdf_autocorrect"):
+            corrected = str(
+                autocorrect.get("corrected_html_path")
+                or autocorrect.get("html_path")
+                or autocorrect.get("artifact_path")
+                or ""
+            ).strip()
+            if corrected:
+                next_args["html_path"] = corrected
+        if not next_args.get("visual_review"):
+            if vision_result := prior_results.get("vision_analyze"):
+                next_args["visual_review"] = vision_result
+    if retry_tool == "vision_analyze":
+        quality = prior_results.get("html_pdf_quality_gate") or {}
+        if not next_args.get("image_url"):
+            contact_sheet = str(
+                quality.get("contact_sheet_path")
+                or (quality.get("pdf_quality_gate") or {}).get("contact_sheet")
+                or ""
+            ).strip()
+            if contact_sheet:
+                next_args["image_url"] = contact_sheet
+        if not next_args.get("question"):
+            prompt = str((quality.get("pdf_quality_gate") or {}).get("review_prompt") or "").strip()
+            if prompt:
+                next_args["question"] = prompt
+    if retry_tool == "media_delivery_contract" and not next_args.get("artifact_path"):
+        quality = prior_results.get("html_pdf_quality_gate") or {}
+        artifact_path = str(
+            quality.get("pdf_path")
+            or quality.get("artifact_path")
+            or (quality.get("pdf_quality_gate") or {}).get("pdf_path")
+            or ""
+        ).strip()
+        if artifact_path:
+            next_args["artifact_path"] = artifact_path
+    return next_args
 
 
 def _dispatch_retry_tool(
@@ -339,6 +407,11 @@ def _review_retry_result(
     retry_result: str,
     context: dict[str, Any],
 ) -> tuple[str, str]:
+    if retry_tool in _SUPPORT_RETRY_TOOLS:
+        payload = _loads_object(retry_result)
+        if payload is not None and payload.get("success") is not False:
+            return "pass", "support_tool_success"
+        return "fail", "support_tool_failed"
     playbook_keys = _SELF_REVIEWED_TOOL_PLAYBOOKS.get(retry_tool, ())
     if not playbook_keys:
         return "fail", "retry_tool_not_self_reviewed"

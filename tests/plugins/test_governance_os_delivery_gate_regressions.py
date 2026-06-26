@@ -361,6 +361,61 @@ def test_transform_llm_output_delivers_latest_pdf_without_audit_text_or_duplicat
     assert base.resolve_media_delivery_path(transformed.split("MEDIA:", 1)[1].strip("` \n"))
 
 
+def test_transform_llm_output_removes_confirmed_attachment_audit_text(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+
+    import gateway.platforms.base as base
+    import miho_constants
+
+    importlib.reload(miho_constants)
+    importlib.reload(base)
+
+    media_dir = tmp_path / "miho_home" / "media_cache" / "susi-summary"
+    media_dir.mkdir(parents=True)
+    pdf = media_dir / "김서연_실기전형전체추천_11.pdf"
+    pdf.write_bytes(b"%PDF-1.4\nlatest\n")
+
+    transformed = governance_transform_llm_output(
+        response_text=(
+            "맥스, 서연이 수도권 · 강원 · 충청권 수시 실기전형 전체 추천 PDF는 "
+            "현재 전달 가능한 확정 첨부본으로 확인되지 않았어.\n\n"
+            "그래서 지금은 PDF 첨부 완료로 안내하지 않을게. 확정본이 확인되면 "
+            "지역 범위: 수도권 · 강원 · 충청권, 전형: 수시 실기전형 전체 후보 기준으로 전달해야 해."
+        ),
+        user_message="서연이 수도권 강원 충청권 수시 실기전형 전체 추천 pdf로 줘",
+        conversation_history=[
+            {"role": "user", "content": "서연이 수도권 강원 충청권 수시 실기전형 전체 추천 pdf로 줘"},
+            {
+                "role": "tool",
+                "name": "academy_practical_reco_all_candidates",
+                "content": json.dumps(
+                    {
+                        "ok": True,
+                        "file_path": str(pdf),
+                        "media_tag": f"MEDIA:{pdf}",
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        governance_outcomes=[],
+        final_delivery_call_llm=_pass_through_final_delivery_agent,
+        final_delivery_extract_content=_extract_content,
+    )
+
+    assert transformed is not None
+    assert transformed.startswith("여기 있어.")
+    assert transformed.count("MEDIA:") == 1
+    assert str(pdf) in transformed
+    assert "전달 가능한 확정 첨부본" not in transformed
+    assert "PDF 첨부 완료로 안내하지" not in transformed
+    assert "확정본이 확인되면" not in transformed
+    assert base.resolve_media_delivery_path(transformed.split("MEDIA:", 1)[1].strip("` \n"))
+
+
 def test_transform_llm_output_collapses_duplicate_media_tags_with_same_bytes(
     tmp_path,
     monkeypatch,

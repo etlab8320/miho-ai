@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from .registry import GovernanceRegistry
+from .review_evidence import (
+    build_review_evidence,
+    review_evidence_failures,
+    review_evidence_required,
+)
 
 
 ReviewStatus = Literal["pass", "fail", "needs_human_review", "retry_needed"]
@@ -16,6 +21,13 @@ AuxiliaryReviewPolicy = Literal["auto", "always", "never"]
 _REQUIRED_CHECKS_BY_GATE: dict[str, tuple[str, ...]] = {
     "dev_quality_review": ("tests", "rollback"),
     "source_attribution_review": ("source_attribution",),
+    "html_pdf_quality_review": (
+        "html_source",
+        "pdf_rendered",
+        "metadata_scrubbed",
+        "contact_sheet",
+        "visual_review",
+    ),
     "attachment_delivery_review": ("media_tag", "artifact_path"),
     "memory_promotion_review": ("evidence", "privacy"),
 }
@@ -39,18 +51,10 @@ _REVIEWER_TASK_BY_PLAYBOOK = {
     "susi_score_calculation": _ACADEMY_REVIEWER_TASK,
     "life_record_ingest": _ACADEMY_REVIEWER_TASK,
     "discord_attachment_delivery": _DELIVERY_REVIEWER_TASK,
+    "designed_pdf_artifact": _DELIVERY_REVIEWER_TASK,
     "dev_code_update": _DEV_REVIEWER_TASK,
     "research_brief": _RESEARCH_REVIEWER_TASK,
 }
-_AUXILIARY_ALWAYS_PLAYBOOKS = frozenset(
-    {
-        "academy_hakjong_report",
-        "academy_practical_recommendation",
-        "susi_score_calculation",
-        "life_record_ingest",
-        "research_brief",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -131,6 +135,18 @@ def evaluate_review_gate(
                 checked=checked,
                 retry_tools=playbook.required_tools,
             )
+        evidence_bundle = build_review_evidence(payload)
+        evidence_failures = review_evidence_failures(evidence_bundle)
+        if evidence_failures and review_evidence_required(payload, reviewer):
+            return ReviewGateOutcome(
+                status="retry_needed",
+                reason="review_evidence_missing",
+                message_ko="검수 근거 파일을 확인할 수 없습니다. 산출물을 다시 생성해야 합니다.",
+                gate_names=gate_names,
+                checked=checked,
+                warnings=evidence_failures,
+                retry_tools=playbook.required_tools,
+            )
         if _auxiliary_review_required(
             policy=auxiliary_review_policy,
             payload=payload,
@@ -140,6 +156,7 @@ def evaluate_review_gate(
                 playbook_key=playbook_key,
                 tool_name=tool_name,
                 payload=payload,
+                evidence_bundle=evidence_bundle,
                 gate_names=gate_names,
                 checked=checked,
                 retry_tools=playbook.required_tools,
@@ -192,9 +209,8 @@ def evaluate_review_gate(
 
 
 def auxiliary_review_policy_for_playbook(playbook_key: str) -> AuxiliaryReviewPolicy:
-    if str(playbook_key or "") in _AUXILIARY_ALWAYS_PLAYBOOKS:
-        return "always"
-    return "auto"
+    del playbook_key
+    return "always"
 
 
 def reviewer_task_for_playbook(playbook_key: str) -> str:
@@ -248,6 +264,7 @@ def _evaluate_auxiliary_review(
     playbook_key: str,
     tool_name: str,
     payload: dict[str, Any],
+    evidence_bundle: dict[str, Any],
     gate_names: tuple[str, ...],
     checked: tuple[str, ...],
     retry_tools: tuple[str, ...],
@@ -258,6 +275,7 @@ def _evaluate_auxiliary_review(
             playbook_key=playbook_key,
             tool_name=tool_name,
             payload=payload,
+            evidence_bundle=evidence_bundle,
             gate_names=gate_names,
             checked=checked,
         )
@@ -284,6 +302,7 @@ def _call_auxiliary_reviewer(
     playbook_key: str,
     tool_name: str,
     payload: dict[str, Any],
+    evidence_bundle: dict[str, Any],
     gate_names: tuple[str, ...],
     checked: tuple[str, ...],
     call_llm: Callable[..., Any] | None = None,
@@ -306,7 +325,11 @@ def _call_auxiliary_reviewer(
                 "role": "system",
                 "content": (
                     "Return JSON only. Review whether the governed tool result can be delivered. "
-                    "Use status pass, fail, needs_human_review, or retry_needed."
+                    "Use status pass, fail, needs_human_review, or retry_needed. "
+                    "Treat evidence_bundle.artifact_inspections as opened artifact evidence; "
+                    "do not pass PDF, HTML, image, contact-sheet, or attachment claims without "
+                    "checking those inspections. If repair is needed, return retry_needed with "
+                    "retry_tools and retry_args for the builder tool."
                 ),
             },
             {
@@ -317,6 +340,7 @@ def _call_auxiliary_reviewer(
                         "tool_name": tool_name,
                         "gate_names": list(gate_names),
                         "checked": list(checked),
+                        "evidence_bundle": evidence_bundle,
                         "payload": payload,
                     },
                     ensure_ascii=False,

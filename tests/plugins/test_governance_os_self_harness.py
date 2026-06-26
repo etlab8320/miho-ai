@@ -9,6 +9,7 @@ from plugins.governance_os.self_harness import (
     build_evidence_bundle,
     build_shadow_candidates,
 )
+from plugins.governance_os.feedback_events import build_quality_failure_entry
 from plugins.governance_os.self_harness_autonomy import (
     activate_autonomous_candidate,
     decide_autonomous_activation,
@@ -54,6 +55,35 @@ def test_self_harness_mines_repeated_failures_without_active_write() -> None:
         "event=1 request_id=req-1 review_status=fail",
         "event=2 request_id=req-2 review_status=fail",
     ]
+
+
+def test_self_harness_mines_user_feedback_quality_failures() -> None:
+    entries = [
+        build_quality_failure_entry(
+            request_id=f"feedback-{index}",
+            playbook_key="designed_pdf_artifact",
+            failure_signature="pdf_footer_overflow",
+            user_feedback="푸터가 아래로 밀려서 상담용 PDF로 쓰기 어렵다",
+            artifact_paths=("/tmp/report.pdf",),
+        )
+        for index in (1, 2)
+    ]
+    events = [
+        {
+            "id": index,
+            "metadata": {"governance_outcome": entry.to_metadata()},
+        }
+        for index, entry in enumerate(entries, start=1)
+    ]
+
+    bundle = build_evidence_bundle(events, min_recurrence=2)
+
+    assert bundle["pattern_count"] == 1
+    [pattern] = bundle["patterns"]
+    assert pattern["playbook_key"] == "designed_pdf_artifact"
+    assert pattern["failure_signature"] == "pdf_footer_overflow"
+    assert pattern["target_surface_hint"] == "final_delivery_repair"
+    assert "feedback=푸터가 아래로 밀려서 상담용 PDF로 쓰기 어렵다" in pattern["evidence"][0]
 
 
 def test_self_harness_builds_shadow_candidates_only() -> None:

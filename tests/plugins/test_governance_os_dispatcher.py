@@ -219,6 +219,120 @@ async def test_pre_gateway_dispatch_uses_auxiliary_dispatcher_for_ambiguous_requ
 
 
 @pytest.mark.asyncio
+async def test_pre_gateway_dispatch_uses_auxiliary_router_map_without_keyword_candidate(
+    monkeypatch,
+) -> None:
+    import plugins.governance_os.dispatcher as dispatcher
+
+    registry = load_builtin_registry()
+    assert dispatch_request(registry, "방금 내용을 깔끔한 상담 문서로 만들어줘").action == "allow"
+    calls: list[dict[str, object]] = []
+
+    async def fake_auxiliary_dispatcher(**kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {
+            "playbook_key": "designed_pdf_artifact",
+            "confidence": 0.94,
+            "reason": "semantic route map matched new designed document artifact",
+            "matched_triggers": [],
+            "evidence": ["HTML-first PDF artifact request"],
+        }
+
+    monkeypatch.setattr(
+        dispatcher,
+        "_call_auxiliary_dispatcher",
+        fake_auxiliary_dispatcher,
+        raising=False,
+    )
+
+    result = await governance_pre_gateway_dispatch(
+        event=_Event("방금 내용을 깔끔한 상담 문서로 만들어줘"),
+        gateway=_Gateway(),
+    )
+
+    assert calls
+    assert calls[0]["candidates"] == ()
+    assert result["action"] == "rewrite"
+    assert result["intent"] == "designed_pdf_artifact"
+    assert result["required_tool"] == "html_pdf_quality_gate"
+    assert result["routing_source"] == "miho_governance_dispatcher"
+
+
+@pytest.mark.asyncio
+async def test_pre_gateway_dispatch_respects_auxiliary_allow_with_playbook_key(
+    monkeypatch,
+) -> None:
+    import plugins.governance_os.dispatcher as dispatcher
+
+    calls: list[dict[str, object]] = []
+
+    async def fake_auxiliary_dispatcher(**kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {
+            "action": "allow",
+            "playbook_key": "designed_pdf_artifact",
+            "confidence": 0.96,
+            "reason": "LLM found no governed request despite a stale playbook field",
+            "evidence": ["semantic allow"],
+        }
+
+    monkeypatch.setattr(
+        dispatcher,
+        "_call_auxiliary_dispatcher",
+        fake_auxiliary_dispatcher,
+        raising=False,
+    )
+
+    result = await governance_pre_gateway_dispatch(
+        event=_Event("이거 정리해줘"),
+        gateway=_Gateway(),
+    )
+
+    assert calls
+    assert result == {"action": "allow"}
+
+
+@pytest.mark.asyncio
+async def test_pre_gateway_dispatch_sends_thread_context_to_auxiliary_dispatcher(
+    monkeypatch,
+) -> None:
+    import plugins.governance_os.dispatcher as dispatcher
+
+    calls: list[dict[str, object]] = []
+
+    async def fake_auxiliary_dispatcher(**kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {
+            "playbook_key": "designed_pdf_artifact",
+            "confidence": 0.94,
+            "reason": "reply context asks for a designed PDF artifact",
+            "matched_triggers": [],
+            "evidence": ["reply_to_text contains the source material"],
+        }
+
+    event = _Event("이거 정리해줘")
+    event.reply_to_text = "4개월 시즌 운동 프로그램 초안"
+    event.channel_context = "최근 대화는 운동 프로그램 상담"
+    event.media_urls = ["/tmp/source.md"]
+    monkeypatch.setattr(
+        dispatcher,
+        "_call_auxiliary_dispatcher",
+        fake_auxiliary_dispatcher,
+        raising=False,
+    )
+
+    result = await governance_pre_gateway_dispatch(event=event, gateway=_Gateway())
+
+    assert calls
+    context = calls[0]["turn_context"]
+    assert isinstance(context, dict)
+    assert context["reply_to_text"] == "4개월 시즌 운동 프로그램 초안"
+    assert context["channel_context"] == "최근 대화는 운동 프로그램 상담"
+    assert context["media"] == [".md"]
+    assert result["intent"] == "designed_pdf_artifact"
+
+
+@pytest.mark.asyncio
 async def test_pre_gateway_dispatch_falls_back_when_auxiliary_dispatcher_fails(
     monkeypatch,
 ) -> None:

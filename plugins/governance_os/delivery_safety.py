@@ -21,6 +21,25 @@ HARD_INTERNAL_LEAK_MARKERS = (
     "확인할 근거가 없어",
     "전달하긴 어려워",
 )
+NON_RESULT_DEFERRAL_MARKERS = (
+    "확인 후",
+    "확인한 뒤",
+    "확인된 뒤",
+    "검증 후",
+    "검증 뒤",
+    "검증한 뒤",
+    "검증된 뒤",
+    "다시 확인",
+    "확정본이 확인되면",
+    "자료 보내주면",
+    "자료를 보내주면",
+    "원본 보내주면",
+    "원본을 보내주면",
+    "준비하겠습니다",
+    "진행 중",
+    "잠시만",
+    "기다려 주세요",
+)
 
 _INVISIBLE_RE = re.compile(r"[​‌‍‎‏‪-‮⁠﻿]")
 
@@ -50,3 +69,12 @@ def contains_internal_guard_leak(response_text: str) -> bool:
         left.casefold() in blob and right.casefold() in blob
         for left, right in GOVERNANCE_JSON_LEAK_PAIRS
     )
+
+
+def contains_non_result_deferral(response_text: str) -> bool:
+    """True when a candidate says it will answer later instead of answering now."""
+
+    blob = normalized_blob(response_text)
+    if not blob or "media:" in blob or "첨부 파일 형식:" in blob:
+        return False
+    return any(marker.casefold() in blob for marker in NON_RESULT_DEFERRAL_MARKERS)

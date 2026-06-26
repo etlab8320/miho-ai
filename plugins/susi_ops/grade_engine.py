@@ -38,6 +38,38 @@ def _norm_subject_area(value: Any) -> str:
     return text
 
 
+_GENERIC_CENTRAL_AREAS = {"", "일반", "공통", "공통과목", "일반선택", "진로 선택", "진로선택", "선택"}
+_SUBJECT_AREA_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("한국사", ("한국사",)),
+    ("국어", ("국어", "화법", "작문", "문학", "독서", "심화 국어")),
+    ("수학", ("수학", "확률", "통계", "미적분", "기하")),
+    ("영어", ("영어",)),
+    ("과학", ("과학", "물리", "화학", "생명과학", "지구과학")),
+    (
+        "사회",
+        (
+            "사회", "통합사회", "한국지리", "세계지리", "동아시아사", "세계사", "경제",
+            "정치", "법", "윤리", "사회문제", "생활과 윤리", "윤리와 사상",
+        ),
+    ),
+    ("체육", ("체육", "운동", "스포츠")),
+    ("예술", ("음악", "미술", "창작")),
+)
+
+
+def _subject_area_from_row(row: dict[str, Any]) -> str:
+    """Resolve subject area, falling back from central DB's generic category to subject name."""
+    raw_area = row.get("area") or row.get("교과") or row.get("subject_area") or row.get("과목군")
+    area = _norm_subject_area(raw_area)
+    if area not in _GENERIC_CENTRAL_AREAS and area != "기타":
+        return area
+    subject = str(row.get("subject") or row.get("과목") or "").strip()
+    for resolved, keywords in _SUBJECT_AREA_KEYWORDS:
+        if any(keyword in subject for keyword in keywords):
+            return resolved
+    return area
+
+
 def _grade_value(row: dict[str, Any]) -> float | None:
     for key in ("grade", "등급", "석차등급", "converted_grade", "avg_grade"):
         value = row.get(key)
@@ -73,9 +105,7 @@ def _is_regular_subject(row: dict[str, Any]) -> bool:
 
 
 def _subject_allowed(row: dict[str, Any], subject_flags: dict[str, Any]) -> bool:
-    area = _norm_subject_area(
-        row.get("area") or row.get("교과") or row.get("subject_area") or row.get("과목군")
-    )
+    area = _subject_area_from_row(row)
     if not area:
         return True
     # 한국사 처리 (사장님 룰 2026-06-15 + 2026-06-17 확장):
@@ -107,7 +137,7 @@ def _weighted_average_grade(
     grades: list[dict[str, Any]],
     score_logic: dict[str, Any],
     student_context: dict[str, Any] | None = None,
-) -> tuple[float | None, int, float]:
+) -> tuple[float | None, int, float, list[tuple[float, float]]]:
     # score_logic 산식 요소를 모두 반영한다 (2026-06-16, 관동대 실사고로 전면 재작성):
     #  subject_groups(교과군 한정) · semester_limit(학기 제한) · 진로선택 성취도 변환 +
     #  max_career_subjects(진로 최대 개수) · top_n(석차등급 우수 N과목) · credit_weighted(이수단위 가중).
@@ -129,9 +159,7 @@ def _weighted_average_grade(
     for row in grades:
         if not isinstance(row, dict):
             continue
-        area = _norm_subject_area(
-            row.get("area") or row.get("교과") or row.get("subject_area") or row.get("과목군")
-        )
+        area = _subject_area_from_row(row)
         # 반영교과 필터: subject_groups가 있으면 그 교과군만, 없으면 subject_flags 규칙
         if groups_set is not None:
             if area not in groups_set:
@@ -297,12 +325,7 @@ def _missing_achievement_ratio_inputs(
     for grade_row in grades:
         if not isinstance(grade_row, dict):
             continue
-        area = _norm_subject_area(
-            grade_row.get("area")
-            or grade_row.get("교과")
-            or grade_row.get("subject_area")
-            or grade_row.get("과목군")
-        )
+        area = _subject_area_from_row(grade_row)
         if groups_set is not None:
             if area not in groups_set:
                 continue

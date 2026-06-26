@@ -166,7 +166,8 @@ def test_council_records_discord_attachment_review_pass(tmp_path, monkeypatch) -
     assert outcome["tools_used"] == ["media_delivery_contract"]
     assert outcome["review_status"] == "pass"
     assert outcome["artifact_paths"] == ["/tmp/report.xlsx"]
-    assert calls == []
+    assert calls
+    assert calls[0]["task"] == "miho_governance_reviewer_delivery"
 
 
 def test_council_requires_approval_for_high_risk_deploy_request(tmp_path, monkeypatch) -> None:

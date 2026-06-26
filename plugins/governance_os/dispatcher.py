@@ -8,9 +8,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 
+from .dispatch_context import build_dispatch_turn_context
 from .models import PolicyDecision
 from .registry import GovernanceRegistry
 from .risk import evaluate_request_risk
+from .router_map import build_router_map
 from .versioning import load_runtime_registry
 
 
@@ -119,12 +121,14 @@ async def governance_pre_gateway_dispatch(
     registry = load_runtime_registry()
     decision = dispatch_request(registry, text)
     candidates = _score_candidates(registry, " ".join(text.casefold().split()))
+    turn_context = build_dispatch_turn_context(event)
     if _needs_auxiliary_dispatch(decision, candidates):
         decision = await _with_auxiliary_dispatcher(
             registry=registry,
             text=text,
             decision=decision,
             candidates=candidates,
+            turn_context=turn_context,
         )
     if decision.action != "rewrite":
         return {"action": "allow"}
@@ -182,6 +186,8 @@ def _needs_auxiliary_dispatch(
     decision: DispatchDecision,
     candidates: tuple[RouteCandidate, ...],
 ) -> bool:
+    if decision.action == "allow" and not candidates:
+        return True
     if decision.action != "rewrite":
         return False
     if len(candidates) >= 2 and candidates[0].score - candidates[1].score <= 0.75:
@@ -195,13 +201,16 @@ async def _with_auxiliary_dispatcher(
     text: str,
     decision: DispatchDecision,
     candidates: tuple[RouteCandidate, ...],
+    turn_context: dict[str, Any] | None = None,
 ) -> DispatchDecision:
     try:
         payload = await _call_auxiliary_dispatcher(
             task=_DISPATCHER_TASK,
             user_text=text,
+            registry=registry,
             deterministic_decision=decision,
             candidates=candidates,
+            turn_context=turn_context,
         )
     except Exception as exc:
         logger.warning("Governance auxiliary dispatcher unavailable: %s", exc)
@@ -221,6 +230,8 @@ async def _call_auxiliary_dispatcher(
     user_text: str,
     deterministic_decision: DispatchDecision,
     candidates: tuple[RouteCandidate, ...],
+    registry: GovernanceRegistry | None = None,
+    turn_context: dict[str, Any] | None = None,
     call_llm: Callable[..., Awaitable[Any]] | None = None,
     extract_content: Callable[[Any], Any] | None = None,
 ) -> dict[str, object]:
@@ -240,6 +251,7 @@ async def _call_auxiliary_dispatcher(
                 "role": "system",
                 "content": (
                     "Return JSON only. Select the best Governance OS playbook for the user request. "
+                    "Use route_map semantically; deterministic candidates are hints, not hard limits. "
                     "Use action=allow only when no governed playbook applies."
                 ),
             },
@@ -248,6 +260,8 @@ async def _call_auxiliary_dispatcher(
                 "content": json.dumps(
                     {
                         "user_text": user_text,
+                        "turn_context": turn_context or {},
+                        "route_map": build_router_map(registry or load_runtime_registry()),
                         "deterministic": _decision_metadata(deterministic_decision),
                         "candidates": [_candidate_metadata(item) for item in candidates],
                     },
@@ -272,11 +286,21 @@ def _decision_from_auxiliary_payload(
     fallback: DispatchDecision,
     candidates: tuple[RouteCandidate, ...] = (),
 ) -> DispatchDecision | None:
+    action = str(payload.get("action") or "route").strip().casefold()
+    if action == "allow":
+        return DispatchDecision(
+            action="allow",
+            confidence=_float(payload.get("confidence"), default=fallback.confidence),
+            reason=str(payload.get("reason") or "auxiliary_dispatcher_allow"),
+            routing_source=_DISPATCHER_TASK,
+        )
+    if action not in {"route", "rewrite", "execute"}:
+        return None
     playbook_key = str(payload.get("playbook_key") or "").strip()
     if not playbook_key or playbook_key not in registry.playbooks:
         return None
     candidate_keys = {candidate.playbook_key for candidate in candidates}
-    if candidate_keys and playbook_key not in candidate_keys:
+    if candidate_keys and playbook_key not in candidate_keys and not _has_map_grade_evidence(payload):
         return None
     confidence = _float(payload.get("confidence"), default=fallback.confidence)
     if confidence < _AUXILIARY_CONFIDENCE_THRESHOLD:
@@ -297,6 +321,13 @@ def _decision_from_auxiliary_payload(
         reason=str(payload.get("reason") or "auxiliary_dispatcher"),
         routing_source=_DISPATCHER_TASK,
     )
+
+
+def _has_map_grade_evidence(payload: dict[str, object]) -> bool:
+    confidence = _float(payload.get("confidence"), default=0.0)
+    if confidence < 0.9:
+        return False
+    return bool(_tuple_str(payload.get("evidence")))
 
 
 def _decision_metadata(decision: DispatchDecision) -> dict[str, object]:

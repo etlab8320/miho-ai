@@ -34,6 +34,7 @@ from .student_context_tool import _student_context_tool_handler
 from .student_record_chart_tool import _student_record_chart_image_tool_handler
 from .student_record_cohort_tool import _student_record_cohort_tool_handler
 from .student_records_tool import _student_record_lookup_tool_handler
+from .thread_roster_tool import _thread_roster_lookup_tool_handler
 
 
 ToolHandler = Callable[..., str]
@@ -59,6 +60,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "academy_student_record_lookup": _student_record_lookup_tool_handler,
     "academy_student_record_chart_image": _student_record_chart_image_tool_handler,
     "academy_monthly_test_records": _monthly_test_records_tool_handler,
+    "academy_thread_roster_lookup": _thread_roster_lookup_tool_handler,
     "academy_set_brand_logo": _academy_set_brand_logo_tool_handler,
     "academy_reset_brand_logo": _academy_reset_brand_logo_tool_handler,
 }
@@ -134,6 +136,14 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "args": ["student_query", "event_query", "today", "period_days", "limit"],
     },
     "academy_monthly_test_records": {"purpose": "월별 또는 정기 실기 평가 참가자 기준 종목 평균, 순위, 학교 제외 집계 조회. 일반 최신 학생 기록이 아니라 평가 참가자 집계를 원할 때 사용", "args": ["event_query", "test_id", "test_month", "exclude_schools", "today"]},
+    "academy_thread_roster_lookup": {
+        "purpose": (
+            "현재 Discord 스레드 작업파일(work/*.md)에 저장된 반 편성표/명단 조회. "
+            "사용자가 '스레드에 저장해둔 명단', '방금 추가한 반 명단', '정시반/학교반 편성표 명단'을 묻는 경우 "
+            "학원 DB나 날짜별 수업 배정 조회보다 이 도구를 먼저 사용한다."
+        ),
+        "args": ["roster_names"],
+    },
     "academy_set_brand_logo": {
         "purpose": "사용자가 이미지를 첨부하고 학원 로고를 그 이미지로 바꿔/교체/설정해달라고 할 때 사용. 첨부 이미지를 학원 로고로 저장해 리포트/카드 스탬프에 적용. 인자 없음",
         "args": [],

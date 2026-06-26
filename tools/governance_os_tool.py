@@ -412,6 +412,13 @@ def _readiness_payload(report: Any) -> dict[str, Any]:
         "retry_instruction_probe_passed": report.retry_instruction_probe_passed,
         "transform_ledger_probe_passed": report.transform_ledger_probe_passed,
         "final_delivery_probe_passed": report.final_delivery_probe_passed,
+        "final_delivery_retry_probe_passed": report.final_delivery_retry_probe_passed,
+        "final_delivery_repair_probe_passed": report.final_delivery_repair_probe_passed,
+        "final_qa_repair_probe_passed": report.final_qa_repair_probe_passed,
+        "self_harness_autonomy_probe_passed": report.self_harness_autonomy_probe_passed,
+        "self_harness_runtime_feedback_probe_passed": (
+            report.self_harness_runtime_feedback_probe_passed
+        ),
         "evolution_rollback_probe_passed": report.evolution_rollback_probe_passed,
         "hook_probe_passed": report.hook_probe_passed,
         "manifest_probe_passed": report.manifest_probe_passed,

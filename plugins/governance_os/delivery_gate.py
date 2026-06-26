@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -16,21 +15,27 @@ from .delivery_gate_constants import (
     GOVERNANCE_REVIEW_MARKERS as _GOVERNANCE_REVIEW_MARKERS,
     META_EXPLANATION_TERMS as _META_EXPLANATION_TERMS,
     PERSONALIZED_DELIVERY_TERMS as _PERSONALIZED_DELIVERY_TERMS,
-    PLAYBOOK_BY_TOOL as _PLAYBOOK_BY_TOOL,
     SCORE_CLAIM_RE as _SCORE_CLAIM_RE,
     STUDENT_SCORE_CLAIM_RE as _STUDENT_SCORE_CLAIM_RE,
 )
+from .delivery_history import outcomes_from_conversation_history
 from .delivery_media import prepare_delivery_media
 from .delivery_safety import (
     contains_hard_internal_leak as _contains_hard_internal_leak,
-    contains_internal_guard_leak as _shared_contains_internal_guard_leak,
+    contains_internal_guard_leak as _contains_internal_guard_leak,
+    contains_non_result_deferral as _contains_non_result_deferral,
     normalized_blob as _shared_normalized_blob,
 )
 from .dispatcher import dispatch_request
 from .final_delivery_agent import review_final_delivery
 from .final_delivery_recovery import recover_blocked_delivery
+from .final_delivery_retry import retry_blocked_final_delivery
 from .registry import GovernanceRegistry
-from .review import auxiliary_review_policy_for_playbook, evaluate_review_gate
+from .delivery_semantic_flow import (
+    decision_from_semantic_verdict as _decision_from_semantic_verdict,
+    delivery_evidence as _delivery_evidence,
+    semantic_agent_verdict as _semantic_agent_verdict,
+)
 from .versioning import load_runtime_registry
 
 
@@ -97,7 +102,7 @@ def governance_transform_llm_output(
 
     outcomes = context.get("governance_outcomes")
     if outcomes is None:
-        outcomes = _outcomes_from_conversation_history(
+        outcomes = outcomes_from_conversation_history(
             registry,
             context.get("conversation_history"),
             user_text=user_text,
@@ -108,6 +113,47 @@ def governance_transform_llm_output(
         user_text=user_text,
         outcomes=outcomes,
     )
+    semantic_verdict = _semantic_agent_verdict(
+        question=user_text,
+        answer=effective_text,
+        decision=decision,
+        context=context,
+        outcomes=outcomes,
+    )
+    decision = _decision_from_semantic_verdict(
+        decision,
+        semantic_verdict,
+        decision_factory=FinalDeliveryDecision,
+    )
+    if decision.action == "block":
+        retry = retry_blocked_final_delivery(
+            registry=registry,
+            playbook_key=decision.playbook_key,
+            retry_tools=decision.retry_tools,
+            question=user_text,
+            answer=effective_text,
+            conversation_history=context.get("conversation_history"),
+            task_id=str(context.get("task_id") or ""),
+            orchestrator_call_llm=context.get("final_delivery_orchestrator_call_llm"),
+            orchestrator_extract_content=context.get(
+                "final_delivery_orchestrator_extract_content"
+            ),
+        )
+        if retry is not None:
+            retry_evidence = _delivery_evidence(decision, context=context, outcomes=outcomes)
+            retry_evidence["final_delivery_retry"] = {
+                "tool_name": retry.tool_name,
+                "review_reason": retry.review_reason,
+                "review_status": "pass",
+            }
+            delivered = review_final_delivery(
+                question=user_text,
+                answer=retry.answer,
+                evidence=retry_evidence,
+                call_llm=context.get("final_delivery_call_llm"),
+                extract_content=context.get("final_delivery_extract_content"),
+            )
+            return delivered or retry.answer
     delivered = review_final_delivery(
         question=user_text,
         answer=effective_text,
@@ -171,6 +217,14 @@ def evaluate_final_delivery(
             playbook_key=playbook_key,
         )
 
+    if _contains_non_result_deferral(response_text):
+        return FinalDeliveryDecision(
+            action="block",
+            reason="non_result_deferral",
+            playbook_key=playbook_key,
+            retry_tools=playbook.required_tools,
+        )
+
     if _is_safe_non_delivery_response(response_text) or not _is_final_delivery_claim(
         registry,
         response_text=response_text,
@@ -188,28 +242,6 @@ def evaluate_final_delivery(
         playbook_key=playbook_key,
         retry_tools=playbook.required_tools,
     )
-
-
-def _delivery_evidence(
-    decision: FinalDeliveryDecision,
-    *,
-    context: dict[str, Any],
-    outcomes: Any,
-) -> dict[str, Any]:
-    return {
-        "decision": {
-            "action": decision.action,
-            "reason": decision.reason,
-            "playbook_key": decision.playbook_key,
-            "retry_tools": list(decision.retry_tools),
-        },
-        "governance_outcomes": outcomes if isinstance(outcomes, list | tuple) else [],
-        "platform": str(context.get("platform") or ""),
-        "session_id": str(context.get("session_id") or ""),
-        "final_delivery_agent_scope": "universal",
-        "python_semantic_decision_is_advisory": True,
-    }
-
 
 def _playbook_key(
     registry: GovernanceRegistry,
@@ -301,17 +333,6 @@ def _contains_score_delivery_claim(response_text: str) -> bool:
     return bool(_SCORE_CLAIM_RE.search(blob) or _STUDENT_SCORE_CLAIM_RE.search(blob))
 
 
-def _contains_internal_guard_leak(response_text: str) -> bool:
-    """True if an internal retry/verification instruction leaked into the answer.
-
-    These are concrete guard phrases or governance JSON keys that must never
-    reach the user verbatim. Plain user-facing explanations (e.g. "전용 도구가
-    필요합니다") do not match because the markers are full instruction clauses.
-    """
-
-    return _shared_contains_internal_guard_leak(response_text)
-
-
 def _is_review_quote_context(review_context: bool, response_text: str) -> bool:
     if not review_context:
         return False
@@ -325,6 +346,8 @@ def _is_safe_non_delivery_response(response_text: str) -> bool:
     blob = " ".join(str(response_text or "").casefold().split())
     if not blob:
         return True
+    if _contains_non_result_deferral(response_text):
+        return False
     if _contains_score_delivery_claim(blob):
         return False
     if any(marker in blob for marker in _COMPLETION_CLAIM_MARKERS):
@@ -342,17 +365,6 @@ def _is_safe_non_delivery_response(response_text: str) -> bool:
         "보내주세요",
         "필요합니다",
         "필요해요",
-        "확인이 필요",
-        "원본 대조",
-        "진행할 수",
-        "확인 중",
-        "확인하겠습니다",
-        "작업을 시작",
-        "계산을 준비",
-        "준비하겠습니다",
-        "잠시만",
-        "기다려 주세요",
-        "진행 중",
     )
     return any(marker in blob for marker in safe_markers)
 
@@ -379,85 +391,3 @@ def _has_review_pass_evidence(
         if tools & required:
             return True
     return False
-
-
-def _outcomes_from_conversation_history(
-    registry: GovernanceRegistry,
-    messages: Any,
-    *,
-    user_text: str,
-) -> list[dict[str, Any]]:
-    if not isinstance(messages, list):
-        return []
-    current_turn = messages[_current_turn_start(messages, user_text) :]
-    outcomes: list[dict[str, Any]] = []
-    for message in current_turn:
-        if not isinstance(message, dict) or str(message.get("role") or "") != "tool":
-            continue
-        tool_name = str(message.get("name") or message.get("tool_name") or "").strip()
-        playbook_key = _PLAYBOOK_BY_TOOL.get(tool_name)
-        if not playbook_key:
-            continue
-        payload = _loads_object(message.get("content"))
-        if payload is None:
-            continue
-        review = evaluate_review_gate(
-            registry,
-            playbook_key=playbook_key,
-            tool_name=tool_name,
-            result=payload,
-            auxiliary_review_policy=auxiliary_review_policy_for_playbook(playbook_key),
-        )
-        outcomes.append(
-            {
-                "playbook_key": playbook_key,
-                "review_status": review.status,
-                "tools_used": [tool_name],
-                "failures": _review_failures(review),
-            }
-        )
-    return outcomes
-
-
-def _current_turn_start(messages: list[Any], user_text: str) -> int:
-    fallback = 0
-    for index, message in enumerate(messages):
-        if not isinstance(message, dict) or str(message.get("role") or "") != "user":
-            continue
-        fallback = index + 1
-        content = _message_text(message.get("content"))
-        if user_text and user_text in content:
-            return index + 1
-    return fallback
-
-
-def _message_text(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        parts: list[str] = []
-        for item in value:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                parts.append(str(item.get("text") or item.get("content") or ""))
-        return "\n".join(part for part in parts if part)
-    return str(value or "")
-
-
-def _loads_object(value: Any) -> dict[str, Any] | None:
-    if isinstance(value, dict):
-        return value
-    text = _message_text(value)
-    try:
-        parsed = json.loads(text)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def _review_failures(review: Any) -> list[str]:
-    if getattr(review, "status", "") == "pass":
-        return []
-    reason = str(getattr(review, "reason", "") or "").strip()
-    return [reason] if reason else ["review_not_passed"]

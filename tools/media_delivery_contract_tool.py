@@ -71,6 +71,7 @@ def media_delivery_contract_tool(args: dict[str, Any]) -> str:
                 "file_exists",
                 "safe_delivery_path",
             ],
+            "evidence_required": True,
         },
         message_ko="첨부 파일 경로와 미디어 전달 지시를 확인했습니다.",
     )

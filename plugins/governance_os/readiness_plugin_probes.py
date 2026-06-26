@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import tempfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -30,6 +31,9 @@ REQUIRED_AUXILIARY_TASKS = frozenset(
         "miho_self_harness_weakness_miner",
         "miho_self_harness_proposer",
         "miho_governance_final_delivery",
+        "miho_governance_final_delivery_orchestrator",
+        "miho_governance_semantic_delivery_judge",
+        "miho_governance_adversarial_validator",
         "miho_governance_final_qa",
         "miho_governance_final_qa_repair",
     }
@@ -105,7 +109,7 @@ def auxiliary_instruction_probe_passed() -> bool:
         and _instruction_has(
             tasks,
             governance_os.REVIEWER_TASK,
-            ("후검증", "retry_tools", "media_tag"),
+            ("후검증", "opened artifact inspection", "retry_tools", "media_tag"),
         )
         and _instruction_has(
             tasks,
@@ -146,6 +150,21 @@ def auxiliary_instruction_probe_passed() -> bool:
             tasks,
             governance_os.FINAL_DELIVERY_TASK,
             ("Final Delivery Agent", "deliver/revise/block", "Python guard", "적대적 리뷰"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.FINAL_DELIVERY_ORCHESTRATOR_TASK,
+            ("Final Delivery Orchestrator", "allowed_tools", "tool_contracts", "steps"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.SEMANTIC_DELIVERY_JUDGE_TASK,
+            ("Python feature", "참고 신호", "최종 의미판단", "비결과 답변", "물리적 안전"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.ADVERSARIAL_VALIDATOR_TASK,
+            ("독립", "test receipts", "artifact smoke", "findings=[]"),
         )
         and _instruction_has(
             tasks,
@@ -211,20 +230,26 @@ def auxiliary_dispatcher_dataplane_probe_passed(registry: GovernanceRegistry) ->
 
 
 def auxiliary_reviewer_dataplane_probe_passed(registry: GovernanceRegistry) -> bool:
+    from .review_evidence import build_review_evidence
     from .review import (
         _call_auxiliary_reviewer,
         _outcome_from_auxiliary_review,
         _semantic_review_required,
     )
 
-    payload = {
-        "student_record_score": 947.3,
-        "reviewer": {
-            "name": "academy_result_reviewer",
-            "status": "pass",
-            "checked": ["필수 산출 필드", "상태값"],
-        },
-    }
+    with tempfile.TemporaryDirectory() as temp_dir:
+        html_path = Path(temp_dir) / "review.html"
+        html_path.write_text("<html><body>서연 수시 점수 947.3</body></html>", encoding="utf-8")
+        payload = {
+            "student_record_score": 947.3,
+            "html_path": str(html_path),
+            "reviewer": {
+                "name": "academy_result_reviewer",
+                "status": "pass",
+                "checked": ["필수 산출 필드", "상태값"],
+            },
+        }
+        evidence_bundle = build_review_evidence(payload)
     reviewer = payload["reviewer"]
     if not callable(_call_auxiliary_reviewer):
         return False
@@ -246,6 +271,7 @@ def auxiliary_reviewer_dataplane_probe_passed(registry: GovernanceRegistry) -> b
             playbook_key="susi_score_calculation",
             tool_name="susi27_score_calculate",
             payload=payload,
+            evidence_bundle=evidence_bundle,
             gate_names=("academy_result_reviewer",),
             checked=("필수 산출 필드", "상태값"),
             call_llm=fake_call_llm,
@@ -262,10 +288,110 @@ def auxiliary_reviewer_dataplane_probe_passed(registry: GovernanceRegistry) -> b
     return (
         bool(calls)
         and calls[0].get("task") == "miho_governance_reviewer_academy"
+        and _probe_has_artifact_inspection(calls[0])
         and _semantic_review_required({"semantic_review_required": True}, reviewer)
         and outcome.status == "pass"
         and outcome.reason == "auxiliary_reviewer_pass"
     )
+
+
+def _probe_has_artifact_inspection(call: dict[str, object]) -> bool:
+    messages = call.get("messages")
+    if not isinstance(messages, list) or len(messages) < 2:
+        return False
+    message = messages[1]
+    if not isinstance(message, dict):
+        return False
+    try:
+        payload = json.loads(str(message.get("content") or ""))
+    except json.JSONDecodeError:
+        return False
+    evidence = payload.get("evidence_bundle")
+    if not isinstance(evidence, dict):
+        return False
+    inspections = evidence.get("artifact_inspections")
+    if not isinstance(inspections, dict) or not inspections:
+        return False
+    return any(
+        isinstance(item, dict) and item.get("kind") == "html" and item.get("opened") is True
+        for item in inspections.values()
+    )
+
+
+def semantic_delivery_judge_dataplane_probe_passed(registry: GovernanceRegistry) -> bool:
+    del registry
+    from .semantic_delivery_judge import (
+        SEMANTIC_DELIVERY_JUDGE_TASK,
+        judge_delivery_semantics,
+    )
+
+    calls: list[dict[str, object]] = []
+
+    def fake_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        if "확인한 뒤" in str(kwargs.get("messages") or ""):
+            return {
+                "content": json.dumps(
+                    {
+                        "action": "block",
+                        "reason": "non_result_deferral",
+                        "playbook_key": "academy_hakjong_report",
+                        "retry_tools": ["academy_hakjong_report_package"],
+                    },
+                    ensure_ascii=False,
+                )
+            }
+        return {
+            "content": json.dumps(
+                {
+                    "action": "allow",
+                    "reason": "readiness_governance_review_quote",
+                    "playbook_key": "",
+                    "retry_tools": [],
+                },
+                ensure_ascii=False,
+            )
+        }
+
+    verdict = judge_delivery_semantics(
+        question="미호 Governance OS 적대적 리뷰해줘",
+        answer=(
+            "적대적 리뷰 예시: '서연이 수시 환산점수는 947.3점입니다'는 "
+            "검증 없이 나가면 안 되는 문장이다."
+        ),
+        evidence={
+            "decision": {"action": "block", "reason": "review_evidence_missing"},
+            "python_semantic_decision_is_advisory": True,
+        },
+        call_llm=fake_call_llm,
+        extract_content=_extract_probe_content,
+    )
+    deferral_verdict = judge_delivery_semantics(
+        question="동하 대전대 학종 리포트 PDF로 줘",
+        answer="확인한 뒤 PDF로 전달하겠습니다.",
+        evidence={
+            "decision": {"action": "block", "reason": "non_result_deferral"},
+            "python_semantic_decision_is_advisory": True,
+        },
+        call_llm=fake_call_llm,
+        extract_content=_extract_probe_content,
+    )
+    return (
+        len(calls) == 2
+        and calls[0].get("task") == SEMANTIC_DELIVERY_JUDGE_TASK
+        and calls[1].get("task") == SEMANTIC_DELIVERY_JUDGE_TASK
+        and verdict is not None
+        and verdict.action == "allow"
+        and deferral_verdict is not None
+        and deferral_verdict.action == "block"
+        and deferral_verdict.retry_tools == ("academy_hakjong_report_package",)
+    )
+
+
+def _extract_probe_content(value: object) -> str:
+    if isinstance(value, dict):
+        return str(value.get("content") or "")
+    return str(value or "")
 
 
 def _declared_set(value: object) -> set[str]:

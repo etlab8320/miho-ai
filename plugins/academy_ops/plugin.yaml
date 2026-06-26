@@ -14,6 +14,7 @@ tools:
   - academy_student_record_chart_image
   - academy_student_record_lookup
   - academy_monthly_test_records
+  - academy_thread_roster_lookup
   - academy_report_image
   - academy_render_image
   - academy_consultation_note_save

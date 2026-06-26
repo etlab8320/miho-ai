@@ -65,8 +65,8 @@
       overflow-wrap: anywhere; word-break: keep-all;
     }
     .page {
-      width: 210mm; min-height: 297mm;
-      /* flex column + min-height — footer를 margin-top:auto로 페이지 하단에 고정한다.
+      width: 210mm; height: 297mm; box-sizing: border-box;
+      /* flex column + fixed height — footer를 margin-top:auto로 페이지 하단에 고정한다.
          한 섹션이 한 장을 넘치면 _render_html의 compact 단계(body.compact1/2)가 패딩·여백·폰트를
          줄여 한 장에 맞춘다(사장님 2026-06-13: footer는 항상 하단, 넘치면 자동 압축). */
       padding: 14mm 16mm 12mm;

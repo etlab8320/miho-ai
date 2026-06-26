@@ -7,10 +7,13 @@ from typing import Any
 from .dispatcher import governance_pre_gateway_dispatch
 from .delivery_gate import governance_transform_llm_output
 from .final_delivery_agent import FINAL_DELIVERY_TASK
+from .final_delivery_orchestrator import FINAL_DELIVERY_ORCHESTRATOR_TASK
 from .final_delivery_recovery import BLOCKED_DELIVERY_RECOVERY_TASK
 from .final_qa import FINAL_QA_REPAIR_TASK, FINAL_QA_TASK
 from .guard import governance_pre_tool_call
 from .result_transform import governance_transform_tool_result
+from .semantic_delivery_judge import SEMANTIC_DELIVERY_JUDGE_TASK
+from .validation_loop import ADVERSARIAL_VALIDATOR_TASK
 
 
 DISPATCHER_TASK = "miho_governance_dispatcher"
@@ -30,8 +33,10 @@ DISPATCHER_INSTRUCTIONS = (
 )
 REVIEWER_INSTRUCTIONS = (
     "도구 결과를 사용자에게 전달하기 전 후검증한다. "
-    "레이아웃, 산식, 근거, media_tag, artifact_path, 의도 일치를 확인하고 "
-    "실패 시 사용자에게 완성본처럼 말하지 말고 retry_tools 재실행을 요구한다."
+    "레이아웃, 산식, 근거, media_tag, artifact_path, 의도 일치를 확인한다. "
+    "PDF, HTML, 이미지, contact sheet, 첨부 claim은 evidence_bundle의 opened artifact inspection을 "
+    "직접 확인하기 전 pass하지 않는다. "
+    "실패 시 사용자에게 완성본처럼 말하지 말고 retry_needed와 retry_tools/retry_args로 builder 재실행을 요구한다."
 )
 ACADEMY_REVIEWER_INSTRUCTIONS = REVIEWER_INSTRUCTIONS + (
     " 학원/입시 도메인 전담 reviewer로서 학생별 점수, 수시/학종/실기 추천, "
@@ -81,11 +86,36 @@ FINAL_DELIVERY_INSTRUCTIONS = (
     "거버넌스/셀프하네스 적대적 리뷰 요청은 도메인 단어가 있어도 리뷰 결과로 취급하고, "
     "내부 guard/retry/fallback 문구는 노출하지 않는다."
 )
+FINAL_DELIVERY_ORCHESTRATOR_INSTRUCTIONS = (
+    "Final Delivery Orchestrator로서 차단된 최종 답변을 문구로 때우지 말고 "
+    "현재 턴 안에서 실행할 도구 계획과 검증 결과 기반 최종 답변을 만든다. "
+    "사용자 질문, 대화 기록, allowed_tools, tool_contracts, reviewer evidence를 보고 "
+    "허용된 도구만 steps JSON으로 반환하고, verified_tool_results가 있으면 사용자-facing answer JSON을 반환한다. "
+    "없는 입력은 꾸며내지 말고 needs_input을 반환하되, 실행 가능한 정보가 있으면 run_tools를 반환한다. "
+    "내부 guard/retry/fallback/provider 문구는 사용자-facing 본문에 노출하지 않는다."
+)
+SEMANTIC_DELIVERY_JUDGE_INSTRUCTIONS = (
+    "Semantic Delivery Judge로서 Python이 수집한 후보 feature와 evidence를 참고하되 "
+    "사용자 질문과 답변 전체 맥락으로 최종 의미판단을 직접 수행한다. "
+    "Python feature는 최종 allow/block 판정이 아니라 참고 신호일 뿐이다. "
+    "확인 후 전달, 검증 뒤 전달, 자료를 보내주면 처리 같은 비결과 답변도 "
+    "문구 규칙이 아니라 질문·답변·evidence 맥락으로 직접 판단한다. "
+    "거버넌스/셀프하네스/코드/시스템 적대적 리뷰 요청이면 수시, 학종, PDF, 점수 같은 "
+    "단어가 있어도 실제 학생 산출물 전달로 오해하지 않는다. "
+    "단 내부 guard leak, 파일 경로 안전, 민감정보 같은 물리적 안전 차단은 뒤집지 않는다."
+)
 BLOCKED_DELIVERY_RECOVERY_INSTRUCTIONS = (
     "Blocked Delivery Recovery Agent로서 Final Delivery JSON 판정이나 Final QA repair가 "
     "사용 가능한 답변을 만들지 못했을 때 마지막으로 사용자에게 보낼 본문을 직접 작성한다. "
     "Python fallback 문구를 대신 출력하지 말고, 질문 의도에 맞는 한국어 평문 답변만 작성한다. "
     "도구 evidence가 부족한 완료/첨부/점수 claim은 확정하지 않는다."
+)
+ADVERSARIAL_VALIDATOR_INSTRUCTIONS = (
+    "독립 Governance adversarial validator다. builder 결과를 신뢰하지 말고 diff scope, "
+    "focused/wider/runtime test receipts, live 또는 live-safe gateway smoke, 실제 artifact attachment smoke, "
+    "사용자-facing UX, rollback/runtime safety를 검수한다. "
+    "통과하려면 JSON으로 status=pass, score>=95, independent=true, findings=[]를 반환한다. "
+    "테스트 수만 많고 live/artifact smoke나 독립 검수 근거가 없으면 fail 또는 retry_needed로 판정한다."
 )
 
 
@@ -207,6 +237,28 @@ def register(ctx: Any) -> None:
         },
     )
     ctx.register_auxiliary_task(
+        key=FINAL_DELIVERY_ORCHESTRATOR_TASK,
+        display_name="Miho governance final delivery orchestrator",
+        description="Plans tool steps when final delivery is blocked without retry args",
+        defaults={
+            "provider": "auto",
+            "timeout": 30,
+            "extra_body": {"reasoning": {"effort": "medium"}},
+            "instructions": FINAL_DELIVERY_ORCHESTRATOR_INSTRUCTIONS,
+        },
+    )
+    ctx.register_auxiliary_task(
+        key=SEMANTIC_DELIVERY_JUDGE_TASK,
+        display_name="Miho governance semantic delivery judge",
+        description="LLM semantic judge that overrides advisory keyword delivery blocks",
+        defaults={
+            "provider": "auto",
+            "timeout": 20,
+            "extra_body": {"reasoning": {"effort": "medium"}},
+            "instructions": SEMANTIC_DELIVERY_JUDGE_INSTRUCTIONS,
+        },
+    )
+    ctx.register_auxiliary_task(
         key=BLOCKED_DELIVERY_RECOVERY_TASK,
         display_name="Miho governance blocked delivery recovery agent",
         description="Produces the final answer when earlier delivery agents return no usable replacement",
@@ -215,6 +267,17 @@ def register(ctx: Any) -> None:
             "timeout": 20,
             "extra_body": {"reasoning": {"effort": "medium"}},
             "instructions": BLOCKED_DELIVERY_RECOVERY_INSTRUCTIONS,
+        },
+    )
+    ctx.register_auxiliary_task(
+        key=ADVERSARIAL_VALIDATOR_TASK,
+        display_name="Miho governance adversarial validator",
+        description="Independent validator for test receipts, artifact smoke, UX, and runtime safety",
+        defaults={
+            "provider": "auto",
+            "timeout": 60,
+            "extra_body": {"reasoning": {"effort": "medium"}},
+            "instructions": ADVERSARIAL_VALIDATOR_INSTRUCTIONS,
         },
     )
     _ensure_self_harness_autopilot_cron()

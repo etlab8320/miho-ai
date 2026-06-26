@@ -136,7 +136,11 @@ def _evidence(records: list[tuple[dict[str, Any], dict[str, Any]]]) -> list[str]
         event_id = event.get("id", "unknown")
         request_id = outcome.get("request_id", "unknown")
         review_status = outcome.get("review_status", "unknown")
-        lines.append(f"event={event_id} request_id={request_id} review_status={review_status}")
+        line = f"event={event_id} request_id={request_id} review_status={review_status}"
+        feedback = _clean_text(outcome.get("user_feedback"))
+        if feedback:
+            line += f" feedback={feedback}"
+        lines.append(line)
     return lines
 
 
@@ -145,6 +149,8 @@ def _target_surface(failure: str) -> str:
     if normalized.startswith("final_qa") or "answer" in normalized:
         return "final_qa_agent"
     if "attachment" in normalized or "delivery" in normalized or "media" in normalized:
+        return "final_delivery_repair"
+    if "pdf" in normalized or "footer" in normalized or "layout" in normalized:
         return "final_delivery_repair"
     if "reviewer" in normalized:
         return "domain_reviewer_contract"

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .hakjong_faculty_research import build_faculty_research, paper_titles_from_bundle, recover_existing_faculty_research, sanitize_faculty_profiles, sanitize_faculty_paper_sources, bundle_sources_match_university
+from .hakjong_live_evidence import live_evidence_summary
 from .hakjong_live_refresh import choose_best_bundle, copy_section, failed_results, section_fresh, section_ttls
 _LIVE_KEYWORDS = (
     "스포츠", "체육", "운동", "신체활동", "건강", "건강증진", "체력", "측정",
@@ -439,9 +440,7 @@ def apply_live_research_enrichment(content: dict[str, Any], profile: dict[str, A
     content_text = _content_text(content)
     if sum(1 for kw in keywords if kw in content_text) >= 2 and _has_live_flow_row(content) and not paper_titles:
         return False
-    keyword_text = "·".join(keywords[:6])
-    evidence_text = " / ".join(paper_titles) if paper_titles else f"교수진·논문·뉴스 키워드: {keyword_text}"
-    live_note = f"최신 학과 흐름 반영: {keyword_text}"
+    keyword_text, evidence_text, live_note = live_evidence_summary(keywords, paper_titles)
     track = content.setdefault("track_section", {})
     if isinstance(track, dict):
         rows = track.setdefault("rows", [])

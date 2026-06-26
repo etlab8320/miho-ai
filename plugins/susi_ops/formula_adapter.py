@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .db import db_path
-from .grade_engine import _norm_subject_area
+from .grade_engine import _norm_subject_area, _subject_area_from_row
 from .utils import _first_number
 
 
@@ -92,10 +92,11 @@ def _formula_calculate(
     for g in grades:
         if not isinstance(g, dict):
             continue
+        category = _subject_category_for_plugin(g)
         record = module.SubjectRecord(
             grade=_int_or_none(g.get("학년")) or 0,
             semester=_int_or_none(g.get("학기")) or 0,
-            category=str(g.get("교과") or ""),
+            category=category,
             subject=str(g.get("과목") or ""),
             credit=float(_first_number(g.get("이수단위")) or 1.0),
             rank_grade=_int_or_none(g.get("등급")),
@@ -117,6 +118,13 @@ def _formula_calculate(
     if not isinstance(data, dict):
         return None
     return data
+
+
+def _subject_category_for_plugin(row: dict[str, Any]) -> str:
+    resolved = _subject_area_from_row(row)
+    if resolved and resolved not in {"기타", "일반", "공통", "선택"}:
+        return resolved
+    return str(row.get("교과") or "")
 
 
 def _official_selected_academic_subjects(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:

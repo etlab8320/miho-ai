@@ -48,6 +48,7 @@ from .monthly_test_records_tool import register_monthly_test_records_tool
 from .student_record_cohort_tool import register_student_record_cohort_tool
 from .student_record_chart_tool import register_student_record_chart_tool
 from .student_records_tool import register_student_records_tool
+from .thread_roster_tool import register_thread_roster_tool
 from .report_render_tool import register_report_image_tool
 from .render_image_tool import register_render_image_tool
 from .result_reviewer import (
@@ -179,6 +180,7 @@ def register(ctx: Any) -> None:
     register_student_record_chart_tool(ctx)
     register_student_records_tool(ctx)
     register_monthly_test_records_tool(ctx)
+    register_thread_roster_tool(ctx)
     register_report_image_tool(ctx)
     register_render_image_tool(ctx)
     register_consultation_note_tool(ctx)

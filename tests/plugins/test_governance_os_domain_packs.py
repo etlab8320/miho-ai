@@ -11,13 +11,19 @@ def test_domain_packs_cover_general_and_academy_domains() -> None:
 
     by_domain = {pack.domain: pack for pack in packs}
 
-    assert set(by_domain) == {"academy", "dev", "research", "discord_ops", "memory"}
+    assert set(by_domain) == {"academy", "artifact", "dev", "research", "discord_ops", "memory"}
     assert by_domain["academy"].domain_agent_key == "academy_domain_agent"
     assert by_domain["academy"].playbook_keys == (
         "academy_hakjong_report",
         "academy_practical_recommendation",
         "life_record_ingest",
         "susi_score_calculation",
+    )
+    assert by_domain["artifact"].domain_agent_key == "artifact_domain_agent"
+    assert by_domain["artifact"].playbook_keys == ("designed_pdf_artifact",)
+    assert by_domain["artifact"].required_tools == (
+        "html_pdf_quality_gate",
+        "media_delivery_contract",
     )
     assert by_domain["discord_ops"].required_tools == ("media_delivery_contract",)
     assert all(pack.coverage_passed for pack in packs)

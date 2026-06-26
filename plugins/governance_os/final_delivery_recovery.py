@@ -7,7 +7,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from .delivery_safety import contains_internal_guard_leak
+from .delivery_safety import contains_internal_guard_leak, contains_non_result_deferral
 from .final_qa import repair_answer_until_pass
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def recover_blocked_delivery(
     )
     if _is_usable_replacement(recovered, original):
         return recovered.strip()
-    return _current_turn_result(question=question, evidence=evidence)
+    return _emergency_fail_closed_result(evidence=evidence)
 
 
 def _request_blocked_recovery(
@@ -124,6 +124,7 @@ def blocked_recovery_messages(
                 "evidence JSON을 보고 Q에 맞는 한국어 평문 답변만 출력한다. 내부 guard, "
                 "retry_tools, provider 오류, stack trace, 검증 실패 안내를 노출하지 않는다. "
                 "evidence가 부족한 도메인 산출물의 완료/첨부/점수 claim은 확정하지 않는다. "
+                "확인한 뒤 전달, 검증 후 전달, 준비하겠습니다 같은 대기 문구는 답변이 아니다. "
                 "Q가 거버넌스/셀프하네스/코드 리뷰라면 리뷰 결과를 유지하고, 산출물 전달로 오해하지 않는다."
             ),
         },
@@ -145,23 +146,21 @@ def _is_usable_replacement(candidate: str, original: str) -> bool:
         replacement
         and replacement != original
         and not contains_internal_guard_leak(replacement)
+        and not contains_non_result_deferral(replacement)
     )
 
 
-def _current_turn_result(*, question: str, evidence: dict[str, Any]) -> str:
+def _emergency_fail_closed_result(*, evidence: dict[str, Any]) -> str:
+    """Last resort when every LLM recovery path is unavailable.
+
+    This is not a semantic/domain fallback. It only prevents a blocked original
+    claim from failing open when every agent transport is unavailable.
+    """
+
     decision = evidence.get("decision") if isinstance(evidence, dict) else {}
-    playbook_key = str(decision.get("playbook_key") or "") if isinstance(decision, dict) else ""
     retry_tools = decision.get("retry_tools") if isinstance(decision, dict) else []
-    question_blob = str(question or "").casefold()
-    if playbook_key == "susi_score_calculation" or "환산점수" in question_blob:
-        return (
-            "현재 대화 기준 확정 환산점수 산출 불가.\n"
-            "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
-        )
-    if playbook_key == "discord_attachment_delivery" or any(
-        term in question_blob for term in ("첨부", "pdf", "파일")
-    ):
-        return "현재 대화 기준 첨부 가능한 산출물 없음.\n필요한 입력: 전달할 파일 경로 또는 생성된 산출물."
+    if isinstance(retry_tools, list) and retry_tools:
+        return "현재 가능한 결론: 확정 결과 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
     if retry_tools:
-        return "현재 대화 기준 확정 결과 없음.\n필요한 입력: 계산이나 산출에 필요한 원자료."
-    return "현재 대화 기준 답변 가능한 결론 없음.\n필요한 입력: 요청을 판단할 원자료."
+        return "현재 가능한 결론: 확정 결과 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
+    return "현재 가능한 결론: 확정 결과 없음.\n필요한 입력: 요청을 판단할 원자료."

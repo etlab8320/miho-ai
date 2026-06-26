@@ -8,7 +8,7 @@ import json
 from plugins.governance_os.council import run_council_turn
 from plugins.governance_os.registry import load_builtin_registry
 from plugins.governance_os.result_transform import governance_transform_tool_result
-from plugins.governance_os.review import evaluate_review_gate
+from plugins.governance_os.review import auxiliary_review_policy_for_playbook, evaluate_review_gate
 
 
 def _patch_auxiliary_review_pass(monkeypatch) -> list[dict[str, object]]:
@@ -136,6 +136,12 @@ def test_review_gate_passes_non_reviewed_tool_without_reviewer() -> None:
 
     assert outcome.status == "pass"
     assert outcome.reason == "no_review_required"
+
+
+def test_runtime_review_policy_requires_llm_reviewer_for_governed_playbooks() -> None:
+    assert auxiliary_review_policy_for_playbook("discord_attachment_delivery") == "always"
+    assert auxiliary_review_policy_for_playbook("dev_code_update") == "always"
+    assert auxiliary_review_policy_for_playbook("academy_hakjong_report") == "always"
 
 
 def test_review_gate_calls_auxiliary_reviewer_for_semantic_risk(monkeypatch) -> None:
@@ -337,10 +343,10 @@ def test_governance_transform_calls_auxiliary_reviewer_without_semantic_flag(mon
     assert calls[0]["tool_name"] == "susi27_score_calculate"
 
 
-def test_governance_transform_allows_low_risk_tool_without_auxiliary_reviewer(
+def test_governance_transform_calls_auxiliary_reviewer_for_attachment_delivery(
     monkeypatch,
 ) -> None:
-    calls = _patch_auxiliary_review_broken(monkeypatch)
+    calls = _patch_auxiliary_review_pass(monkeypatch)
 
     transformed = governance_transform_tool_result(
         tool_name="media_delivery_contract",
@@ -357,7 +363,8 @@ def test_governance_transform_allows_low_risk_tool_without_auxiliary_reviewer(
     )
 
     assert transformed is None
-    assert calls == []
+    assert calls
+    assert calls[0]["task"] == "miho_governance_reviewer_delivery"
 
 
 def test_governance_transform_failure_records_outcome_ledger(tmp_path, monkeypatch) -> None:
@@ -416,8 +423,8 @@ def test_governance_transform_pass_records_outcome_ledger(tmp_path, monkeypatch)
     assert outcome["artifact_paths"] == ["/tmp/report.mhtml"]
 
 
-def test_council_skips_auxiliary_for_low_risk_attachment_pass(monkeypatch) -> None:
-    calls = _patch_auxiliary_review_broken(monkeypatch)
+def test_council_calls_auxiliary_reviewer_for_attachment_pass(monkeypatch) -> None:
+    calls = _patch_auxiliary_review_pass(monkeypatch)
 
     result = run_council_turn(
         registry=load_builtin_registry(),
@@ -438,7 +445,8 @@ def test_council_skips_auxiliary_for_low_risk_attachment_pass(monkeypatch) -> No
     )
 
     assert result.status == "passed"
-    assert calls == []
+    assert calls
+    assert calls[0]["task"] == "miho_governance_reviewer_delivery"
 
 
 def test_council_retry_records_retry_tools_in_ledger(tmp_path, monkeypatch) -> None:

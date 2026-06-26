@@ -7,7 +7,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from .delivery_safety import contains_internal_guard_leak
+from .delivery_safety import contains_internal_guard_leak, contains_non_result_deferral
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def review_final_delivery(
     candidate = str(payload.get("answer") or "").strip()
     if action not in {"deliver", "revise", "block"} or not candidate:
         return None
-    if contains_internal_guard_leak(candidate):
+    if contains_internal_guard_leak(candidate) or contains_non_result_deferral(candidate):
         return None
     original = str(answer or "").strip()
     return candidate if candidate != original else None
@@ -97,7 +97,8 @@ def final_delivery_messages(
                 "실제 학원 산출물 전달로 오해하지 말고 리뷰 결과를 유지한다. "
                 "내부 guard, retry_tools, stack trace, provider 오류, 검증 실패 안내를 사용자 답변으로 노출하지 않는다. "
                 "도메인 산출물의 완료/첨부/점수 claim이 evidence와 맞지 않으면 revise로 고쳐라. "
-                "답변을 고칠 때도 Q에 직접 답하고, 하드코딩된 보류 문구로 대체하지 마라."
+                "확인한 뒤 전달, 검증 후 전달, 준비하겠습니다 같은 대기 문구는 답변이 아니다. "
+                "답변을 고칠 때도 Q에 직접 답하고, 현재 정보로 가능한 결론이나 필요한 입력을 말해라."
             ),
         },
         {

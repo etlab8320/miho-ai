@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import cast
 
 from .registry import GovernanceRegistry
+from .readiness_academy_probes import (
+    academy_accuracy_probe_failures as _academy_accuracy_probe_failures,
+)
 from .readiness_autonomy_probes import (
     final_delivery_repair_probe_passed as _final_delivery_repair_probe_passed,
     final_qa_repair_probe_passed as _final_qa_repair_probe_passed,
     self_harness_autonomy_probe_passed as _self_harness_autonomy_probe_passed,
+    self_harness_runtime_feedback_probe_passed as _self_harness_runtime_feedback_probe_passed,
+)
+from .readiness_delivery_probes import (
+    final_delivery_probe_passed as _final_delivery_probe_passed,
+    final_delivery_retry_probe_passed as _final_delivery_retry_probe_passed,
+    pdf_attachment_quality_loop_probe_passed as _pdf_attachment_quality_loop_probe_passed,
 )
 from .readiness_plugin_probes import (
     auxiliary_dispatcher_dataplane_probe_passed as _auxiliary_dispatcher_dataplane_probe_passed,
@@ -19,6 +27,16 @@ from .readiness_plugin_probes import (
     hook_probe_passed as _hook_probe_passed,
     manifest_probe_passed as _manifest_probe_passed,
     plugin_load_probe_passed as _plugin_load_probe_passed,
+    semantic_delivery_judge_dataplane_probe_passed as _semantic_delivery_judge_dataplane_probe_passed,
+)
+from .readiness_routing_probes import (
+    routing_loop_probe_passed as _routing_loop_probe_passed,
+)
+from .readiness_tool_contract_probes import (
+    tool_contract_probe_failures as _tool_contract_probe_failures,
+)
+from .readiness_validation_loop_probes import (
+    validation_loop_probe_passed as _validation_loop_probe_passed,
 )
 
 
@@ -32,9 +50,12 @@ class ReadinessProbeResults:
     retry_instruction_probe_passed: bool
     transform_ledger_probe_passed: bool
     final_delivery_probe_passed: bool
+    final_delivery_retry_probe_passed: bool
+    pdf_attachment_quality_loop_probe_passed: bool
     final_delivery_repair_probe_passed: bool
     final_qa_repair_probe_passed: bool
     self_harness_autonomy_probe_passed: bool
+    self_harness_runtime_feedback_probe_passed: bool
     evolution_rollback_probe_passed: bool
     hook_probe_passed: bool
     manifest_probe_passed: bool
@@ -42,6 +63,11 @@ class ReadinessProbeResults:
     auxiliary_instruction_probe_passed: bool
     auxiliary_dispatcher_dataplane_probe_passed: bool
     auxiliary_reviewer_dataplane_probe_passed: bool
+    semantic_delivery_judge_dataplane_probe_passed: bool
+    routing_loop_probe_passed: bool
+    tool_contract_probe_passed: bool
+    validation_loop_probe_passed: bool
+    academy_accuracy_probe_passed: bool
     failures: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -79,6 +105,16 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
     if not final_delivery_probe_passed:
         failures.append("final delivery probe did not block unreviewed governed output")
 
+    final_delivery_retry_probe_passed = _final_delivery_retry_probe_passed(registry)
+    if not final_delivery_retry_probe_passed:
+        failures.append("final delivery retry probe did not rerun a verified tool result")
+
+    pdf_attachment_quality_loop_probe_passed = _pdf_attachment_quality_loop_probe_passed(
+        registry
+    )
+    if not pdf_attachment_quality_loop_probe_passed:
+        failures.append("PDF attachment quality loop did not autocorrect, rerender, review, and deliver")
+
     final_delivery_repair_probe_passed = _final_delivery_repair_probe_passed()
     if not final_delivery_repair_probe_passed:
         failures.append("final delivery repair probe did not stage an allowed attachment")
@@ -90,6 +126,10 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
     self_harness_autonomy_probe_passed = _self_harness_autonomy_probe_passed()
     if not self_harness_autonomy_probe_passed:
         failures.append("self-harness autonomy probe did not activate and rollback")
+
+    self_harness_runtime_feedback_probe_passed = _self_harness_runtime_feedback_probe_passed()
+    if not self_harness_runtime_feedback_probe_passed:
+        failures.append("self-harness runtime feedback probe did not record and auto-improve")
 
     evolution_rollback_probe_passed = _evolution_rollback_probe_passed()
     if not evolution_rollback_probe_passed:
@@ -119,6 +159,28 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
     if not auxiliary_reviewer_dataplane_probe_passed:
         failures.append("auxiliary reviewer data-plane probe did not find runtime call path")
 
+    semantic_delivery_judge_dataplane_probe_passed = (
+        _semantic_delivery_judge_dataplane_probe_passed(registry)
+    )
+    if not semantic_delivery_judge_dataplane_probe_passed:
+        failures.append("semantic delivery judge data-plane probe did not return verdict")
+
+    routing_loop_probe_passed = _routing_loop_probe_passed(registry)
+    if not routing_loop_probe_passed:
+        failures.append("routing loop probe did not prove directive, tool validation, and context map")
+
+    tool_contract_failures = _tool_contract_probe_failures(registry)
+    tool_contract_probe_passed = not tool_contract_failures
+    failures.extend(tool_contract_failures)
+
+    validation_loop_probe_passed = _validation_loop_probe_passed()
+    if not validation_loop_probe_passed:
+        failures.append("validation loop probe did not prove tests, smoke, and independent review")
+
+    academy_accuracy_failures = _academy_accuracy_probe_failures(registry)
+    academy_accuracy_probe_passed = not academy_accuracy_failures
+    failures.extend(academy_accuracy_failures)
+
     return ReadinessProbeResults(
         council_probe_passed=council_probe_passed,
         risk_probe_passed=risk_probe_passed,
@@ -128,9 +190,12 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
         retry_instruction_probe_passed=retry_instruction_probe_passed,
         transform_ledger_probe_passed=transform_ledger_probe_passed,
         final_delivery_probe_passed=final_delivery_probe_passed,
+        final_delivery_retry_probe_passed=final_delivery_retry_probe_passed,
+        pdf_attachment_quality_loop_probe_passed=pdf_attachment_quality_loop_probe_passed,
         final_delivery_repair_probe_passed=final_delivery_repair_probe_passed,
         final_qa_repair_probe_passed=final_qa_repair_probe_passed,
         self_harness_autonomy_probe_passed=self_harness_autonomy_probe_passed,
+        self_harness_runtime_feedback_probe_passed=self_harness_runtime_feedback_probe_passed,
         evolution_rollback_probe_passed=evolution_rollback_probe_passed,
         hook_probe_passed=hook_probe_passed,
         manifest_probe_passed=manifest_probe_passed,
@@ -138,6 +203,13 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
         auxiliary_instruction_probe_passed=auxiliary_instruction_probe_passed,
         auxiliary_dispatcher_dataplane_probe_passed=auxiliary_dispatcher_dataplane_probe_passed,
         auxiliary_reviewer_dataplane_probe_passed=auxiliary_reviewer_dataplane_probe_passed,
+        semantic_delivery_judge_dataplane_probe_passed=(
+            semantic_delivery_judge_dataplane_probe_passed
+        ),
+        routing_loop_probe_passed=routing_loop_probe_passed,
+        tool_contract_probe_passed=tool_contract_probe_passed,
+        validation_loop_probe_passed=validation_loop_probe_passed,
+        academy_accuracy_probe_passed=academy_accuracy_probe_passed,
         failures=tuple(failures),
     )
 
@@ -331,82 +403,6 @@ def _transform_ledger_probe_passed() -> bool:
         and entry.failures == ("reviewer_missing",)
         and entry.retry_tools == ("media_delivery_contract",)
         and entry.artifact_paths == ("/tmp/report.mhtml",)
-    )
-
-
-def _final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
-    from .delivery_gate import evaluate_final_delivery, governance_transform_llm_output
-
-    def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
-        return {
-            "content": (
-                '{"action":"revise","answer":"서연이 수시 환산점수는 검증된 계산 결과가 '
-                '확인된 뒤 전달합니다."}'
-            )
-        }
-
-    def extract(response: object) -> str:
-        if isinstance(response, dict):
-            typed = cast("dict[str, object]", response)
-            return str(typed.get("content") or "")
-        return str(response or "")
-
-    def recovery_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
-        task = str(kwargs.get("task") or "")
-        if task == "miho_governance_final_delivery":
-            return {"content": "not-json"}
-        if task == "miho_governance_final_qa_repair":
-            return {"content": "서연이 수시 환산점수는 947.3점입니다."}
-        if task == "miho_governance_final_qa":
-            return {"content": "pass"}
-        if task == "miho_governance_blocked_delivery_recovery":
-            return {"content": "검증된 계산 결과를 확인한 뒤 전달합니다."}
-        return {"content": ""}
-
-    blocked = evaluate_final_delivery(
-        registry,
-        response_text="서연이 수시 환산점수는 947.3점입니다.",
-        user_text="서연이 수시 환산점수 계산해줘",
-        outcomes=[],
-    )
-    passed = evaluate_final_delivery(
-        registry,
-        response_text="서연이 수시 환산점수는 947.3점입니다.",
-        user_text="서연이 수시 환산점수 계산해줘",
-        outcomes=[
-            {
-                "playbook_key": "susi_score_calculation",
-                "review_status": "pass",
-                "tools_used": ["susi27_score_calculate"],
-                "failures": [],
-            }
-        ],
-    )
-    transformed = governance_transform_llm_output(
-        response_text="서연이 수시 환산점수는 947.3점입니다.",
-        user_message="서연이 수시 환산점수 계산해줘",
-        governance_outcomes=[],
-        final_delivery_call_llm=fake_call_llm,
-        final_delivery_extract_content=extract,
-    )
-    recovered = governance_transform_llm_output(
-        response_text="서연이 수시 환산점수는 947.3점입니다.",
-        user_message="서연이 수시 환산점수 계산해줘",
-        governance_outcomes=[],
-        final_delivery_call_llm=recovery_call_llm,
-        final_delivery_extract_content=extract,
-    )
-    return (
-        blocked.action == "block"
-        and blocked.reason == "review_evidence_missing"
-        and passed.action == "allow"
-        and transformed is not None
-        and "검증된 계산 결과" in transformed
-        and recovered is not None
-        and "947.3" not in recovered
-        and "검증된 계산 결과" in recovered
-        and "후검증" not in transformed
-        and "전용 도구" not in transformed
     )
 
 

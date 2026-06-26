@@ -28,9 +28,12 @@ class GovernanceReadinessReport:
     retry_instruction_probe_passed: bool
     transform_ledger_probe_passed: bool
     final_delivery_probe_passed: bool
+    final_delivery_retry_probe_passed: bool
+    pdf_attachment_quality_loop_probe_passed: bool
     final_delivery_repair_probe_passed: bool
     final_qa_repair_probe_passed: bool
     self_harness_autonomy_probe_passed: bool
+    self_harness_runtime_feedback_probe_passed: bool
     evolution_rollback_probe_passed: bool
     hook_probe_passed: bool
     manifest_probe_passed: bool
@@ -38,6 +41,11 @@ class GovernanceReadinessReport:
     auxiliary_instruction_probe_passed: bool
     auxiliary_dispatcher_dataplane_probe_passed: bool
     auxiliary_reviewer_dataplane_probe_passed: bool
+    semantic_delivery_judge_dataplane_probe_passed: bool
+    routing_loop_probe_passed: bool
+    tool_contract_probe_passed: bool
+    validation_loop_probe_passed: bool
+    academy_accuracy_probe_passed: bool
     domain_packs_passed: bool
     rollback_status: str
     active_snapshot_id: str = ""
@@ -94,9 +102,12 @@ def run_readiness_check() -> GovernanceReadinessReport:
         and probe_results.retry_instruction_probe_passed
         and probe_results.transform_ledger_probe_passed
         and probe_results.final_delivery_probe_passed
+        and probe_results.final_delivery_retry_probe_passed
+        and probe_results.pdf_attachment_quality_loop_probe_passed
         and probe_results.final_delivery_repair_probe_passed
         and probe_results.final_qa_repair_probe_passed
         and probe_results.self_harness_autonomy_probe_passed
+        and probe_results.self_harness_runtime_feedback_probe_passed
         and probe_results.evolution_rollback_probe_passed
         and probe_results.hook_probe_passed
         and probe_results.manifest_probe_passed
@@ -104,6 +115,11 @@ def run_readiness_check() -> GovernanceReadinessReport:
         and probe_results.auxiliary_instruction_probe_passed
         and probe_results.auxiliary_dispatcher_dataplane_probe_passed
         and probe_results.auxiliary_reviewer_dataplane_probe_passed
+        and probe_results.semantic_delivery_judge_dataplane_probe_passed
+        and probe_results.routing_loop_probe_passed
+        and probe_results.tool_contract_probe_passed
+        and probe_results.validation_loop_probe_passed
+        and probe_results.academy_accuracy_probe_passed
         and domain_packs_passed
         and rollback_status != "invalid_active_snapshot"
     )
@@ -119,9 +135,16 @@ def run_readiness_check() -> GovernanceReadinessReport:
         retry_instruction_probe_passed=probe_results.retry_instruction_probe_passed,
         transform_ledger_probe_passed=probe_results.transform_ledger_probe_passed,
         final_delivery_probe_passed=probe_results.final_delivery_probe_passed,
+        final_delivery_retry_probe_passed=probe_results.final_delivery_retry_probe_passed,
+        pdf_attachment_quality_loop_probe_passed=(
+            probe_results.pdf_attachment_quality_loop_probe_passed
+        ),
         final_delivery_repair_probe_passed=probe_results.final_delivery_repair_probe_passed,
         final_qa_repair_probe_passed=probe_results.final_qa_repair_probe_passed,
         self_harness_autonomy_probe_passed=probe_results.self_harness_autonomy_probe_passed,
+        self_harness_runtime_feedback_probe_passed=(
+            probe_results.self_harness_runtime_feedback_probe_passed
+        ),
         evolution_rollback_probe_passed=probe_results.evolution_rollback_probe_passed,
         hook_probe_passed=probe_results.hook_probe_passed,
         manifest_probe_passed=probe_results.manifest_probe_passed,
@@ -133,6 +156,13 @@ def run_readiness_check() -> GovernanceReadinessReport:
         auxiliary_reviewer_dataplane_probe_passed=(
             probe_results.auxiliary_reviewer_dataplane_probe_passed
         ),
+        semantic_delivery_judge_dataplane_probe_passed=(
+            probe_results.semantic_delivery_judge_dataplane_probe_passed
+        ),
+        routing_loop_probe_passed=probe_results.routing_loop_probe_passed,
+        tool_contract_probe_passed=probe_results.tool_contract_probe_passed,
+        validation_loop_probe_passed=probe_results.validation_loop_probe_passed,
+        academy_accuracy_probe_passed=probe_results.academy_accuracy_probe_passed,
         domain_packs_passed=domain_packs_passed,
         rollback_valid=rollback_status != "invalid_active_snapshot",
     )
@@ -150,9 +180,16 @@ def run_readiness_check() -> GovernanceReadinessReport:
         retry_instruction_probe_passed=probe_results.retry_instruction_probe_passed,
         transform_ledger_probe_passed=probe_results.transform_ledger_probe_passed,
         final_delivery_probe_passed=probe_results.final_delivery_probe_passed,
+        final_delivery_retry_probe_passed=probe_results.final_delivery_retry_probe_passed,
+        pdf_attachment_quality_loop_probe_passed=(
+            probe_results.pdf_attachment_quality_loop_probe_passed
+        ),
         final_delivery_repair_probe_passed=probe_results.final_delivery_repair_probe_passed,
         final_qa_repair_probe_passed=probe_results.final_qa_repair_probe_passed,
         self_harness_autonomy_probe_passed=probe_results.self_harness_autonomy_probe_passed,
+        self_harness_runtime_feedback_probe_passed=(
+            probe_results.self_harness_runtime_feedback_probe_passed
+        ),
         evolution_rollback_probe_passed=probe_results.evolution_rollback_probe_passed,
         hook_probe_passed=probe_results.hook_probe_passed,
         manifest_probe_passed=probe_results.manifest_probe_passed,
@@ -164,6 +201,13 @@ def run_readiness_check() -> GovernanceReadinessReport:
         auxiliary_reviewer_dataplane_probe_passed=(
             probe_results.auxiliary_reviewer_dataplane_probe_passed
         ),
+        semantic_delivery_judge_dataplane_probe_passed=(
+            probe_results.semantic_delivery_judge_dataplane_probe_passed
+        ),
+        routing_loop_probe_passed=probe_results.routing_loop_probe_passed,
+        tool_contract_probe_passed=probe_results.tool_contract_probe_passed,
+        validation_loop_probe_passed=probe_results.validation_loop_probe_passed,
+        academy_accuracy_probe_passed=probe_results.academy_accuracy_probe_passed,
         domain_packs_passed=domain_packs_passed,
         rollback_status=rollback_status,
         active_snapshot_id=active_snapshot_id,
@@ -187,9 +231,12 @@ def _quality_score(
     retry_instruction_probe_passed: bool,
     transform_ledger_probe_passed: bool,
     final_delivery_probe_passed: bool,
+    final_delivery_retry_probe_passed: bool,
+    pdf_attachment_quality_loop_probe_passed: bool,
     final_delivery_repair_probe_passed: bool,
     final_qa_repair_probe_passed: bool,
     self_harness_autonomy_probe_passed: bool,
+    self_harness_runtime_feedback_probe_passed: bool,
     evolution_rollback_probe_passed: bool,
     hook_probe_passed: bool,
     manifest_probe_passed: bool,
@@ -197,6 +244,11 @@ def _quality_score(
     auxiliary_instruction_probe_passed: bool,
     auxiliary_dispatcher_dataplane_probe_passed: bool,
     auxiliary_reviewer_dataplane_probe_passed: bool,
+    semantic_delivery_judge_dataplane_probe_passed: bool,
+    routing_loop_probe_passed: bool,
+    tool_contract_probe_passed: bool,
+    validation_loop_probe_passed: bool,
+    academy_accuracy_probe_passed: bool,
     domain_packs_passed: bool,
     rollback_valid: bool,
 ) -> int:
@@ -212,9 +264,12 @@ def _quality_score(
         retry_instruction_probe_passed,
         transform_ledger_probe_passed,
         final_delivery_probe_passed,
+        final_delivery_retry_probe_passed,
+        pdf_attachment_quality_loop_probe_passed,
         final_delivery_repair_probe_passed,
         final_qa_repair_probe_passed,
         self_harness_autonomy_probe_passed,
+        self_harness_runtime_feedback_probe_passed,
         evolution_rollback_probe_passed,
         hook_probe_passed,
         manifest_probe_passed,
@@ -222,6 +277,11 @@ def _quality_score(
         auxiliary_instruction_probe_passed,
         auxiliary_dispatcher_dataplane_probe_passed,
         auxiliary_reviewer_dataplane_probe_passed,
+        semantic_delivery_judge_dataplane_probe_passed,
+        routing_loop_probe_passed,
+        tool_contract_probe_passed,
+        validation_loop_probe_passed,
+        academy_accuracy_probe_passed,
         domain_packs_passed,
         rollback_valid,
     )

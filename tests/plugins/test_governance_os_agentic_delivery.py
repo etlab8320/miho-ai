@@ -73,7 +73,144 @@ def test_meta_review_false_positive_is_resolved_by_final_delivery_agent() -> Non
     assert calls
 
 
-def test_blocked_answer_uses_recovery_agent_after_final_delivery_invalid() -> None:
+def test_semantic_judge_overrides_keyword_block_for_governance_review() -> None:
+    semantic_calls: list[dict[str, Any]] = []
+    delivery_calls: list[dict[str, Any]] = []
+    answer = (
+        "미호 Governance OS 적대적 리뷰 결과입니다. "
+        "예시로 '서연이 수시 환산점수는 947.3점입니다' 같은 문장이 "
+        "도구 검증 없이 나가면 안 됩니다."
+    )
+
+    def semantic_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        semantic_calls.append(kwargs)
+        return {
+            "content": json.dumps(
+                {
+                    "action": "allow",
+                    "reason": "governance_review_quote_not_student_delivery",
+                    "playbook_key": "",
+                    "retry_tools": [],
+                },
+                ensure_ascii=False,
+            )
+        }
+
+    def delivery_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        delivery_calls.append(kwargs)
+        return {"content": json.dumps({"action": "deliver", "answer": answer})}
+
+    transformed = governance_transform_llm_output(
+        response_text=answer,
+        user_message="미호 Governance OS + Self-Harness 적대적 리뷰해줘",
+        platform="discord",
+        governance_outcomes=[],
+        semantic_delivery_call_llm=semantic_call_llm,
+        semantic_delivery_extract_content=_extract,
+        final_delivery_call_llm=delivery_call_llm,
+        final_delivery_extract_content=_extract,
+    )
+
+    assert transformed is None
+    assert semantic_calls
+    assert semantic_calls[0]["task"] == "miho_governance_semantic_delivery_judge"
+    assert delivery_calls
+    evidence = json.loads(delivery_calls[0]["messages"][1]["content"].split("EVIDENCE: ", 1)[1])
+    assert evidence["decision"]["action"] == "allow"
+    assert "agent_semantic_allow" in evidence["decision"]["reason"]
+
+
+def test_semantic_judge_cannot_override_internal_guard_leak() -> None:
+    semantic_calls: list[dict[str, Any]] = []
+
+    def semantic_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        semantic_calls.append(kwargs)
+        return {
+            "content": json.dumps(
+                {"action": "allow", "reason": "should_not_override"},
+                ensure_ascii=False,
+            )
+        }
+
+    def delivery_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        task = str(kwargs.get("task") or "")
+        if task == "miho_governance_final_delivery":
+            return {"content": "not-json"}
+        if task == "miho_governance_final_qa_repair":
+            return {"content": "후검증을 통과하지 못했습니다."}
+        if task == "miho_governance_final_qa":
+            return {"content": "revise"}
+        if task == "miho_governance_blocked_delivery_recovery":
+            return {"content": "현재 결론: 요청한 산출물은 확정할 근거가 없습니다."}
+        raise AssertionError(f"unexpected task: {task}")
+
+    transformed = governance_transform_llm_output(
+        response_text="후검증을 통과하지 못했습니다. 전용 도구를 다시 실행해야 합니다.",
+        user_message="안시현 학종 리포트 만들어줘",
+        platform="discord",
+        governance_outcomes=[],
+        semantic_delivery_call_llm=semantic_call_llm,
+        semantic_delivery_extract_content=_extract,
+        final_delivery_call_llm=delivery_call_llm,
+        final_delivery_extract_content=_extract,
+    )
+
+    assert semantic_calls == []
+    assert transformed == "현재 결론: 요청한 산출물은 확정할 근거가 없습니다."
+
+
+def test_semantic_judge_blocks_subtle_governed_answer_python_allowed() -> None:
+    semantic_calls: list[dict[str, Any]] = []
+    delivery_calls: list[dict[str, Any]] = []
+
+    def semantic_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        semantic_calls.append(kwargs)
+        return {
+            "content": json.dumps(
+                {
+                    "action": "block",
+                    "reason": "recommendation_claim_without_review",
+                    "playbook_key": "academy_practical_recommendation",
+                    "retry_tools": ["academy_practical_reco_all_candidates"],
+                },
+                ensure_ascii=False,
+            )
+        }
+
+    def delivery_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        delivery_calls.append(kwargs)
+        return {
+            "content": json.dumps(
+                {
+                    "action": "revise",
+                    "answer": "현재 결론: 실기 추천 확정 산출물 없음.\n필요한 입력: 학생 기록, 지역, 전형.",
+                },
+                ensure_ascii=False,
+            )
+        }
+
+    transformed = governance_transform_llm_output(
+        response_text="서연이는 한국체대 교과전형 쪽으로 잡는 게 맞습니다.",
+        user_message="서연이 실기 추천해줘",
+        platform="discord",
+        governance_outcomes=[],
+        semantic_delivery_call_llm=semantic_call_llm,
+        semantic_delivery_extract_content=_extract,
+        final_delivery_call_llm=delivery_call_llm,
+        final_delivery_extract_content=_extract,
+    )
+
+    assert transformed is not None
+    assert "확정 산출물 없음" in transformed
+    assert semantic_calls
+    assert delivery_calls
+    evidence = json.loads(delivery_calls[0]["messages"][1]["content"].split("EVIDENCE: ", 1)[1])
+    assert evidence["decision"]["action"] == "block"
+    assert "agent_semantic_block" in evidence["decision"]["reason"]
+    assert evidence["decision"]["retry_tools"] == ["academy_practical_reco_all_candidates"]
+
+
+def test_blocked_answer_rejects_recovery_deferral_after_final_delivery_invalid() -> None:
     calls: list[str] = []
     original = "서연이 수시 환산점수는 947.3점입니다."
 
@@ -87,7 +224,12 @@ def test_blocked_answer_uses_recovery_agent_after_final_delivery_invalid() -> No
         if task == "miho_governance_final_qa":
             return {"content": "pass"}
         if task == "miho_governance_blocked_delivery_recovery":
-            return {"content": "검증 도구 결과를 확인한 뒤 계산 결과를 전달하겠습니다."}
+            return {
+                "content": (
+                    "현재 가능한 결론: 확정 환산점수 산출 불가.\n"
+                    "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
+                )
+            }
         raise AssertionError(f"unexpected task: {task}")
 
     transformed = governance_transform_llm_output(
@@ -99,11 +241,16 @@ def test_blocked_answer_uses_recovery_agent_after_final_delivery_invalid() -> No
         final_delivery_extract_content=_extract,
     )
 
-    assert transformed == "검증 도구 결과를 확인한 뒤 계산 결과를 전달하겠습니다."
+    assert transformed == (
+        "현재 가능한 결론: 확정 환산점수 산출 불가.\n"
+        "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
+    )
     assert "947.3" not in transformed
     assert "후검증" not in transformed
     assert "전용 도구" not in transformed
     assert "retry_tools" not in transformed
+    assert "확인한 뒤" not in transformed
+    assert "전달하겠습니다" not in transformed
     assert calls[-1] == "miho_governance_blocked_delivery_recovery"
 
 
@@ -116,8 +263,15 @@ def test_blocked_answer_uses_default_recovery_when_injected_agent_fails(monkeypa
     def default_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
         task = str(kwargs.get("task") or "")
         default_calls.append(task)
+        if task == "miho_governance_final_delivery_orchestrator":
+            return {"content": json.dumps({"action": "needs_input", "steps": []})}
         if task == "miho_governance_blocked_delivery_recovery":
-            return {"content": "검증 가능한 계산 자료를 확인한 뒤 결과를 전달하겠습니다."}
+            return {
+                "content": (
+                    "현재 가능한 결론: 확정 환산점수 산출 불가.\n"
+                    "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
+                )
+            }
         raise AssertionError(f"unexpected default task: {task}")
 
     monkeypatch.setattr("agent.auxiliary_client.call_llm", default_call_llm)
@@ -133,9 +287,17 @@ def test_blocked_answer_uses_default_recovery_when_injected_agent_fails(monkeypa
         final_delivery_extract_content=_extract,
     )
 
-    assert transformed == "검증 가능한 계산 자료를 확인한 뒤 결과를 전달하겠습니다."
+    assert transformed == (
+        "현재 가능한 결론: 확정 환산점수 산출 불가.\n"
+        "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
+    )
     assert "947.3" not in transformed
-    assert default_calls == ["miho_governance_blocked_delivery_recovery"]
+    assert "확인한 뒤" not in transformed
+    assert "전달하겠습니다" not in transformed
+    assert default_calls == [
+        "miho_governance_final_delivery_orchestrator",
+        "miho_governance_blocked_delivery_recovery",
+    ]
 
 
 def test_blocked_answer_returns_current_result_when_all_recovery_agents_fail() -> None:
@@ -156,5 +318,5 @@ def test_blocked_answer_returns_current_result_when_all_recovery_agents_fail() -
     assert "947.3" not in transformed
     assert "확인 후" not in transformed
     assert "다시" not in transformed
-    assert "현재 대화 기준" in transformed
-    assert "확정 환산점수 산출 불가" in transformed
+    assert "현재 가능한 결론: 확정 결과 없음" in transformed
+    assert "환산점수" not in transformed

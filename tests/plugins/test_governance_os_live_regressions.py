@@ -157,6 +157,13 @@ def test_missing_tool_media_directive_is_repaired_before_gateway_append(monkeypa
         )
 
     monkeypatch.setattr(repair_mod, "repair_artifact_delivery", fake_repair)
+    monkeypatch.setattr(
+        "plugins.governance_os.review._call_auxiliary_reviewer",
+        lambda **_kwargs: {
+            "status": "pass",
+            "checked": ["media_tag", "artifact_path"],
+        },
+    )
     tool_payload = {
         "success": True,
         "artifact_path": "/tmp/report.mhtml",

@@ -59,9 +59,11 @@ def student_grades_from_central(student_query: str) -> tuple[str | None, list[di
 
 def _grade_row_from_central(row: sqlite3.Row) -> dict[str, Any]:
     raw_score, mean_score, standard_deviation = parse_raw_score(row["raw_score"])
+    course_type = row["course_type"] or row["category"]
     return {
         "교과": row["category"],
         "과목": row["subject"],
+        "subject": row["subject"],
         "이수단위": row["credits"],
         "등급": row["rank_grade"],
         "학년": row["grade"],
@@ -71,7 +73,8 @@ def _grade_row_from_central(row: sqlite3.Row) -> dict[str, Any]:
         "평균": mean_score,
         "표준편차": standard_deviation,
         "재적수": row["students_count"],
-        "과목구분": row["course_type"],
+        "과목구분": course_type,
+        "course_type": course_type,
     }
 
 

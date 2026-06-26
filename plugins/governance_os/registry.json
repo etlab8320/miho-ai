@@ -112,6 +112,14 @@
       ],
       "timeout_seconds": 60
     },
+    "artifact_domain_agent": {
+      "kind": "domain",
+      "description": "Owns newly designed HTML-first PDF and browser-rendered artifacts.",
+      "responsibilities": ["Route new client-facing PDF creation through HTML-first rendering and visual QA.", "Prevent coordinate-drawn PDF scripts from replacing the quality gate."],
+      "allowed_tools": ["write_file", "html_pdf_autocorrect", "html_pdf_quality_gate", "media_delivery_contract", "vision_analyze"],
+      "forbidden_tools": ["reportlab", "pymupdf", "fitz", "fpdf"],
+      "timeout_seconds": 180
+    },
     "memory_domain_agent": {
       "kind": "domain",
       "description": "Owns durable user corrections, profile facts, and memory promotion.",
@@ -363,6 +371,20 @@
       "ledger_policy": "record source count and retrieval failures",
       "memory_policy": "do not store copyrighted source text beyond summaries",
       "rollback_policy": "replace stale brief with corrected sourced answer"
+    },
+    "designed_pdf_artifact": {
+      "domain": "artifact",
+      "triggers": ["PDF로 줘", "pdf로 줘", "PDF로 정리", "pdf로 정리", "상담용 PDF", "운동 프로그램 PDF", "교육 가이드 PDF"],
+      "required_context": ["source_content", "html_source", "visual_review"],
+      "required_tools": ["html_pdf_quality_gate", "media_delivery_contract"],
+      "forbidden_tools": ["reportlab", "pymupdf", "fitz", "fpdf", "raw_pdf_coordinate_script"],
+      "agent_chain": ["dispatcher", "risk_judge", "tool_contract_guard", "artifact_domain_agent", "result_reviewer", "ledger_writer"],
+      "review_gates": ["html_pdf_quality_review", "attachment_delivery_review"],
+      "retry_policy": "revise_html_until_quality_gate_and_visual_review_pass",
+      "delivery_format": "MEDIA pdf attachment from html_pdf_quality_gate and media_delivery_contract",
+      "ledger_policy": "record html source, pdf gate payload, contact sheet, reviewer status, and failures",
+      "memory_policy": "store reusable artifact-design correction only after repeated confirmed failures",
+      "rollback_policy": "regenerate HTML/PDF; do not mutate domain source data"
     },
     "discord_attachment_delivery": {
       "domain": "discord_ops",

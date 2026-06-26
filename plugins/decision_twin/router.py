@@ -96,17 +96,22 @@ def should_route_decision(decision: LlmRouteDecision) -> bool:
         return False
     if not decision.required_tool:
         return False
+    if decision.required_tool not in decision_tool_contracts():
+        return False
     return decision.confidence >= MIN_ROUTE_CONFIDENCE
 
 
 def annotate_result_text(user_text: str, decision: LlmRouteDecision) -> str:
     evidence = ", ".join(decision.evidence) if decision.evidence else "LLM decision twin"
     hint_lines = [
-        "[라우팅 힌트 — 참고용. 최종 판단과 도구 선택은 네가 직접 한다]",
+        "[라우팅 지시 — 본문 에이전트는 이 도구 경로를 먼저 실행한다]",
         f"의도: {decision.intent or decision.required_tool}",
     ]
     if decision.required_tool:
-        hint_lines.append(f"추천 도구: {decision.required_tool}")
+        hint_lines.append(f"필수 실행 도구: {decision.required_tool}")
+        hint_lines.append("MUST use required_tool before final answer.")
+    if decision.tool_instruction:
+        hint_lines.append(f"실행 지시: {decision.tool_instruction}")
     if decision.region_value:
         hint_lines.append(
             f"지역: {decision.region_value} — susi27_recommend_candidates 호출 시 region 인자에 이 값을 그대로 넣어라"
@@ -121,6 +126,10 @@ def _system_prompt() -> str:
         "키워드 하나로 라우팅하지 말고 현재 문장, 첨부, reply/thread context, owner_memory, tool_contracts를 함께 읽어라. "
         "사용자의 실제 job을 추론하고, 전용 도구나 MEDIA 계약이 필요한 경우 action=route와 required_tool을 채워라. "
         "생기부/학종/학원DB/유튜브/파일전달처럼 근거 도구가 필요한 업무는 기억이나 추측만으로 답하게 두지 마라. "
+        "사용자가 PDF를 처음부터 요청했거나 직전 답변/스레드 내용을 PDF로 정리해달라고 하면 "
+        "tool_contracts에서 고정 입시 패키지에 해당하는지 먼저 확인하고, 고정 패키지가 아니면 "
+        "새 제작물 경로인 html_pdf_quality_gate를 선택해라. 이 경우 PyMuPDF/ReportLab/fitz 좌표 스크립트가 아니라 "
+        "HTML-first 원본 작성 -> html_pdf_quality_gate -> media_delivery_contract 흐름을 tool_instruction에 적어라. "
         "확신이 낮거나 필수 인자가 없으면 action=allow로 둔다. "
         "clarify의 user_message는 한국어 평문이어야 하고 400/401/CORS/stack trace 같은 개발자 표현을 쓰지 마라. "
         "도구 계약에 없는 도구명을 만들지 말고, required_tool은 tool_contracts의 키 중 하나만 사용해라."

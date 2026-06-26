@@ -12,6 +12,7 @@ PLAYBOOK_BY_TOOL = {
     "susi27_score_calculate": "susi_score_calculation",
     "life_record_ingest_pdf": "life_record_ingest",
     "life_record_verify": "life_record_ingest",
+    "html_pdf_quality_gate": "designed_pdf_artifact",
     "media_delivery_contract": "discord_attachment_delivery",
 }
 # 미호는 범용 거버넌스 OS다. leak 마커는 *거버넌스 내부에서만* 쓰는 고유 구절로만

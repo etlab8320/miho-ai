@@ -269,9 +269,27 @@ def test_final_delivery_gate_blocks_score_claim_even_with_progress_status() -> N
     assert decision.reason == "review_evidence_missing"
 
 
+def test_final_delivery_gate_blocks_deferral_for_governed_request() -> None:
+    decision = evaluate_final_delivery(
+        load_builtin_registry(),
+        response_text="검증 도구 결과를 확인한 뒤 계산 결과를 전달하겠습니다.",
+        user_text="서연이 수시 환산점수 계산해줘",
+        outcomes=[],
+    )
+
+    assert decision.action == "block"
+    assert decision.reason == "non_result_deferral"
+    assert decision.retry_tools == ("susi27_score_calculate",)
+
+
 def test_transform_llm_output_rewrites_blocked_governed_response() -> None:
     def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
-        return {"content": '{"action":"revise","answer":"검증된 계산 결과가 확인된 뒤 전달합니다."}'}
+        return {
+            "content": (
+                '{"action":"revise","answer":"확정 환산점수 산출 불가.\\n'
+                '필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."}'
+            )
+        }
 
     def extract(response: object) -> str:
         assert isinstance(response, dict)
@@ -287,7 +305,8 @@ def test_transform_llm_output_rewrites_blocked_governed_response() -> None:
     )
 
     assert transformed is not None
-    assert "검증된 계산 결과" in transformed
+    assert "확정 환산점수 산출 불가" in transformed
+    assert "확인된 뒤" not in transformed
     assert "후검증" not in transformed
     assert "전용 도구" not in transformed
     assert "susi27_score_calculate" not in transformed
@@ -299,7 +318,12 @@ def test_transform_llm_output_uses_llm_repair_on_gateway_runtime(monkeypatch) ->
 
     def fake_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
         calls.append(kwargs)
-        return {"content": '{"action":"revise","answer":"서연이 수시 환산점수는 검증 뒤 전달합니다."}'}
+        return {
+            "content": (
+                '{"action":"revise","answer":"서연이 수시 환산점수는 확정 산출 불가입니다.\\n'
+                '필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."}'
+            )
+        }
 
     def extract(response: object) -> str:
         assert isinstance(response, dict)
@@ -315,7 +339,10 @@ def test_transform_llm_output_uses_llm_repair_on_gateway_runtime(monkeypatch) ->
         final_delivery_extract_content=extract,
     )
 
-    assert transformed == "서연이 수시 환산점수는 검증 뒤 전달합니다."
+    assert transformed == (
+        "서연이 수시 환산점수는 확정 산출 불가입니다.\n"
+        "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
+    )
     assert calls
     assert calls[0]["task"] == "miho_governance_final_delivery"
 
@@ -362,7 +389,7 @@ def test_transform_llm_output_allows_current_turn_reviewed_tool_result(monkeypat
     assert calls[0]["task"] == "miho_governance_reviewer_academy"
 
 
-def test_transform_llm_output_repairs_low_risk_attachment_pass_without_auxiliary(
+def test_transform_llm_output_repairs_attachment_when_auxiliary_reviewer_fails(
     monkeypatch,
 ) -> None:
     calls = _patch_auxiliary_review_broken(monkeypatch)
@@ -396,11 +423,22 @@ def test_transform_llm_output_repairs_low_risk_attachment_pass_without_auxiliary
     assert "MEDIA:/tmp/report.mhtml" not in transformed
     assert "첨부했습니다" not in transformed
     assert "확인할 수 없어" in transformed
-    assert calls == []
+    assert calls
+    assert calls[0]["task"] == "miho_governance_reviewer_delivery"
 
 
 def test_transform_llm_output_ignores_previous_turn_tool_result() -> None:
-    def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
+    def fake_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        task = str(kwargs.get("task") or "")
+        if task == "miho_governance_final_qa":
+            return {"content": "revise"}
+        if task == "miho_governance_blocked_delivery_recovery":
+            return {
+                "content": (
+                    "현재 가능한 결론: 서연이 환산점수는 현재 턴 기준 확정 산출 불가입니다.\n"
+                    "필요한 입력: 서연이 성적, 지원 대학, 전형, 실기 기록."
+                )
+            }
         return {"content": '{"action":"revise","answer":"서연이 계산 결과는 현재 턴 검증 뒤 전달합니다."}'}
 
     def extract(response: object) -> str:
@@ -436,6 +474,9 @@ def test_transform_llm_output_ignores_previous_turn_tool_result() -> None:
     )
 
     assert transformed is not None
-    assert "현재 턴 검증" in transformed
+    assert "현재 가능한 결론" in transformed
+    assert "확정 산출 불가" in transformed
+    assert "944.1" not in transformed
+    assert "현재 턴 검증" not in transformed
     assert "후검증" not in transformed
     assert "전용 도구" not in transformed

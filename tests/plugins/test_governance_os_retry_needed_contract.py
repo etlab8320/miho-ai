@@ -62,3 +62,22 @@ def test_governance_transform_marks_retry_needed_as_provisional() -> None:
     assert payload["delivery_status"] == "provisional"
     assert payload["governance_review"]["status"] == "retry_needed"
     assert payload["governance_review"]["retry_args"][0]["tool"] == "sports_pe_brain_evidence"
+
+
+def test_governance_transform_preserves_tool_repair_contract() -> None:
+    raw = {
+        "ok": False,
+        "retry_required": True,
+        "final_response_allowed": False,
+        "message": "학종 리포트 내용 검증 실패.",
+        "agent_instruction": "errors를 고쳐 같은 도구를 다시 호출하라.",
+        "errors": ["student_stage가 비어 있다."],
+    }
+
+    transformed = governance_transform_tool_result(
+        tool_name="academy_hakjong_report_package",
+        result=json.dumps(raw, ensure_ascii=False),
+        governance_skip_ledger=True,
+    )
+
+    assert transformed is None

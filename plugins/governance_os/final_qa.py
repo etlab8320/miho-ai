@@ -8,7 +8,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from .delivery_safety import contains_internal_guard_leak
+from .delivery_safety import contains_internal_guard_leak, contains_non_result_deferral
 
 
 logger = logging.getLogger(__name__)
@@ -171,7 +171,10 @@ def repair_answer_until_pass(
             extract_content=extract_content,
         )
         if verdict == PASS_VERDICT and not contains_internal_guard_leak(candidate):
-            return candidate
+            if contains_non_result_deferral(candidate):
+                verdict = REVISE_VERDICT
+            else:
+                return candidate
         current_evidence = {
             **current_evidence,
             "previous_final_qa_verdict": verdict,
@@ -249,7 +252,8 @@ def repair_messages(
                 "도구/리뷰 evidence를 보고 사용자가 바로 받을 새 최종 답변만 작성한다. "
                 "내부 guard, retry_tools, stack trace, provider 오류, 검증 실패 문구를 노출하지 마라. "
                 "도구 evidence가 부족하면 완료/첨부/점수/검증을 확정하지 말고, "
-                "사용자의 질문에 맞는 다음 응답을 한국어 평문으로 작성한다. "
+                "확인한 뒤 전달, 검증 후 전달, 준비하겠습니다 같은 대기 문구 없이 "
+                "사용자의 질문에 맞는 현재 결론이나 필요한 입력을 한국어 평문으로 작성한다. "
                 "설명 없이 새 최종 답변 본문만 출력해라."
             ),
         },

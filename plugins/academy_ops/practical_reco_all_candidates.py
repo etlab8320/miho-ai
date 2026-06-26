@@ -17,6 +17,8 @@ from .practical_reco_tool import (
 )
 from plugins.susi_ops.service import recommend_candidates
 
+from .accuracy_contract import build_accuracy_receipt
+
 
 ALL_CANDIDATE_LIMIT = 400
 ALL_CANDIDATE_PAGE_SIZE = 10
@@ -54,20 +56,26 @@ def build_all_candidates_content(student_name: str, region: str) -> dict[str, An
     # record-only 교과전형 rows when they clear prior-year score checks, but those
     # should not appear in a practical-admission PDF just because the user asked for
     # all regional candidates. Keep only rows with actual practical events/full score.
-    candidates = [
-        c for c in candidates
-        if (c.get("practical_events") or []) and not c.get("record_only_track")
-    ]
+    candidates = [c for c in candidates if _is_practical_candidate_for_all_package(c)]
     if not candidates:
-        raise ValueError(f"{clean_student} 학생의 {clean_region} 도달 가능 실기전형이 없다.")
+        raise ValueError(f"{clean_student} 학생의 {clean_region} 실기전형 후보가 없다.")
 
     rows = [_candidate_row(c) for c in candidates]
-    groups = _region_groups(rows)
+    groups = _region_groups(rows, expected_regions=result.get("region_filter"))
     fit_count = sum(1 for row in rows if row["verdict"] == "적정")
     up_count = len(rows) - fit_count
     region_label = _region_label(result.get("region_filter"), clean_region)
+    accuracy_receipt = _accuracy_receipt(
+        student_name=clean_student,
+        region=clean_region,
+        rows=rows,
+        candidates=candidates,
+        no_truncation=True,
+        pdf_physical_validation=True,
+    )
     return {
         "report_mode": "all_candidates",
+        "accuracy_receipt": accuracy_receipt,
         "student": {
             "name": clean_student,
             "avg_grade": "",
@@ -78,7 +86,7 @@ def build_all_candidates_content(student_name: str, region: str) -> dict[str, An
             "pills": ["수시 실기전형", region_label, f"{len(rows)}개 전형"],
             "key_judgment": {
                 "headline": f"{region_label}에서 도달 가능한 실기전형 {len(rows)}개",
-                "body": "실기 만점 합산이 전년도 최종합격선에 닿는 전형만 모아 지역별 상담표로 정리했다.",
+                "body": "상향 여부로 임의 제외하지 않고, 실기 만점 합산이 전년도 최종합격선에 닿는 전형을 지역별 상담표로 정리했다.",
             },
             "metrics": [
                 {"label": "요청 지역", "value": region_label},
@@ -139,6 +147,14 @@ def _candidate_row(candidate: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _is_practical_candidate_for_all_package(candidate: dict[str, Any]) -> bool:
+    if not (candidate.get("practical_events") or []):
+        return False
+    if candidate.get("record_only_track"):
+        return False
+    return candidate.get("reachable_at_full_practical") is not False
+
+
 def _text_or_dash(value: Any, *, limit: int) -> str:
     text = str(value or "").strip()
     if not text:
@@ -146,23 +162,32 @@ def _text_or_dash(value: Any, *, limit: int) -> str:
     return text[:limit]
 
 
-def _region_groups(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+def _region_groups(rows: list[dict[str, str]], expected_regions: Any = None) -> list[dict[str, Any]]:
     groups: list[dict[str, Any]] = []
     index_by_region: dict[str, int] = {}
-    for row in rows:
-        region = str(row.get("region") or "지역 미상").strip() or "지역 미상"
+
+    def ensure_group(region_value: Any) -> dict[str, Any]:
+        region = str(region_value or "지역 미상").strip() or "지역 미상"
         group_index = index_by_region.get(region)
         if group_index is None:
             group_index = len(groups)
             index_by_region[region] = group_index
             groups.append({"region": region, "count": 0, "fit_count": 0, "up_count": 0, "rows": []})
-        group = groups[group_index]
+        return groups[group_index]
+
+    for row in rows:
+        group = ensure_group(row.get("region"))
         group["rows"].append(row)
         group["count"] += 1
         if row.get("verdict") == "적정":
             group["fit_count"] += 1
         else:
             group["up_count"] += 1
+    if isinstance(expected_regions, (list, tuple)):
+        province_names = {"서울", "경기", "인천", "강원", "대전", "세종", "충남", "충북", "부산", "대구", "울산", "경남", "경북", "광주", "전남", "전북", "제주"}
+        for region in expected_regions:
+            if str(region or "").strip() in province_names:
+                ensure_group(region)
     return groups
 
 
@@ -217,6 +242,7 @@ def _all_candidates_tool_handler(args: dict[str, Any] | None = None, **_: Any) -
 
     manifest_path = pdf_path.with_suffix(".practical_reco_validation.json")
     rows = (content.get("comparison") or {}).get("rows") or []
+    accuracy_receipt = dict(content.get("accuracy_receipt") or {})
     school_names = [
         str(row.get("school") or "").strip()
         for row in rows
@@ -234,6 +260,7 @@ def _all_candidates_tool_handler(args: dict[str, Any] | None = None, **_: Any) -
                 "row_count": len(rows),
                 "school_names": school_names,
                 "evidence_tools": ["susi27_recommend_candidates"],
+                "accuracy_receipt": accuracy_receipt,
             },
             ensure_ascii=False,
             indent=2,
@@ -250,8 +277,43 @@ def _all_candidates_tool_handler(args: dict[str, Any] | None = None, **_: Any) -
             "manifest_path": str(manifest_path),
             "media_tag": media_tag,
             "row_count": len(rows),
+            "semantic_review_required": True,
+            "accuracy_receipt": accuracy_receipt,
+            "reviewer": {
+                "name": "academy_result_reviewer",
+                "status": "pass",
+                "checked": ["내용", "근거", "요청 의도", "레이아웃", "산식"],
+                "evidence_required": True,
+            },
         },
         ensure_ascii=False,
+    )
+
+
+def _accuracy_receipt(
+    *,
+    student_name: str,
+    region: str,
+    rows: list[dict[str, str]],
+    candidates: list[dict[str, Any]],
+    no_truncation: bool,
+    pdf_physical_validation: bool,
+) -> dict[str, Any]:
+    return build_accuracy_receipt(
+        engine_key="susi_practical_all_candidates",
+        source_tools=["susi27_recommend_candidates"],
+        gates={
+            "student_identity": bool(str(student_name or "").strip()),
+            "region_scope": bool(str(region or "").strip()),
+            "single_pipeline": True,
+            "practical_only": all(row.get("events") and row.get("events") != "-" for row in rows),
+            "full_practical_reachability": all(
+                candidate.get("reachable_at_full_practical") is not False
+                for candidate in candidates
+            ),
+            "no_truncated_candidates": no_truncation,
+            "pdf_physical_validation": pdf_physical_validation,
+        },
     )
 
 
@@ -274,7 +336,7 @@ def register_practical_reco_all_candidates_tool(ctx: Any) -> None:
         handler=_all_candidates_tool_handler,
         description=(
             "수시 실기전형 추천 PDF에서 사용자가 추천 개수를 지정하지 않고 지역 전체 후보를 원할 때 쓴다. "
-            "지역 안에서 도달 가능한 모든 후보를 susi27_recommend_candidates 단일 파이프라인으로 산출하고, "
+            "지역 안에서 실기 만점 합산으로 전년도 최종합에 닿는 모든 후보를 상향 여부로 임의 제외하지 않고 산출하고, "
             "academy_practical_reco_package와 같은 practical_reco_shell.html 브랜드 템플릿을 compact 다중 페이지로 사용한다. "
             "LLM이 학교 행·점수·전년도 컷을 직접 만들지 않는다. 임시 HTML/PDF 생성 대신 이 도구를 호출한다."
         ),

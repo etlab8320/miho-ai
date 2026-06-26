@@ -17,6 +17,9 @@ def test_readiness_probes_cover_runtime_hook_and_retry_contracts() -> None:
     assert result.retry_instruction_probe_passed
     assert result.transform_ledger_probe_passed
     assert result.final_delivery_probe_passed
+    assert result.final_delivery_retry_probe_passed
+    assert result.pdf_attachment_quality_loop_probe_passed
+    assert result.self_harness_runtime_feedback_probe_passed
     assert result.evolution_rollback_probe_passed
     assert result.hook_probe_passed
     assert result.manifest_probe_passed
@@ -24,4 +27,9 @@ def test_readiness_probes_cover_runtime_hook_and_retry_contracts() -> None:
     assert result.auxiliary_instruction_probe_passed
     assert result.auxiliary_dispatcher_dataplane_probe_passed
     assert result.auxiliary_reviewer_dataplane_probe_passed
+    assert result.semantic_delivery_judge_dataplane_probe_passed
+    assert result.routing_loop_probe_passed
+    assert result.tool_contract_probe_passed
+    assert result.academy_accuracy_probe_passed
+    assert result.validation_loop_probe_passed
     assert result.failures == ()

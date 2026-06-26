@@ -260,8 +260,7 @@ def recommend_candidates(
         if _is_specific_sport_practical_row(row["practical_events_json"]):
             skipped["specific_sport"] = skipped.get("specific_sport", 0) + 1
             continue
-        # 실기전형만 추천 대상 — 같은 학과의 비실기 전형(교과100/농어촌·종합 서류, 실기만점 0)을
-        # 후보에서 제외한다. 실기 미반영 전형은 작년 결과·실기만점이 없어 빈칸을 만든다.
+        # 실기전형만 추천 대상 — 같은 학과의 비실기 전형은 PDF 빈칸을 만들므로 제외한다.
         ct = _json_loads(row["calculation_test_json"], {}) or {}
         practical_full = _first_number(ct.get("plugin_practical_full_score")) if isinstance(ct, dict) else None
         if practical_full is None:
@@ -334,8 +333,6 @@ def recommend_candidates(
                     f"완전 측정 트랙({', '.join(default_track.get('events', []))}, {default_track.get('n_students')}명) 기준. "
                     "다른 트랙(전공 등)은 prev_tracks를 보고 따로 설명하라."
                 )
-        # 1단계 내신 미달 제외 — 1단계가 내신을 반영하는 전형만 (사장님 룰 2026-06-15).
-        # 서경대형(1단계 실기100%, stage1_uses_record=False)은 내신 무관이라 예외.
         if vs.get("stage1_uses_record") and vs.get("stage1_record_reachable") is False:
             skipped["stage1_blocked"] += 1
             continue
@@ -474,7 +471,7 @@ def recommend_candidates(
     result_payload_note_region = ""
     if wanted_regions and total == 0:
         result_payload_note_region = (
-            f"요청 지역({', '.join(wanted_regions)})에는 도달 가능한 추천 후보가 없다 — "
+            f"요청 지역({', '.join(wanted_regions)})에는 추천 후보가 없다 — "
             "사용자에게 알리고 전국 기준(region 없이)으로 다시 호출할지 물어라. "
         )
     return {

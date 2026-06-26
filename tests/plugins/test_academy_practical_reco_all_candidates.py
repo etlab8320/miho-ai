@@ -27,6 +27,7 @@ def _candidate(index: int, *, region: str = "충남") -> dict[str, Any]:
         "prev_final_total": 800.0,
         "suggested_verdict": "적정" if index == 1 else "상향",
         "minimum_csat": "국수영탐 중 2개 합 7 이내" if index == 1 else None,
+        "reachable_at_full_practical": True,
     }
 
 
@@ -61,6 +62,7 @@ def test_build_all_candidates_content_uses_region_and_candidate_rows(monkeypatch
 
     assert calls[0]["region"] == "수도권, 충청, 강원"
     assert calls[0]["max_candidates"] == 400
+    assert "include_unreachable" not in calls[0]
     assert content["report_mode"] == "all_candidates"
     assert content["comparison"]["show_events"] is True
     assert content["comparison"]["show_minimum_csat"] is True
@@ -71,6 +73,59 @@ def test_build_all_candidates_content_uses_region_and_candidate_rows(monkeypatch
     assert [group["region"] for group in content["comparison"]["groups"]] == ["충남", "강원"]
     assert content["comparison"]["groups"][0]["count"] == 1
     assert content["comparison"]["groups"][1]["rows"][0]["school"] == "테스트대2"
+
+
+def test_region_groups_keeps_requested_empty_provinces_visible(monkeypatch) -> None:
+    def fake_recommend(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        candidates = [_candidate(1, region="충남")]
+        return {
+            "student": "홍길동",
+            "region_filter": ["서울", "경기", "인천", "충남", "충북", "강원"],
+            "total_feasible": len(candidates),
+            "returned": len(candidates),
+            "candidates": candidates,
+        }
+
+    monkeypatch.setattr(
+        "plugins.academy_ops.practical_reco_all_candidates.recommend_candidates",
+        fake_recommend,
+    )
+
+    content = build_all_candidates_content("홍길동", "수도권, 충청, 강원")
+    groups = {group["region"]: group for group in content["comparison"]["groups"]}
+
+    assert groups["충남"]["count"] == 1
+    assert groups["강원"]["count"] == 0
+    assert groups["서울"]["count"] == 0
+
+
+def test_build_all_candidates_filters_full_practical_unreachable_rows(monkeypatch) -> None:
+    unreachable = _candidate(2, region="강원")
+    unreachable["reachable_at_full_practical"] = False
+    unreachable["unreachable_reason"] = "실기 만점이어도 전년도 최종합 미달"
+
+    def fake_recommend(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        candidates = [_candidate(1, region="충남"), unreachable]
+        return {
+            "student": "홍길동",
+            "region_filter": ["충청", "강원"],
+            "total_feasible": len(candidates),
+            "returned": len(candidates),
+            "candidates": candidates,
+        }
+
+    monkeypatch.setattr(
+        "plugins.academy_ops.practical_reco_all_candidates.recommend_candidates",
+        fake_recommend,
+    )
+
+    content = build_all_candidates_content("홍길동", "수도권, 충청, 강원")
+    rows = content["comparison"]["rows"]
+    groups = {group["region"]: group for group in content["comparison"]["groups"]}
+
+    assert [row["school"] for row in rows] == ["테스트대1"]
+    assert groups["충남"]["count"] == 1
+    assert groups["강원"]["count"] == 0
 
 
 def test_build_all_candidates_rejects_truncated_recommendation(monkeypatch) -> None:
@@ -132,6 +187,7 @@ def test_all_candidates_tool_writes_standard_template_pdf(monkeypatch, tmp_path)
     assert "강원 1개 전형" in html
     assert "* 수능최저:" in html
     assert "국수영탐 중 2개 합 7 이내" in html
+    assert "만점미달" not in html
     assert "점수 확인 안내" in html
     assert "진학사" in html
     assert "선생님 최종 의견" not in html
