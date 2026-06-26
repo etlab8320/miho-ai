@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+
 from plugins.governance_os.validation_loop import (
     ADVERSARIAL_VALIDATOR_TASK,
     evaluate_validation_loop,
     run_adversarial_validator,
 )
+from plugins.governance_os.readiness_validation_loop_probes import validation_loop_probe_report
 
 
 def _receipt(name: str, kind: str) -> dict[str, object]:
@@ -301,6 +305,8 @@ def test_validation_loop_passes_with_full_required_evidence(tmp_path) -> None:
     assert report.failures == ()
     assert report.smoke_mode == "live_safe"
     assert report.live_delivery_verified is False
+    assert report.live_required_ready is False
+    assert report.live_required_score < 100
 
 
 def test_validation_loop_marks_real_live_discord_delivery(tmp_path) -> None:
@@ -351,3 +357,92 @@ def test_validation_loop_marks_real_live_discord_delivery(tmp_path) -> None:
     assert report.score == 100
     assert report.smoke_mode == "live"
     assert report.live_delivery_verified is True
+    assert report.live_required_ready is True
+    assert report.live_required_score == 100
+
+
+def test_validation_loop_probe_uses_persisted_live_discord_receipt(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "miho_home"
+    monkeypatch.setenv("MIHO_HOME", str(home))
+    monkeypatch.delenv("MIHO_GOVERNANCE_LIVE_SMOKE_RECEIPT", raising=False)
+    artifact = tmp_path / "live-report.pdf"
+    artifact.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    receipt_path = home / "governance_os" / "discord_live_smoke_receipt.json"
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "live_gateway_receipt": {
+                    "name": "discord live gateway smoke",
+                    "kind": "live_gateway_smoke",
+                    "status": "passed",
+                    "mode": "live",
+                    "send_attempted": True,
+                    "sent": True,
+                    "evidence": "mode=live; sent=True",
+                },
+                "attachment_receipt": {
+                    "name": "discord attachment artifact smoke",
+                    "kind": "attachment_artifact_smoke",
+                    "status": "passed",
+                    "artifact_path": str(artifact),
+                    "media_tag": f"MEDIA:`{artifact}`",
+                    "evidence": "artifact delivered",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = validation_loop_probe_report()
+
+    assert report.ready
+    assert report.score == 100
+    assert report.smoke_mode == "live"
+    assert report.live_delivery_verified is True
+    assert report.live_required_ready is True
+    assert report.live_required_score == 100
+
+
+def test_validation_loop_probe_ignores_stale_live_discord_receipt(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "miho_home"
+    monkeypatch.setenv("MIHO_HOME", str(home))
+    monkeypatch.delenv("MIHO_GOVERNANCE_LIVE_SMOKE_RECEIPT", raising=False)
+    artifact = tmp_path / "live-report.pdf"
+    artifact.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    receipt_path = home / "governance_os" / "discord_live_smoke_receipt.json"
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "created_at": "2000-01-01T00:00:00+00:00",
+                "live_gateway_receipt": {
+                    "kind": "live_gateway_smoke",
+                    "status": "passed",
+                    "mode": "live",
+                    "send_attempted": True,
+                    "sent": True,
+                    "evidence": "sent=True",
+                },
+                "attachment_receipt": {
+                    "kind": "attachment_artifact_smoke",
+                    "status": "passed",
+                    "artifact_path": str(artifact),
+                    "media_tag": f"MEDIA:`{artifact}`",
+                    "evidence": "artifact delivered",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = validation_loop_probe_report()
+
+    assert report.ready
+    assert report.score == 100
+    assert report.smoke_mode == "live_safe"
+    assert report.live_delivery_verified is False
+    assert report.live_required_ready is False

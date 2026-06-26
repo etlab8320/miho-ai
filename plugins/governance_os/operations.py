@@ -50,6 +50,8 @@ class GovernanceReadinessReport:
     rollback_status: str
     validation_loop_smoke_mode: str = ""
     live_discord_verified: bool = False
+    full_system_ready: bool = False
+    full_system_score: int = 0
     active_snapshot_id: str = ""
     failures: tuple[str, ...] = field(default_factory=tuple)
     drill_results: tuple[DrillResult, ...] = field(default_factory=tuple)
@@ -168,6 +170,8 @@ def run_readiness_check() -> GovernanceReadinessReport:
         domain_packs_passed=domain_packs_passed,
         rollback_valid=rollback_status != "invalid_active_snapshot",
     )
+    full_system_ready = ready and probe_results.validation_loop_live_required_ready
+    full_system_score = min(quality_score, probe_results.validation_loop_live_required_score)
     return GovernanceReadinessReport(
         ready=ready,
         quality_score=quality_score,
@@ -214,6 +218,8 @@ def run_readiness_check() -> GovernanceReadinessReport:
         rollback_status=rollback_status,
         validation_loop_smoke_mode=probe_results.validation_loop_smoke_mode,
         live_discord_verified=probe_results.live_discord_verified,
+        full_system_ready=full_system_ready,
+        full_system_score=full_system_score,
         active_snapshot_id=active_snapshot_id,
         failures=tuple(failures),
         drill_results=drill_results,

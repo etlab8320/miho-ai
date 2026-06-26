@@ -24,6 +24,8 @@ class ValidationLoopReport:
     passed: tuple[str, ...] = field(default_factory=tuple)
     smoke_mode: str = ""
     live_delivery_verified: bool = False
+    live_required_ready: bool = False
+    live_required_score: int = 0
 
 
 def run_adversarial_validator(
@@ -108,6 +110,10 @@ def evaluate_validation_loop(
         failures.append("missing independent adversarial review")
 
     score = round((sum(1 for item in checks if item) / len(checks)) * 100)
+    live_required_checks = (*checks, live_delivery_verified)
+    live_required_score = round(
+        (sum(1 for item in live_required_checks if item) / len(live_required_checks)) * 100
+    )
     return ValidationLoopReport(
         ready=not failures,
         score=score,
@@ -115,6 +121,8 @@ def evaluate_validation_loop(
         passed=tuple(passed),
         smoke_mode=smoke_mode,
         live_delivery_verified=live_delivery_verified,
+        live_required_ready=not failures and live_delivery_verified,
+        live_required_score=live_required_score,
     )
 
 

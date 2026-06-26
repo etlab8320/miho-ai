@@ -53,11 +53,11 @@
 | 테스트 + 적대적 리뷰 루프 | 100 | 100 |
 | 유지보수 구조 | 100 | 100 |
 
-현재 총평: 100/100.
+현재 총평: local/live-safe 기준 100/100, full-system live-required 기준 100/100.
 
-이 표는 구현 진척 점수가 아니라 적대적 검수 점수다. Hermes / Decision Twin 라우팅, 도구 맵과 tool contract, Governance reviewer 구조, Final Delivery Orchestrator, PDF / 첨부 품질 루프, Self-Harness 자동 개선, 학원 도구 정확도, 하드코딩 의미판단 제거, 테스트 + 적대적 리뷰 루프, 유지보수 구조는 focused/wider/runtime receipt와 live-safe smoke를 통과해 100점 계약으로 닫혔다. 유지보수 구조는 staged diff 기준 500줄 초과 0개, 불필요 archive/temp 격리, `et-diff-review --staged` ready=true, runtime readiness quality_score=100을 기준으로 판정한다. repo-wide legacy `gateway/run.py` 1.8만 줄 분리는 별도 유지보수 에픽이다.
+이 표는 구현 진척 점수가 아니라 적대적 검수 점수다. Hermes / Decision Twin 라우팅, 도구 맵과 tool contract, Governance reviewer 구조, Final Delivery Orchestrator, PDF / 첨부 품질 루프, Self-Harness 자동 개선, 학원 도구 정확도, 하드코딩 의미판단 제거, 테스트 + 적대적 리뷰 루프, 유지보수 구조는 focused/wider/runtime receipt와 live-safe smoke를 통과해 local readiness 100점 계약으로 닫혔다. 실제 Discord write-smoke는 `full_system_score`로 별도 판정하며 현재 `live_discord_verified=True`라 full-system 100점 조건도 충족했다. repo-wide legacy `gateway/run.py` 1.8만 줄 분리는 별도 유지보수 에픽이다.
 
-점수 산식: 1000 / 1000 = 100.
+점수 산식: local readiness 1000 / 1000 = 100, full-system은 live-required validation score가 상한이다.
 
 2026-06-26 1차 루프: Final Delivery Orchestrator는 62점에서 82점으로 상향한다. `확인한 뒤 전달`, `검증 후 전달`, `준비하겠습니다` 같은 비결과 문구를 최종 후보에서 탈락시키고, LLM recovery가 같은 문구를 반복해도 현재 가능한 결론/필요 입력으로 끝나게 했다. 남은 18점은 최종 output hook에서 실제 도구 재호출 루프를 실행하지 못하는 구조적 한계다.
 
@@ -73,7 +73,7 @@
 
 2026-06-26 7차 루프: 학원 도구 정확도는 78점에서 86점으로 상향한다. `academy_thread_roster_lookup`은 heading+bullet 편성표뿐 아니라 `국민대반: 박세영, 최혜은`, `숭실대반 - ...` 같은 inline assignment 파일도 읽고, 띄어쓰기가 섞인 요청명을 thread work file 기준으로 매칭한다. `academy_practical_reco_all_candidates`는 추천 엔진이 `reachable_at_full_practical=false` 행을 섞어 줘도 PDF 후보에서 방어적으로 제외한다. focused 학원 도구 테스트 12개, 관련 학원/수시 회귀 67개가 통과했고 1개는 기존 skip이다. 남은 14점은 상지대/관동대 같은 실제 공식 데이터 대조, 학종 PDF generator 레이아웃 회귀, live Discord 첨부 smoke다.
 
-2026-06-26 8차 루프: 테스트 + 적대적 리뷰 루프는 92점에서 100점으로 닫는다. `validation_loop`는 focused tests, wider gate, runtime readiness, live-safe gateway smoke, attachment artifact smoke, 독립 adversarial validator receipt가 모두 있어야 `score=100`을 준다. `miho_governance_adversarial_validator` auxiliary task를 등록했고, readiness는 이 validation loop probe를 운영 quality score 계산에 포함한다. 실제 파일이 없는 `MEDIA:` 첨부, self-review를 독립 검수로 속이는 경우, live smoke 누락은 모두 실패한다. focused validation loop 4개, readiness/registration 11개, governance wider gate 233개가 통과했다. 프로덕션 Discord 채널에 실제 메시지를 보내는 write-smoke는 안전상 기본 100점 조건에서 제외하고, 명시 승인된 ship smoke로만 수행한다.
+2026-06-26 8차 루프: 테스트 + 적대적 리뷰 루프는 92점에서 local/live-safe 100점으로 닫는다. `validation_loop`는 focused tests, wider gate, runtime readiness, live-safe gateway smoke, attachment artifact smoke, 독립 adversarial validator receipt가 모두 있어야 `score=100`을 준다. `miho_governance_adversarial_validator` auxiliary task를 등록했고, readiness는 이 validation loop probe를 운영 quality score 계산에 포함한다. 실제 파일이 없는 `MEDIA:` 첨부, self-review를 독립 검수로 속이는 경우, live smoke 누락은 모두 실패한다. focused validation loop 4개, readiness/registration 11개, governance wider gate 233개가 통과했다. 프로덕션 Discord 채널에 실제 메시지를 보내는 write-smoke는 `live_required_score/full_system_score`에서만 100점 조건으로 본다.
 
 2026-06-26 9차 루프: 전체 점수를 적대적 기준으로 재산정한다. 테스트 + 적대적 리뷰 루프는 100점으로 유지하지만, Hermes/Decision Twin은 live thread smoke와 rewrite 강제력이 남아 88점, 도구 맵은 전 도구 reviewer/retry 계약이 부족해 82점, Governance reviewer는 evidence summary 수준이라 82점, Final Delivery는 retry 인자 없는 agentic 재구성이 약해 88점, PDF 품질 루프는 fail 시 자동수정/재렌더가 완전하지 않아 87점, Self-Harness는 사용자 불만 즉시 activation 루프가 약해 82점, 학원 도구 정확도는 실데이터 대조와 학종 PDF 레이아웃 리스크 때문에 81점, 하드코딩 의미판단 제거는 Python marker/evaluator 잔존으로 84점, 유지보수 구조는 대형 파일 잔존으로 62점이다.
 
@@ -432,10 +432,11 @@ Builder
 - `miho_governance_adversarial_validator` task 기반 독립 검수 receipt가 없으면 100점이 아니다.
 - self-review를 독립 검수로 속기거나, 실제 파일 없는 `MEDIA:` 첨부를 통과시키지 않는다.
 - readiness `quality_score` 계산에 validation loop probe가 포함된다.
+- 실제 Discord write-smoke가 없으면 `full_system_ready=False`, `full_system_score<100`으로 남는다.
 
 운영 메모:
 
-- 프로덕션 Discord 채널에 실제 메시지를 보내는 write-smoke는 기본 루프에서 제외한다.
+- `quality_score=100`은 local/live-safe readiness이고, `full_system_score=100`은 실제 Discord write-smoke까지 성공했을 때만 가능하다.
 - 실제 채널 쓰기 검사는 명시 승인된 ship smoke로만 수행한다.
 
 ## 10. 유지보수 구조

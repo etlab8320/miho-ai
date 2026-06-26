@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from datetime import datetime, timezone
 
 from plugins.governance_os.operations import run_readiness_check
 from plugins.governance_os.registry import load_builtin_registry, registry_from_mapping
@@ -11,6 +12,7 @@ from plugins.governance_os.registry import load_builtin_registry, registry_from_
 
 def _reload_home(tmp_path, monkeypatch):
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+    monkeypatch.delenv("MIHO_GOVERNANCE_LIVE_SMOKE_RECEIPT", raising=False)
 
     import miho_constants
     from agent import evolution
@@ -53,6 +55,8 @@ def test_readiness_passes_with_builtin_registry(tmp_path, monkeypatch) -> None:
     assert report.validation_loop_probe_passed
     assert report.validation_loop_smoke_mode == "live_safe"
     assert report.live_discord_verified is False
+    assert report.full_system_ready is False
+    assert report.full_system_score < 100
     assert report.domain_packs_passed
     assert report.quality_score == 100
     assert report.rollback_status == "builtin"
@@ -66,6 +70,47 @@ def test_readiness_check_does_not_write_outcome_ledger(tmp_path, monkeypatch) ->
 
     assert report.ready
     assert evolution.list_events(limit=5) == []
+
+
+def test_readiness_uses_live_discord_receipt_for_full_system_score(tmp_path, monkeypatch) -> None:
+    _reload_home(tmp_path, monkeypatch)
+    artifact = tmp_path / "live-report.pdf"
+    artifact.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    receipt_path = tmp_path / "miho_home" / "governance_os" / "discord_live_smoke_receipt.json"
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "live_gateway_receipt": {
+                    "kind": "live_gateway_smoke",
+                    "status": "passed",
+                    "mode": "live",
+                    "send_attempted": True,
+                    "sent": True,
+                    "evidence": "sent=True",
+                },
+                "attachment_receipt": {
+                    "kind": "attachment_artifact_smoke",
+                    "status": "passed",
+                    "artifact_path": str(artifact),
+                    "media_tag": f"MEDIA:`{artifact}`",
+                    "evidence": "artifact delivered",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_readiness_check()
+
+    assert report.ready
+    assert report.quality_score == 100
+    assert report.validation_loop_smoke_mode == "live"
+    assert report.live_discord_verified is True
+    assert report.full_system_ready is True
+    assert report.full_system_score == 100
 
 
 def test_readiness_flags_invalid_active_registry_pointer(tmp_path, monkeypatch) -> None:

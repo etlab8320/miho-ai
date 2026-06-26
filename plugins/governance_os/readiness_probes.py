@@ -70,6 +70,8 @@ class ReadinessProbeResults:
     academy_accuracy_probe_passed: bool
     validation_loop_smoke_mode: str = ""
     live_discord_verified: bool = False
+    validation_loop_live_required_ready: bool = False
+    validation_loop_live_required_score: int = 0
     failures: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -216,6 +218,8 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
         validation_loop_probe_passed=validation_loop_probe_passed,
         validation_loop_smoke_mode=validation_loop_report.smoke_mode,
         live_discord_verified=validation_loop_report.live_delivery_verified,
+        validation_loop_live_required_ready=validation_loop_report.live_required_ready,
+        validation_loop_live_required_score=validation_loop_report.live_required_score,
         academy_accuracy_probe_passed=academy_accuracy_probe_passed,
         failures=tuple(failures),
     )
