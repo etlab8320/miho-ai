@@ -157,6 +157,7 @@ def _emergency_fail_closed_result(*, evidence: dict[str, Any]) -> str:
     claim from failing open when every agent transport is unavailable.
     """
 
+    _record_recovery_transport_failure(evidence)
     decision = evidence.get("decision") if isinstance(evidence, dict) else {}
     retry_tools = decision.get("retry_tools") if isinstance(decision, dict) else []
     if isinstance(retry_tools, list) and retry_tools:
@@ -164,3 +165,23 @@ def _emergency_fail_closed_result(*, evidence: dict[str, Any]) -> str:
     if retry_tools:
         return "현재 가능한 결론: 확정 결과 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
     return "현재 가능한 결론: 확정 결과 없음.\n필요한 입력: 요청을 판단할 원자료."
+
+
+def _record_recovery_transport_failure(evidence: dict[str, Any]) -> None:
+    try:
+        from .feedback_events import record_quality_failure
+
+        decision = evidence.get("decision") if isinstance(evidence, dict) else {}
+        if not isinstance(decision, dict):
+            decision = {}
+        retry_tools = decision.get("retry_tools")
+        tools_used = tuple(str(tool) for tool in retry_tools) if isinstance(retry_tools, list) else ()
+        record_quality_failure(
+            request_id=str(evidence.get("session_id") or "final_delivery_recovery"),
+            playbook_key=str(decision.get("playbook_key") or "unknown"),
+            failure_signature="final_delivery_recovery_transport_unavailable",
+            user_feedback="Final Delivery recovery agents were unavailable in a blocked delivery path.",
+            tools_used=tools_used,
+        )
+    except Exception as exc:
+        logger.debug("failed to record final delivery recovery transport failure: %s", exc)

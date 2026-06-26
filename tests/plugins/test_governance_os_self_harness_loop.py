@@ -156,6 +156,52 @@ def test_autopilot_holds_deterministic_candidates_without_llm_agent(monkeypatch)
     assert not result["activated"]
 
 
+def test_process_candidate_rejects_spoofed_proposer_task_without_receipt(monkeypatch) -> None:
+    monkeypatch.setattr(loop, "activate_autonomous_candidate", lambda *a, **k: _Activation())
+    monkeypatch.setattr(loop, "rollback_on_regression", lambda *a, **k: None)
+    candidate = _candidate("final_qa answer mismatch")
+    candidate["agentic_proposer_task"] = loop.PROPOSER_TASK
+
+    outcome = loop._process_candidate(
+        candidate,
+        runner=_all_pass,
+        smoke=_all_pass,
+        registry=None,
+        base_dir=None,
+    )
+
+    assert outcome["bucket"] == "held"
+    assert outcome["record"]["reason"] == "llm_proposer_required"
+    assert not outcome["record"].get("snapshot_id")
+
+
+def test_proposer_stamps_candidates_with_execution_receipt() -> None:
+    bundle = {
+        "schema_version": "miho-self-harness/evidence-bundle/v1",
+        "patterns": [
+            {
+                "playbook_key": "academy_hakjong_report",
+                "failure_signature": "reviewer_missing",
+                "recurrence_count": 2,
+                "evidence": ["event=1", "event=2"],
+                "target_surface_hint": "domain_reviewer_contract",
+            }
+        ],
+    }
+
+    candidates = loop._propose_shadow_candidates(
+        bundle,
+        call_llm=_agentic_call_llm,
+        extract_content=_extract,
+    )
+
+    assert candidates
+    receipt = candidates[0]["agentic_proposer_receipt"]
+    assert receipt["task"] == loop.PROPOSER_TASK
+    assert receipt["transport"] == "auxiliary_llm"
+    assert receipt["prompt_sha256"]
+
+
 def test_autopilot_uses_llm_miner_and_proposer(monkeypatch) -> None:
     monkeypatch.setattr(loop, "activate_autonomous_candidate", lambda *a, **k: _Activation())
     monkeypatch.setattr(loop, "rollback_on_regression", lambda *a, **k: None)

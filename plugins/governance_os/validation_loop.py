@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 ADVERSARIAL_VALIDATOR_TASK = "miho_governance_adversarial_validator"
@@ -19,6 +22,52 @@ class ValidationLoopReport:
     score: int
     failures: tuple[str, ...] = field(default_factory=tuple)
     passed: tuple[str, ...] = field(default_factory=tuple)
+
+
+def run_adversarial_validator(
+    *,
+    test_receipts: tuple[dict[str, Any], ...],
+    smoke_receipts: tuple[dict[str, Any], ...],
+    change_summary: str,
+    call_llm: Callable[..., Any] | None = None,
+    extract_content: Callable[[Any], str] | None = None,
+) -> dict[str, Any]:
+    if call_llm is None or extract_content is None:
+        from agent.auxiliary_client import call_llm as default_call_llm
+        from agent.auxiliary_client import extract_content_or_reasoning
+
+        call_llm = call_llm or default_call_llm
+        extract_content = extract_content or extract_content_or_reasoning
+
+    payload = {
+        "change_summary": change_summary,
+        "test_receipts": list(test_receipts),
+        "smoke_receipts": list(smoke_receipts),
+        "required_response": {
+            "status": "pass|fail|retry_needed",
+            "score": "0-100",
+            "independent": True,
+            "findings": [],
+        },
+    }
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are the independent Governance OS adversarial validator. "
+                "Do not trust builder claims. Return only JSON."
+            ),
+        },
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False, sort_keys=True)},
+    ]
+    response = call_llm(task=ADVERSARIAL_VALIDATOR_TASK, messages=messages)
+    verdict = _json_object_from_text(extract_content(response))
+    verdict.setdefault("reviewer", "adversarial_validator")
+    verdict["task"] = ADVERSARIAL_VALIDATOR_TASK
+    verdict["llm_receipt"] = True
+    verdict["transport"] = "auxiliary_llm"
+    verdict["prompt_sha256"] = _stable_digest(payload)
+    return verdict
 
 
 def evaluate_validation_loop(
@@ -114,6 +163,12 @@ def _artifact_smoke_passed(receipt: dict[str, Any]) -> bool:
 
 
 def _adversarial_review_passed(review: dict[str, Any]) -> bool:
+    if review.get("llm_receipt") is not True:
+        return False
+    if str(review.get("transport") or "").strip() != "auxiliary_llm":
+        return False
+    if not str(review.get("prompt_sha256") or "").strip():
+        return False
     if str(review.get("status") or "").strip() not in {"pass", "passed"}:
         return False
     if review.get("independent") is not True:
@@ -146,3 +201,28 @@ def _score(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _json_object_from_text(text: str) -> dict[str, Any]:
+    raw = str(text or "").strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+        raw = re.sub(r"\s*```$", "", raw)
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        if not match:
+            return {"status": "fail", "score": 0, "independent": False, "findings": ["invalid_json"]}
+        try:
+            parsed = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return {"status": "fail", "score": 0, "independent": False, "findings": ["invalid_json"]}
+    if not isinstance(parsed, dict):
+        return {"status": "fail", "score": 0, "independent": False, "findings": ["invalid_json"]}
+    return parsed
+
+
+def _stable_digest(value: dict[str, Any]) -> str:
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

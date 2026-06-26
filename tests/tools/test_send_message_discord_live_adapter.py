@@ -104,3 +104,72 @@ def test_discord_live_adapter_sends_pdf_attachment(monkeypatch, tmp_path) -> Non
             "metadata": {"thread_id": "1508130890813800508"},
         }
     ]
+
+
+def test_discord_live_adapter_does_not_send_text_before_failed_pdf(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    artifact = tmp_path / "report.pdf"
+    artifact.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    text_messages: list[dict[str, object]] = []
+    documents: list[dict[str, object]] = []
+
+    class LiveDiscordAdapter:
+        platform = Platform.DISCORD
+
+        async def send(self, *, chat_id, content, metadata=None):
+            text_messages.append(
+                {"chat_id": chat_id, "content": content, "metadata": metadata}
+            )
+            return SimpleNamespace(success=True, message_id="live-text-1")
+
+        async def send_document(self, *, chat_id, file_path, metadata=None, **kwargs):
+            documents.append(
+                {
+                    "chat_id": chat_id,
+                    "file_path": file_path,
+                    "metadata": metadata,
+                    "caption": kwargs.get("caption"),
+                }
+            )
+            return SimpleNamespace(success=False, error="upload failed")
+
+    async def forbidden_standalone(*_args, **_kwargs):
+        raise AssertionError("Failed PDF delivery should not fall back to standalone")
+
+    runner = SimpleNamespace(adapters={Platform.DISCORD: LiveDiscordAdapter()})
+    monkeypatch.setattr("gateway.run._gateway_runner_ref", lambda: runner)
+
+    from gateway.platform_registry import platform_registry
+    from miho_cli.plugins import discover_plugins
+
+    discover_plugins()
+    entry = platform_registry.get("discord")
+    original = entry.standalone_sender_fn
+    entry.standalone_sender_fn = forbidden_standalone
+    try:
+        result = asyncio.run(
+            _send_to_platform(
+                Platform.DISCORD,
+                SimpleNamespace(enabled=True, token="", extra={}),
+                "1507988401171857521",
+                "PDF 첨부 검증",
+                thread_id="1508130890813800508",
+                media_files=[(str(artifact), False)],
+                force_document=True,
+            )
+        )
+    finally:
+        entry.standalone_sender_fn = original
+
+    assert result == {"error": "Adapter send failed: upload failed"}
+    assert text_messages == []
+    assert documents == [
+        {
+            "chat_id": "1507988401171857521",
+            "file_path": str(artifact),
+            "metadata": {"thread_id": "1508130890813800508"},
+            "caption": "PDF 첨부 검증",
+        }
+    ]

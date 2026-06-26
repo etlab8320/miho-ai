@@ -21,6 +21,7 @@ Safety invariants kept intact:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import subprocess
@@ -177,22 +178,27 @@ def _propose_shadow_candidates(
     extract_content: ContentExtractor | None,
 ) -> list[dict[str, Any]]:
     deterministic = build_shadow_candidates(bundle)
+    proposal_payload = {
+        "evidence_bundle": bundle,
+        "deterministic_candidates": deterministic,
+        "contract": (
+            "Return JSON with candidates: [miho-self-harness/shadow-candidate/v1]. "
+            "Every candidate must start auto_promote_allowed=false and include rollback."
+        ),
+    }
     refined = _call_self_harness_json(
         PROPOSER_TASK,
-        payload={
-            "evidence_bundle": bundle,
-            "deterministic_candidates": deterministic,
-            "contract": (
-                "Return JSON with candidates: [miho-self-harness/shadow-candidate/v1]. "
-                "Every candidate must start auto_promote_allowed=false and include rollback."
-            ),
-        },
+        payload=proposal_payload,
         call_llm=call_llm,
         extract_content=extract_content,
     )
     candidates = _candidate_list_from_payload(refined)
     if candidates:
-        return stamp_candidates(candidates, proposer_task=PROPOSER_TASK)
+        return stamp_candidates(
+            candidates,
+            proposer_task=PROPOSER_TASK,
+            prompt_sha256=_stable_payload_digest(proposal_payload),
+        )
     return stamp_candidates(deterministic, proposer_task="")
 
 
@@ -488,3 +494,7 @@ def _default_pytest_runner(test_path: str) -> tuple[int, str]:
         timeout=DEFAULT_TEST_TIMEOUT_SECONDS,
     )
     return proc.returncode, (proc.stdout + proc.stderr)
+
+def _stable_payload_digest(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

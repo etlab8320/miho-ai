@@ -133,6 +133,36 @@ def test_runtime_repair_failure_does_not_surface_self_blocking_fallback(monkeypa
     _assert_no_self_blocking_text(transformed)
 
 
+def test_runtime_repair_failure_records_self_harness_signal(monkeypatch) -> None:
+    def boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("provider down")
+
+    recorded: list[dict[str, object]] = []
+
+    def fake_record_quality_failure(**kwargs: object) -> dict[str, object]:
+        recorded.append(kwargs)
+        return {"id": 1}
+
+    monkeypatch.setattr("agent.auxiliary_client.call_llm", boom)
+    monkeypatch.setattr(
+        "plugins.governance_os.feedback_events.record_quality_failure",
+        fake_record_quality_failure,
+    )
+
+    transformed = governance_transform_llm_output(
+        response_text="서연이 수시 환산점수는 947.3점입니다.",
+        user_message="서연이 수시 환산점수 계산해줘",
+        governance_outcomes=[],
+        platform="discord",
+        session_id="delivery-recovery-test",
+    )
+
+    _assert_no_self_blocking_text(transformed)
+    assert recorded
+    assert recorded[0]["failure_signature"] == "final_delivery_recovery_transport_unavailable"
+    assert recorded[0]["playbook_key"] == "susi_score_calculation"
+
+
 def test_runtime_repair_pass_is_filtered_if_it_returns_self_blocking_phrase(monkeypatch) -> None:
     transformed = governance_transform_llm_output(
         response_text="서연이 수시 환산점수는 947.3점입니다.",

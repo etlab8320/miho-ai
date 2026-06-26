@@ -5,6 +5,7 @@ from __future__ import annotations
 from plugins.governance_os.validation_loop import (
     ADVERSARIAL_VALIDATOR_TASK,
     evaluate_validation_loop,
+    run_adversarial_validator,
 )
 
 
@@ -133,6 +134,124 @@ def test_validation_loop_rejects_missing_attachment_artifact(tmp_path) -> None:
     assert "attachment artifact smoke did not prove deliverable MEDIA artifact" in report.failures
 
 
+def test_validation_loop_rejects_synthetic_adversarial_review(tmp_path) -> None:
+    artifact = tmp_path / "report.pdf"
+    artifact.write_bytes(b"%PDF-1.4\n%%EOF\n")
+
+    report = evaluate_validation_loop(
+        test_receipts=(
+            _receipt("tests/plugins/test_focus.py", "focused_tests"),
+            _receipt("tests/plugins/test_wider.py", "wider_gate"),
+            _receipt("readiness", "runtime_readiness"),
+        ),
+        smoke_receipts=(
+            {
+                "name": "gateway live-safe smoke",
+                "kind": "live_gateway_smoke",
+                "status": "passed",
+                "mode": "live_safe",
+                "evidence": "gateway process and hook path verified",
+            },
+            {
+                "name": "attachment artifact",
+                "kind": "attachment_artifact_smoke",
+                "status": "passed",
+                "artifact_path": str(artifact),
+                "media_tag": f"MEDIA:`{artifact}`",
+                "evidence": "local artifact staged",
+            },
+        ),
+        adversarial_reviews=(
+            {
+                "reviewer": "validator",
+                "task": ADVERSARIAL_VALIDATOR_TASK,
+                "status": "passed",
+                "score": 100,
+                "independent": True,
+                "findings": [],
+            },
+        ),
+    )
+
+    assert not report.ready
+    assert "missing independent adversarial review" in report.failures
+
+
+def test_run_adversarial_validator_builds_llm_receipt(tmp_path) -> None:
+    artifact = tmp_path / "report.pdf"
+    artifact.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    calls: list[dict[str, object]] = []
+
+    def fake_call_llm(**kwargs: object) -> str:
+        calls.append(kwargs)
+        return (
+            '{"reviewer":"external_validator","status":"pass","score":100,'
+            '"independent":true,"findings":[]}'
+        )
+
+    review = run_adversarial_validator(
+        test_receipts=(
+            _receipt("tests/plugins/test_focus.py", "focused_tests"),
+            _receipt("tests/plugins/test_wider.py", "wider_gate"),
+            _receipt("readiness", "runtime_readiness"),
+        ),
+        smoke_receipts=(
+            {
+                "name": "gateway live-safe smoke",
+                "kind": "live_gateway_smoke",
+                "status": "passed",
+                "mode": "live_safe",
+                "evidence": "gateway process and hook path verified",
+            },
+            {
+                "name": "attachment artifact",
+                "kind": "attachment_artifact_smoke",
+                "status": "passed",
+                "artifact_path": str(artifact),
+                "media_tag": f"MEDIA:`{artifact}`",
+                "evidence": "local artifact staged",
+            },
+        ),
+        change_summary="validation loop hardening",
+        call_llm=fake_call_llm,
+        extract_content=lambda value: value,
+    )
+
+    assert calls and calls[0]["task"] == ADVERSARIAL_VALIDATOR_TASK
+    assert review["llm_receipt"] is True
+    assert review["transport"] == "auxiliary_llm"
+    assert review["prompt_sha256"]
+
+    report = evaluate_validation_loop(
+        test_receipts=(
+            _receipt("tests/plugins/test_focus.py", "focused_tests"),
+            _receipt("tests/plugins/test_wider.py", "wider_gate"),
+            _receipt("readiness", "runtime_readiness"),
+        ),
+        smoke_receipts=(
+            {
+                "name": "gateway live-safe smoke",
+                "kind": "live_gateway_smoke",
+                "status": "passed",
+                "mode": "live_safe",
+                "evidence": "gateway process and hook path verified",
+            },
+            {
+                "name": "attachment artifact",
+                "kind": "attachment_artifact_smoke",
+                "status": "passed",
+                "artifact_path": str(artifact),
+                "media_tag": f"MEDIA:`{artifact}`",
+                "evidence": "local artifact staged",
+            },
+        ),
+        adversarial_reviews=(review,),
+    )
+
+    assert report.ready
+    assert report.score == 100
+
+
 def test_validation_loop_passes_with_full_required_evidence(tmp_path) -> None:
     artifact = tmp_path / "report.pdf"
     artifact.write_bytes(b"%PDF-1.4\n%%EOF\n")
@@ -167,6 +286,9 @@ def test_validation_loop_passes_with_full_required_evidence(tmp_path) -> None:
                 "status": "passed",
                 "score": 100,
                 "independent": True,
+                "llm_receipt": True,
+                "transport": "auxiliary_llm",
+                "prompt_sha256": "abc123",
                 "findings": [],
             },
         ),

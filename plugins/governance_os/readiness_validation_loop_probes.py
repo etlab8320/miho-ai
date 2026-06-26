@@ -9,7 +9,7 @@ from pathlib import Path
 
 def validation_loop_probe_passed() -> bool:
     from .discord_live_smoke import build_discord_delivery_smoke
-    from .validation_loop import ADVERSARIAL_VALIDATOR_TASK, evaluate_validation_loop
+    from .validation_loop import evaluate_validation_loop, run_adversarial_validator
 
     with tempfile.TemporaryDirectory(prefix="miho-governance-validation-loop-") as tmp:
         artifact = Path(tmp) / "validated-report.pdf"
@@ -24,26 +24,26 @@ def validation_loop_probe_passed() -> bool:
             )
             if not discord_smoke.ready:
                 return False
+            test_receipts = (
+                _test_receipt("tests/plugins/test_governance_os_validation_loop.py", "focused_tests"),
+                _test_receipt("tests/plugins/test_governance_os*.py", "wider_gate"),
+                _test_receipt("run_readiness_check", "runtime_readiness"),
+            )
+            smoke_receipts = (
+                discord_smoke.live_gateway_receipt,
+                discord_smoke.attachment_receipt,
+            )
+            adversarial_review = run_adversarial_validator(
+                test_receipts=test_receipts,
+                smoke_receipts=smoke_receipts,
+                change_summary="Governance OS readiness validation loop probe",
+                call_llm=_probe_validator_call_llm,
+                extract_content=lambda value: str(value),
+            )
             report = evaluate_validation_loop(
-                test_receipts=(
-                    _test_receipt("tests/plugins/test_governance_os_validation_loop.py", "focused_tests"),
-                    _test_receipt("tests/plugins/test_governance_os*.py", "wider_gate"),
-                    _test_receipt("run_readiness_check", "runtime_readiness"),
-                ),
-                smoke_receipts=(
-                    discord_smoke.live_gateway_receipt,
-                    discord_smoke.attachment_receipt,
-                ),
-                adversarial_reviews=(
-                    {
-                        "reviewer": "readiness_validator",
-                        "task": ADVERSARIAL_VALIDATOR_TASK,
-                        "status": "passed",
-                        "score": 100,
-                        "independent": True,
-                        "findings": [],
-                    },
-                ),
+                test_receipts=test_receipts,
+                smoke_receipts=smoke_receipts,
+                adversarial_reviews=(adversarial_review,),
             )
             return report.ready and report.score == 100
         finally:
@@ -51,6 +51,17 @@ def validation_loop_probe_passed() -> bool:
                 os.environ.pop("MIHO_MEDIA_ALLOW_DIRS", None)
             else:
                 os.environ["MIHO_MEDIA_ALLOW_DIRS"] = previous_allow_dirs
+
+
+def _probe_validator_call_llm(**kwargs: object) -> str:
+    from .validation_loop import ADVERSARIAL_VALIDATOR_TASK
+
+    if kwargs.get("task") != ADVERSARIAL_VALIDATOR_TASK:
+        return '{"status":"fail","score":0,"independent":false,"findings":["wrong_task"]}'
+    return (
+        '{"reviewer":"readiness_validator","status":"pass","score":100,'
+        '"independent":true,"findings":[]}'
+    )
 
 
 def _test_receipt(name: str, kind: str) -> dict[str, object]:

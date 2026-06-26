@@ -573,13 +573,15 @@ async def _send_live_adapter_payload(
     force_document: bool = False,
 ) -> dict:
     last_payload: dict | None = None
-    if content.strip():
+    media_items = list(media_files or [])
+    if content.strip() and not media_items:
         text_result = await adapter.send(chat_id=chat_id, content=content, metadata=metadata)
         last_payload = _adapter_send_result_payload(text_result)
         if not last_payload.get("success"):
             return last_payload
 
-    for media_path, is_voice in media_files or []:
+    caption = content.strip() or None
+    for index, (media_path, is_voice) in enumerate(media_items):
         media_result = await _send_live_adapter_media(
             adapter,
             chat_id=chat_id,
@@ -587,6 +589,7 @@ async def _send_live_adapter_payload(
             is_voice=bool(is_voice),
             metadata=metadata,
             force_document=force_document,
+            caption=caption if index == 0 else None,
         )
         last_payload = _adapter_send_result_payload(media_result)
         if not last_payload.get("success"):
@@ -603,6 +606,7 @@ async def _send_live_adapter_media(
     is_voice: bool,
     metadata,
     force_document: bool,
+    caption: str | None = None,
 ):
     from gateway.platforms.base import should_send_media_as_audio
 
@@ -612,23 +616,27 @@ async def _send_live_adapter_media(
         return await adapter.send_voice(
             chat_id=chat_id,
             audio_path=media_path,
+            caption=caption,
             metadata=metadata,
         )
     if ext in _VIDEO_EXTS:
         return await adapter.send_video(
             chat_id=chat_id,
             video_path=media_path,
+            caption=caption,
             metadata=metadata,
         )
     if ext in _IMAGE_EXTS and not force_document:
         return await adapter.send_image_file(
             chat_id=chat_id,
             image_path=media_path,
+            caption=caption,
             metadata=metadata,
         )
     return await adapter.send_document(
         chat_id=chat_id,
         file_path=media_path,
+        caption=caption,
         metadata=metadata,
     )
 
