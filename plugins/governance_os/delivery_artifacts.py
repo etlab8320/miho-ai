@@ -36,6 +36,22 @@ _ARTIFACT_REQUEST_TERMS = (
     "엑셀",
     "리포트",
 )
+_ARTIFACT_DEFERRAL_TERMS = (
+    "확인할 근거",
+    "전달하긴 어려",
+    "첨부됐는지",
+    "최종 확정본",
+    "확정해서 전달",
+    "첨부 완료라고 확정",
+    "완료본이라고 전달",
+    "확인된 상태가 아니",
+    "실제로 생성",
+    "다시 확인",
+    "최종 pdf 형태",
+    "자료 보내주",
+    "원본 파일이나 내용을 보내주",
+)
+
 
 def complete_artifact_delivery(
     response_text: str,
@@ -45,10 +61,12 @@ def complete_artifact_delivery(
 ) -> str | None:
     """Return a concrete artifact delivery when the current turn produced one."""
 
-    if not _should_complete_artifact_delivery(response_text, user_text):
+    if not _is_artifact_request(user_text):
         return None
     artifact_path = _latest_artifact_path(conversation_history)
     if not artifact_path:
+        return None
+    if not _should_complete_artifact_delivery(response_text):
         return None
     repair = repair_artifact_delivery(artifact_path, caption=_caption_for(artifact_path))
     if repair.status == "blocked" or not repair.media_tag:
@@ -56,16 +74,20 @@ def complete_artifact_delivery(
     return repair.delivery_text or f"{_caption_for(repair.artifact_path)}\n{repair.media_tag}"
 
 
-def _should_complete_artifact_delivery(response_text: str, user_text: str) -> bool:
+def _is_artifact_request(user_text: str) -> bool:
     user_blob = normalized_blob(user_text)
-    if not user_blob or not any(term in user_blob for term in _ARTIFACT_REQUEST_TERMS):
-        return False
+    return bool(user_blob and any(term in user_blob for term in _ARTIFACT_REQUEST_TERMS))
+
+
+def _should_complete_artifact_delivery(response_text: str) -> bool:
     response_blob = normalized_blob(response_text)
     if contains_internal_guard_leak(response_text):
         return True
+    if any(term in response_blob for term in _ARTIFACT_DEFERRAL_TERMS):
+        return True
     if "media:" in response_blob:
         return False
-    return any(term in response_blob for term in ("확인할 근거", "전달하긴 어려", "첨부됐는지"))
+    return False
 
 
 def _latest_artifact_path(conversation_history: Any) -> str:
@@ -166,7 +188,7 @@ def _clean_path(path: str) -> str:
 def _caption_for(path: str) -> str:
     suffix = Path(_clean_path(path)).suffix.casefold()
     if suffix == ".pdf":
-        return "PDF 정리본입니다."
+        return "여기 있어."
     if suffix in {".mhtml", ".mht", ".html", ".htm"}:
         return "정리본 파일입니다."
     return "첨부 파일입니다."

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+from pathlib import Path
 from typing import Any
 
 _MEDIA_TAG_RE = re.compile(
@@ -42,6 +44,8 @@ def prepare_delivery_media(
     with_missing_media = _append_missing_media(original, conversation_history)
     repaired = _repair_attachment_paths(with_missing_media)
     final = repaired if repaired is not None else with_missing_media
+    deduped = _dedupe_duplicate_media_tags(final)
+    final = deduped if deduped is not None else final
     return final if final != original else None
 
 
@@ -128,3 +132,61 @@ def _downgrade_unavailable_attachment_claim(text: str) -> str:
         kept.append(line)
     kept.append(_ATTACHMENT_UNAVAILABLE_NOTE)
     return "\n".join(kept)
+
+
+def _dedupe_duplicate_media_tags(text: str) -> str | None:
+    """Collapse repeated MEDIA lines that point to the same artifact bytes."""
+
+    if "MEDIA:" not in str(text or ""):
+        return None
+    seen: set[str] = set()
+    changed = False
+    kept_lines: list[str] = []
+    for line in str(text or "").splitlines():
+        match = _single_media_line(line)
+        if not match:
+            kept_lines.append(line)
+            continue
+        raw_path = next((group for group in match.groups() if group), "").strip()
+        key = _media_dedupe_key(raw_path)
+        if key and key in seen:
+            changed = True
+            continue
+        if key:
+            seen.add(key)
+        kept_lines.append(line)
+    return "\n".join(kept_lines) if changed else None
+
+
+def _single_media_line(line: str) -> re.Match[str] | None:
+    match = _MEDIA_TAG_RE.fullmatch(line.strip())
+    return match if match else None
+
+
+def _media_dedupe_key(raw_path: str) -> str:
+    clean = _clean_media_path(raw_path)
+    if not clean:
+        return ""
+    try:
+        path = Path(clean).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return f"path:{clean}"
+    if not path.is_file():
+        return f"path:{path}"
+    digest = _file_sha256(path)
+    return f"hash:{digest}"
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _clean_media_path(path: str) -> str:
+    clean = str(path or "").strip()
+    if len(clean) >= 2 and clean[0] == clean[-1] and clean[0] in "`\"'":
+        clean = clean[1:-1].strip()
+    return clean.rstrip('",}.)]')

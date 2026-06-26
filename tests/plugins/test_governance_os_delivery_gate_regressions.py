@@ -302,6 +302,112 @@ def test_transform_llm_output_delivers_existing_pdf_when_final_answer_self_block
     assert base.resolve_media_delivery_path(transformed.split("MEDIA:", 1)[1].strip("` \n"))
 
 
+def test_transform_llm_output_delivers_latest_pdf_without_audit_text_or_duplicate_attachments(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+
+    import gateway.platforms.base as base
+    import miho_constants
+
+    importlib.reload(miho_constants)
+    importlib.reload(base)
+
+    media_dir = tmp_path / "miho_home" / "media_cache" / "susi-summary"
+    media_dir.mkdir(parents=True)
+    first = media_dir / "박정수_실기전형전체추천.pdf"
+    latest = media_dir / "박정수_실기전형전체추천_2.pdf"
+    first.write_bytes(b"%PDF-1.4\nfirst\n")
+    latest.write_bytes(b"%PDF-1.4\nlatest\n")
+
+    transformed = governance_transform_llm_output(
+        response_text=(
+            "맥스, 정수 학생의 수도권·강원·충청권 수시 실기전형 전체 추천 PDF는 "
+            "최종 확정본으로 확인된 상태가 아니야.\n\n"
+            "그래서 지금은 후보 수, 적정/상향 분류, PDF 첨부 완료라고 확정해서 "
+            "전달할 수 없어. 다시 확인해 최종 PDF 형태로 전달할게."
+        ),
+        user_message="정수 수시 실기전형으로 수도권, 강원, 충청 권으로 모두 추천해서 pdf로 줘",
+        conversation_history=[
+            {
+                "role": "user",
+                "content": "정수 수시 실기전형으로 수도권, 강원, 충청 권으로 모두 추천해서 pdf로 줘",
+            },
+            {
+                "role": "tool",
+                "name": "academy_practical_reco_all_candidates",
+                "content": json.dumps({"success": True, "file_path": str(first)}, ensure_ascii=False),
+            },
+            {
+                "role": "tool",
+                "name": "academy_practical_reco_all_candidates",
+                "content": json.dumps({"success": True, "file_path": str(latest)}, ensure_ascii=False),
+            },
+        ],
+        governance_outcomes=[],
+        final_delivery_call_llm=_pass_through_final_delivery_agent,
+        final_delivery_extract_content=_extract_content,
+    )
+
+    assert transformed is not None
+    assert transformed.startswith("여기 있어.")
+    assert transformed.count("MEDIA:") == 1
+    assert str(latest) in transformed
+    assert str(first) not in transformed
+    assert "최종 확정본" not in transformed
+    assert "확정해서 전달할 수 없어" not in transformed
+    assert "다시 확인해" not in transformed
+    assert base.resolve_media_delivery_path(transformed.split("MEDIA:", 1)[1].strip("` \n"))
+
+
+def test_transform_llm_output_collapses_duplicate_media_tags_with_same_bytes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+
+    import gateway.platforms.base as base
+    import miho_constants
+
+    importlib.reload(miho_constants)
+    importlib.reload(base)
+
+    media_dir = tmp_path / "miho_home" / "media_cache" / "pdf"
+    media_dir.mkdir(parents=True)
+    first = media_dir / "report.pdf"
+    second = media_dir / "report_2.pdf"
+    payload = b"%PDF-1.4\nsame-content\n"
+    first.write_bytes(payload)
+    second.write_bytes(payload)
+
+    transformed = governance_transform_llm_output(
+        response_text=f"여기 있어.\nMEDIA:`{first}`\nMEDIA:`{second}`",
+        user_message="pdf로 줘",
+        governance_outcomes=[],
+        final_delivery_call_llm=_pass_through_final_delivery_agent,
+        final_delivery_extract_content=_extract_content,
+    )
+
+    assert transformed is not None
+    assert transformed.count("MEDIA:") == 1
+    assert str(second) not in transformed
+
+
+def _pass_through_final_delivery_agent(*_args: object, **kwargs: object) -> dict[str, object]:
+    messages = kwargs.get("messages")
+    assert isinstance(messages, list)
+    prompt = str(messages[-1]["content"])
+    answer = prompt.split("\nEVIDENCE: ", 1)[0].split("\nA: ", 1)[1]
+    return {"content": json.dumps({"action": "deliver", "answer": answer}, ensure_ascii=False)}
+
+
+def _extract_content(response: object) -> str:
+    assert isinstance(response, dict)
+    typed = cast("dict[str, object]", response)
+    return str(typed.get("content") or "")
+
+
 def test_final_delivery_gate_does_not_trust_stale_global_ledger(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
 
