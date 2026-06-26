@@ -83,6 +83,19 @@ def governance_transform_tool_result(
             }
         )
 
+    executor = _auto_retry_executor(
+        tool_name=str(tool_name),
+        failures=failures,
+        context=context,
+    )
+    retry_result = _run_auto_retry_executor(
+        registry=registry,
+        executor=executor,
+        context=context,
+    )
+    if retry_result is not None:
+        return retry_result
+
     message = failures[0]["message_ko"] or (
         "후검증을 통과하지 못했습니다. 결과를 전달하지 말고 전용 도구를 다시 실행해야 합니다."
     )
@@ -103,11 +116,7 @@ def governance_transform_tool_result(
                 "retry_args": _retry_args(failures),
                 "retry_instruction_ko": _retry_instruction_ko(failures),
             },
-            "auto_retry_executor": _auto_retry_executor(
-                tool_name=str(tool_name),
-                failures=failures,
-                context=context,
-            ),
+            "auto_retry_executor": executor,
         },
         ensure_ascii=False,
     )
@@ -254,3 +263,106 @@ def _auto_retry_executor(
         ),
         "user_visible_summary": _USER_SAFE_RETRY_MESSAGE,
     }
+
+
+def _run_auto_retry_executor(
+    *,
+    registry: Any,
+    executor: dict[str, Any],
+    context: dict[str, Any],
+) -> str | None:
+    if executor.get("status") != "required":
+        return None
+    retry_tools = [str(item).strip() for item in executor.get("retry_tools") or [] if str(item).strip()]
+    retry_args = [item for item in executor.get("retry_args") or [] if isinstance(item, dict)]
+    if not retry_tools or not retry_args:
+        return None
+
+    attempts: list[dict[str, Any]] = []
+    max_attempts = max(1, int(executor.get("max_attempts") or 1))
+    for attempt in range(1, max_attempts + 1):
+        for index, retry_tool in enumerate(retry_tools):
+            args = retry_args[min(index, len(retry_args) - 1)]
+            try:
+                retry_result = _dispatch_retry_tool(retry_tool, args, context=context)
+            except Exception as exc:
+                attempts.append(
+                    {
+                        "attempt": attempt,
+                        "tool_name": retry_tool,
+                        "status": "fail",
+                        "reason": f"retry_dispatch_error:{type(exc).__name__}",
+                    }
+                )
+                continue
+            status, reason = _review_retry_result(
+                registry=registry,
+                retry_tool=retry_tool,
+                retry_result=retry_result,
+                context=context,
+            )
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "tool_name": retry_tool,
+                    "status": status,
+                    "reason": reason,
+                }
+            )
+            if status == "pass":
+                executor["attempts"] = attempts
+                return retry_result
+    executor["attempts"] = attempts
+    return None
+
+
+def _dispatch_retry_tool(
+    retry_tool: str,
+    args: dict[str, Any],
+    *,
+    context: dict[str, Any],
+) -> str:
+    from tools.registry import registry as tool_registry
+
+    result = tool_registry.dispatch(
+        retry_tool,
+        args,
+        task_id=str(context.get("task_id") or "") or None,
+    )
+    return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+
+
+def _review_retry_result(
+    *,
+    registry: Any,
+    retry_tool: str,
+    retry_result: str,
+    context: dict[str, Any],
+) -> tuple[str, str]:
+    playbook_keys = _SELF_REVIEWED_TOOL_PLAYBOOKS.get(retry_tool, ())
+    if not playbook_keys:
+        return "fail", "retry_tool_not_self_reviewed"
+    reasons: list[str] = []
+    for playbook_key in playbook_keys:
+        outcome = evaluate_review_gate(
+            registry,
+            playbook_key=playbook_key,
+            tool_name=retry_tool,
+            result=retry_result,
+            auxiliary_review_policy=auxiliary_review_policy_for_playbook(playbook_key),
+        )
+        if outcome.status != "pass":
+            reasons.append(outcome.reason)
+            continue
+        _record_transform_outcome(
+            registry=registry,
+            playbook_key=playbook_key,
+            tool_name=retry_tool,
+            result=retry_result,
+            review_status="pass",
+            failures=(),
+            retry_tools=(),
+            context={**context, "request_id": f"{_request_id(retry_tool, context)}:retry"},
+        )
+        return "pass", outcome.reason
+    return "fail", ", ".join(reasons) or "retry_review_failed"

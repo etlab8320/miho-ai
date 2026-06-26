@@ -351,6 +351,9 @@ def _final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
             return str(typed.get("content") or "")
         return str(response or "")
 
+    def broken_call_llm(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("down")
+
     blocked = evaluate_final_delivery(
         registry,
         response_text="서연이 수시 환산점수는 947.3점입니다.",
@@ -377,12 +380,21 @@ def _final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
         final_delivery_call_llm=fake_call_llm,
         final_delivery_extract_content=extract,
     )
+    fail_closed = governance_transform_llm_output(
+        response_text="서연이 수시 환산점수는 947.3점입니다.",
+        user_message="서연이 수시 환산점수 계산해줘",
+        governance_outcomes=[],
+        final_delivery_call_llm=broken_call_llm,
+        final_delivery_extract_content=extract,
+    )
     return (
         blocked.action == "block"
         and blocked.reason == "review_evidence_missing"
         and passed.action == "allow"
         and transformed is not None
         and "검증된 계산 결과" in transformed
+        and fail_closed is not None
+        and "947.3" not in fail_closed
         and "후검증" not in transformed
         and "전용 도구" not in transformed
     )

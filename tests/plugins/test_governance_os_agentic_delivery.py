@@ -71,3 +71,25 @@ def test_meta_review_false_positive_is_resolved_by_final_delivery_agent() -> Non
     assert "적대적 리뷰 결과" in transformed
     assert "확인 근거를 다시 모아" not in transformed
     assert calls
+
+
+def test_blocked_answer_fail_closes_when_all_delivery_agents_fail() -> None:
+    def broken_call_llm(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("provider down")
+
+    original = "서연이 수시 환산점수는 947.3점입니다."
+    transformed = governance_transform_llm_output(
+        response_text=original,
+        user_message="서연이 수시 환산점수 계산해줘",
+        platform="discord",
+        governance_outcomes=[],
+        final_delivery_call_llm=broken_call_llm,
+        final_delivery_extract_content=_extract,
+    )
+
+    assert transformed is not None
+    assert transformed != original
+    assert "947.3" not in transformed
+    assert "후검증" not in transformed
+    assert "전용 도구" not in transformed
+    assert "retry_tools" not in transformed

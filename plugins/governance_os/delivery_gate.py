@@ -28,6 +28,7 @@ from .delivery_safety import (
 )
 from .dispatcher import dispatch_request
 from .final_delivery_agent import review_final_delivery
+from .final_delivery_fail_closed import recover_blocked_delivery
 from .registry import GovernanceRegistry
 from .review import auxiliary_review_policy_for_playbook, evaluate_review_gate
 from .versioning import load_runtime_registry
@@ -114,7 +115,13 @@ def governance_transform_llm_output(
         return delivered
     if decision.action != "block":
         return media_prepared
-    return None
+    return recover_blocked_delivery(
+        question=user_text,
+        answer=effective_text,
+        evidence=_delivery_evidence(decision, context=context, outcomes=outcomes),
+        call_llm=context.get("final_delivery_call_llm"),
+        extract_content=context.get("final_delivery_extract_content"),
+    )
 
 
 def evaluate_final_delivery(
