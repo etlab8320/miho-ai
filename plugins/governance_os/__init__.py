@@ -14,6 +14,10 @@ from .result_transform import governance_transform_tool_result
 
 DISPATCHER_TASK = "miho_governance_dispatcher"
 REVIEWER_TASK = "miho_governance_reviewer"
+ACADEMY_REVIEWER_TASK = "miho_governance_reviewer_academy"
+DELIVERY_REVIEWER_TASK = "miho_governance_reviewer_delivery"
+DEV_REVIEWER_TASK = "miho_governance_reviewer_dev"
+RESEARCH_REVIEWER_TASK = "miho_governance_reviewer_research"
 PROMOTION_JUDGE_TASK = "miho_governance_promotion_judge"
 SELF_HARNESS_WEAKNESS_MINER_TASK = "miho_self_harness_weakness_miner"
 SELF_HARNESS_PROPOSER_TASK = "miho_self_harness_proposer"
@@ -27,6 +31,20 @@ REVIEWER_INSTRUCTIONS = (
     "도구 결과를 사용자에게 전달하기 전 후검증한다. "
     "레이아웃, 산식, 근거, media_tag, artifact_path, 의도 일치를 확인하고 "
     "실패 시 사용자에게 완성본처럼 말하지 말고 retry_tools 재실행을 요구한다."
+)
+ACADEMY_REVIEWER_INSTRUCTIONS = REVIEWER_INSTRUCTIONS + (
+    " 학원/입시 도메인 전담 reviewer로서 학생별 점수, 수시/학종/실기 추천, "
+    "생기부 근거와 산식 일치를 의미 검수한다."
+)
+DELIVERY_REVIEWER_INSTRUCTIONS = REVIEWER_INSTRUCTIONS + (
+    " 첨부/파일 전송 도메인 전담 reviewer로서 artifact_path, safe staging path, "
+    "MEDIA tag, 실제 첨부 가능 위치를 의미 검수한다."
+)
+DEV_REVIEWER_INSTRUCTIONS = REVIEWER_INSTRUCTIONS + (
+    " 개발/운영 도메인 전담 reviewer로서 테스트, diff scope, rollback, 배포 안전성을 의미 검수한다."
+)
+RESEARCH_REVIEWER_INSTRUCTIONS = REVIEWER_INSTRUCTIONS + (
+    " 리서치 도메인 전담 reviewer로서 출처, 최신성, 인용 가능성, 과장 표현을 의미 검수한다."
 )
 PROMOTION_JUDGE_INSTRUCTIONS = (
     "Outcome ledger의 반복 실패만 promotion 후보로 평가한다. "
@@ -90,6 +108,30 @@ def register(ctx: Any) -> None:
             "extra_body": {"reasoning": {"effort": "medium"}},
             "instructions": REVIEWER_INSTRUCTIONS,
         },
+    )
+    _register_domain_reviewer(
+        ctx,
+        key=ACADEMY_REVIEWER_TASK,
+        display_name="Miho academy governance reviewer",
+        instructions=ACADEMY_REVIEWER_INSTRUCTIONS,
+    )
+    _register_domain_reviewer(
+        ctx,
+        key=DELIVERY_REVIEWER_TASK,
+        display_name="Miho delivery governance reviewer",
+        instructions=DELIVERY_REVIEWER_INSTRUCTIONS,
+    )
+    _register_domain_reviewer(
+        ctx,
+        key=DEV_REVIEWER_TASK,
+        display_name="Miho dev governance reviewer",
+        instructions=DEV_REVIEWER_INSTRUCTIONS,
+    )
+    _register_domain_reviewer(
+        ctx,
+        key=RESEARCH_REVIEWER_TASK,
+        display_name="Miho research governance reviewer",
+        instructions=RESEARCH_REVIEWER_INSTRUCTIONS,
     )
     ctx.register_auxiliary_task(
         key=PROMOTION_JUDGE_TASK,
@@ -160,6 +202,26 @@ def register(ctx: Any) -> None:
     _ensure_self_harness_autopilot_cron()
 
 
+def _register_domain_reviewer(
+    ctx: Any,
+    *,
+    key: str,
+    display_name: str,
+    instructions: str,
+) -> None:
+    ctx.register_auxiliary_task(
+        key=key,
+        display_name=display_name,
+        description="Domain-specific LLM reviewer for governed Miho outputs",
+        defaults={
+            "provider": "auto",
+            "timeout": 90,
+            "extra_body": {"reasoning": {"effort": "medium"}},
+            "instructions": instructions,
+        },
+    )
+
+
 def _ensure_self_harness_autopilot_cron() -> None:
     """Idempotently schedule the unattended Self-Harness autopilot in production.
 
@@ -189,11 +251,15 @@ def _ensure_self_harness_autopilot_cron() -> None:
 
 
 __all__ = [
+    "ACADEMY_REVIEWER_TASK",
+    "DELIVERY_REVIEWER_TASK",
+    "DEV_REVIEWER_TASK",
     "DISPATCHER_TASK",
     "FINAL_DELIVERY_TASK",
     "FINAL_QA_REPAIR_TASK",
     "FINAL_QA_TASK",
     "PROMOTION_JUDGE_TASK",
+    "RESEARCH_REVIEWER_TASK",
     "SELF_HARNESS_PROPOSER_TASK",
     "SELF_HARNESS_WEAKNESS_MINER_TASK",
     "governance_transform_llm_output",

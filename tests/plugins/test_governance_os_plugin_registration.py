@@ -29,6 +29,10 @@ def test_governance_plugin_registers_auxiliary_judge_tasks() -> None:
     assert {
         "miho_governance_dispatcher",
         "miho_governance_reviewer",
+        "miho_governance_reviewer_academy",
+        "miho_governance_reviewer_delivery",
+        "miho_governance_reviewer_dev",
+        "miho_governance_reviewer_research",
         "miho_governance_promotion_judge",
         "miho_self_harness_weakness_miner",
         "miho_self_harness_proposer",
@@ -49,6 +53,8 @@ def test_governance_auxiliary_tasks_include_operational_instructions() -> None:
     tasks = {task["key"]: task for task in ctx.tasks}
     dispatcher = tasks["miho_governance_dispatcher"]["defaults"]["instructions"]
     reviewer = tasks["miho_governance_reviewer"]["defaults"]["instructions"]
+    academy_reviewer = tasks["miho_governance_reviewer_academy"]["defaults"]["instructions"]
+    delivery_reviewer = tasks["miho_governance_reviewer_delivery"]["defaults"]["instructions"]
     promotion = tasks["miho_governance_promotion_judge"]["defaults"]["instructions"]
     weakness_miner = tasks["miho_self_harness_weakness_miner"]["defaults"]["instructions"]
     self_harness_proposer = tasks["miho_self_harness_proposer"]["defaults"]["instructions"]
@@ -59,6 +65,8 @@ def test_governance_auxiliary_tasks_include_operational_instructions() -> None:
     assert "required_tools" in dispatcher
     assert "후검증" in reviewer
     assert "retry_tools" in reviewer
+    assert "입시" in academy_reviewer
+    assert "MEDIA tag" in delivery_reviewer
     assert "반복 실패" in promotion
     assert "rollback" in promotion
     assert "Weakness Mining" in weakness_miner
@@ -96,6 +104,10 @@ def test_governance_plugin_loads_as_bundled_backend(tmp_path, monkeypatch) -> No
     assert {
         "miho_governance_dispatcher",
         "miho_governance_reviewer",
+        "miho_governance_reviewer_academy",
+        "miho_governance_reviewer_delivery",
+        "miho_governance_reviewer_dev",
+        "miho_governance_reviewer_research",
         "miho_governance_promotion_judge",
         "miho_self_harness_weakness_miner",
         "miho_self_harness_proposer",
@@ -104,6 +116,8 @@ def test_governance_plugin_loads_as_bundled_backend(tmp_path, monkeypatch) -> No
     }.issubset(declared_tasks)
     assert "miho_governance_dispatcher" in keys
     assert "miho_governance_reviewer" in keys
+    assert "miho_governance_reviewer_academy" in keys
+    assert "miho_governance_reviewer_delivery" in keys
     assert "miho_self_harness_weakness_miner" in keys
     assert "miho_self_harness_proposer" in keys
     assert "miho_governance_final_qa" in keys

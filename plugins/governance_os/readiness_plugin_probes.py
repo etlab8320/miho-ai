@@ -22,6 +22,10 @@ REQUIRED_AUXILIARY_TASKS = frozenset(
     {
         "miho_governance_dispatcher",
         "miho_governance_reviewer",
+        "miho_governance_reviewer_academy",
+        "miho_governance_reviewer_delivery",
+        "miho_governance_reviewer_dev",
+        "miho_governance_reviewer_research",
         "miho_governance_promotion_judge",
         "miho_self_harness_weakness_miner",
         "miho_self_harness_proposer",
@@ -102,6 +106,26 @@ def auxiliary_instruction_probe_passed() -> bool:
             tasks,
             governance_os.REVIEWER_TASK,
             ("후검증", "retry_tools", "media_tag"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.ACADEMY_REVIEWER_TASK,
+            ("학원", "입시", "의미 검수"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.DELIVERY_REVIEWER_TASK,
+            ("첨부", "safe staging path", "MEDIA tag"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.DEV_REVIEWER_TASK,
+            ("개발", "rollback", "배포 안전성"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.RESEARCH_REVIEWER_TASK,
+            ("리서치", "출처", "최신성"),
         )
         and _instruction_has(
             tasks,
@@ -218,7 +242,7 @@ def auxiliary_reviewer_dataplane_probe_passed(registry: GovernanceRegistry) -> b
 
     try:
         result = _call_auxiliary_reviewer(
-            task="miho_governance_reviewer",
+            task="miho_governance_reviewer_academy",
             playbook_key="susi_score_calculation",
             tool_name="susi27_score_calculate",
             payload=payload,
@@ -237,7 +261,7 @@ def auxiliary_reviewer_dataplane_probe_passed(registry: GovernanceRegistry) -> b
     )
     return (
         bool(calls)
-        and calls[0].get("task") == "miho_governance_reviewer"
+        and calls[0].get("task") == "miho_governance_reviewer_academy"
         and _semantic_review_required({"semantic_review_required": True}, reviewer)
         and outcome.status == "pass"
         and outcome.reason == "auxiliary_reviewer_pass"

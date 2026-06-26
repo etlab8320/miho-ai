@@ -103,6 +103,11 @@ def governance_transform_tool_result(
                 "retry_args": _retry_args(failures),
                 "retry_instruction_ko": _retry_instruction_ko(failures),
             },
+            "auto_retry_executor": _auto_retry_executor(
+                tool_name=str(tool_name),
+                failures=failures,
+                context=context,
+            ),
         },
         ensure_ascii=False,
     )
@@ -224,3 +229,28 @@ def _retry_instruction_ko(failures: list[dict[str, Any]]) -> str:
         if instruction:
             return instruction
     return "결과를 전달하지 말고 같은 작업을 전용 도구로 다시 실행해 주세요."
+
+
+def _auto_retry_executor(
+    *,
+    tool_name: str,
+    failures: list[dict[str, Any]],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    retry_tools = _retry_tools(failures)
+    retry_args = _retry_args(failures)
+    original_args = context.get("args") if isinstance(context.get("args"), dict) else None
+    if not retry_args and original_args and retry_tools == [tool_name]:
+        retry_args = [original_args]
+    return {
+        "status": "required" if retry_tools else "not_available",
+        "mode": "agentic_tool_loop",
+        "tool_call_id": str(context.get("tool_call_id") or ""),
+        "retry_tools": retry_tools,
+        "retry_args": retry_args,
+        "max_attempts": 2,
+        "success_condition": (
+            "retry tool result must pass Governance reviewer and final delivery agent"
+        ),
+        "user_visible_summary": _USER_SAFE_RETRY_MESSAGE,
+    }

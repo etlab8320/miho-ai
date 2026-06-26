@@ -103,8 +103,6 @@ def governance_transform_llm_output(
         user_text=user_text,
         outcomes=outcomes,
     )
-    if decision.action != "block":
-        return media_prepared
     delivered = review_final_delivery(
         question=user_text,
         answer=effective_text,
@@ -112,7 +110,11 @@ def governance_transform_llm_output(
         call_llm=context.get("final_delivery_call_llm"),
         extract_content=context.get("final_delivery_extract_content"),
     )
-    return delivered
+    if delivered is not None:
+        return delivered
+    if decision.action != "block":
+        return media_prepared
+    return None
 
 
 def evaluate_final_delivery(
@@ -193,6 +195,8 @@ def _delivery_evidence(
         "governance_outcomes": outcomes if isinstance(outcomes, list | tuple) else [],
         "platform": str(context.get("platform") or ""),
         "session_id": str(context.get("session_id") or ""),
+        "final_delivery_agent_scope": "universal",
+        "python_semantic_decision_is_advisory": True,
     }
 
 

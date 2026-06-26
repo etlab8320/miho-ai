@@ -43,6 +43,27 @@ def _all_fail(_test_path: str) -> tuple[int, str]:
     return 1, "1 failed"
 
 
+def _agentic_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+    task = str(kwargs.get("task") or "")
+    messages = kwargs.get("messages")
+    assert isinstance(messages, list)
+    user_message = messages[1]
+    assert isinstance(user_message, dict)
+    typed_message = cast("dict[str, object]", user_message)
+    user_payload = json.loads(str(typed_message.get("content") or ""))
+    if task == loop.WEAKNESS_MINER_TASK:
+        payload = json.dumps(user_payload["deterministic_bundle"])
+    else:
+        payload = json.dumps({"candidates": user_payload["deterministic_candidates"]})
+    return {"content": f"```json\n{payload}\n```"}
+
+
+def _extract(response: object) -> str:
+    assert isinstance(response, dict)
+    typed_response = cast("dict[str, object]", response)
+    return str(typed_response.get("content") or "")
+
+
 def test_generate_test_receipts_marks_pass_and_fail() -> None:
     candidate = _candidate("final_qa answer mismatch")
 
@@ -61,6 +82,8 @@ def test_autopilot_activates_when_receipts_and_smoke_pass(monkeypatch) -> None:
     result = loop.run_self_harness_autopilot(
         events=_events("final_qa answer mismatch"),
         receipt_runner=_all_pass,
+        call_llm=_agentic_call_llm,
+        extract_content=_extract,
     )
 
     assert result["candidate_count"] >= 1
@@ -77,6 +100,8 @@ def test_autopilot_rolls_back_on_post_activation_regression(monkeypatch) -> None
     result = loop.run_self_harness_autopilot(
         events=_events("final_qa answer mismatch"),
         receipt_runner=_all_pass,
+        call_llm=_agentic_call_llm,
+        extract_content=_extract,
     )
 
     assert len(result["rolled_back"]) == 1
@@ -96,6 +121,8 @@ def test_autopilot_holds_when_receipts_fail(monkeypatch) -> None:
     result = loop.run_self_harness_autopilot(
         events=_events("final_qa answer mismatch"),
         receipt_runner=_all_fail,
+        call_llm=_agentic_call_llm,
+        extract_content=_extract,
     )
 
     assert called["activated"] is False
@@ -113,6 +140,19 @@ def test_autopilot_skips_unsafe_candidate(monkeypatch) -> None:
     )
 
     assert result["skipped_unsafe"]
+    assert not result["activated"]
+
+
+def test_autopilot_holds_deterministic_candidates_without_llm_agent(monkeypatch) -> None:
+    monkeypatch.setattr(loop, "activate_autonomous_candidate", lambda *a, **k: _Activation())
+
+    result = loop.run_self_harness_autopilot(
+        events=_events("final_qa answer mismatch"),
+        receipt_runner=_all_pass,
+    )
+
+    assert result["held"]
+    assert result["held"][0]["reason"] == "llm_proposer_required"
     assert not result["activated"]
 
 
@@ -136,16 +176,11 @@ def test_autopilot_uses_llm_miner_and_proposer(monkeypatch) -> None:
             payload = json.dumps({"candidates": user_payload["deterministic_candidates"]})
         return {"content": f"```json\n{payload}\n```"}
 
-    def extract(response: object) -> str:
-        assert isinstance(response, dict)
-        typed_response = cast("dict[str, object]", response)
-        return str(typed_response.get("content") or "")
-
     result = loop.run_self_harness_autopilot(
         events=_events("final_qa answer mismatch"),
         receipt_runner=_all_pass,
         call_llm=fake_call_llm,
-        extract_content=extract,
+        extract_content=_extract,
     )
 
     assert calls == [loop.WEAKNESS_MINER_TASK, loop.PROPOSER_TASK]

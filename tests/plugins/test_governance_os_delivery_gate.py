@@ -359,7 +359,7 @@ def test_transform_llm_output_allows_current_turn_reviewed_tool_result(monkeypat
 
     assert transformed is None
     assert calls
-    assert calls[0]["task"] == "miho_governance_reviewer"
+    assert calls[0]["task"] == "miho_governance_reviewer_academy"
 
 
 def test_transform_llm_output_repairs_low_risk_attachment_pass_without_auxiliary(

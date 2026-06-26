@@ -29,6 +29,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from .self_harness import build_evidence_bundle, build_shadow_candidates
+from .self_harness_agentic import agentic_hold_record, is_agentic_candidate, stamp_candidates
 from .self_harness_autonomy import (
     _required_tests,
     activate_autonomous_candidate,
@@ -190,7 +191,9 @@ def _propose_shadow_candidates(
         extract_content=extract_content,
     )
     candidates = _candidate_list_from_payload(refined)
-    return candidates if candidates else deterministic
+    if candidates:
+        return stamp_candidates(candidates, proposer_task=PROPOSER_TASK)
+    return stamp_candidates(deterministic, proposer_task="")
 
 
 def _call_self_harness_json(
@@ -292,6 +295,8 @@ def _process_candidate(
     base_dir: Any,
 ) -> dict[str, Any]:
     candidate_id = str(candidate.get("id") or "")
+    if not is_agentic_candidate(candidate):
+        return {"bucket": "held", "record": agentic_hold_record(candidate_id)}
     receipts = generate_test_receipts(candidate, runner=runner)
     decision = decide_autonomous_activation(candidate, test_receipts=receipts)
     if decision["action"] != "activate":

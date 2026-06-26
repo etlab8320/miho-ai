@@ -11,6 +11,10 @@ provides_hooks:
 provides_auxiliary_tasks:
   - miho_governance_dispatcher
   - miho_governance_reviewer
+  - miho_governance_reviewer_academy
+  - miho_governance_reviewer_delivery
+  - miho_governance_reviewer_dev
+  - miho_governance_reviewer_research
   - miho_governance_promotion_judge
   - miho_self_harness_weakness_miner
   - miho_self_harness_proposer

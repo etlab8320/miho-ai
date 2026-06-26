@@ -177,7 +177,7 @@ def test_review_gate_calls_auxiliary_reviewer_for_semantic_risk(monkeypatch) -> 
     )
 
     assert calls
-    assert calls[0]["task"] == "miho_governance_reviewer"
+    assert calls[0]["task"] == "miho_governance_reviewer_academy"
     assert outcome.status == "pass"
     assert outcome.reason == "auxiliary_reviewer_pass"
 
@@ -260,7 +260,7 @@ def test_auxiliary_reviewer_uses_agent_auxiliary_client_without_semantic_flag(mo
     assert outcome.status == "pass"
     assert outcome.reason == "auxiliary_reviewer_pass"
     assert calls
-    assert calls[0]["task"] == "miho_governance_reviewer"
+    assert calls[0]["task"] == "miho_governance_reviewer_academy"
     assert calls[0]["timeout"] == 15
     user_payload = json.loads(calls[0]["messages"][1]["content"])  # type: ignore[index]
     assert user_payload["tool_name"] == "susi27_score_calculate"
@@ -333,7 +333,7 @@ def test_governance_transform_calls_auxiliary_reviewer_without_semantic_flag(mon
 
     assert transformed is None
     assert calls
-    assert calls[0]["task"] == "miho_governance_reviewer"
+    assert calls[0]["task"] == "miho_governance_reviewer_academy"
     assert calls[0]["tool_name"] == "susi27_score_calculate"
 
 

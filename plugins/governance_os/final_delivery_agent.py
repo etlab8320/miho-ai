@@ -46,7 +46,7 @@ def review_final_delivery(
         return None
     action = str(payload.get("action") or "").strip().casefold()
     candidate = str(payload.get("answer") or "").strip()
-    if action not in {"deliver", "revise"} or not candidate:
+    if action not in {"deliver", "revise", "block"} or not candidate:
         return None
     if contains_internal_guard_leak(candidate):
         return None

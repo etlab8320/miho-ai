@@ -29,6 +29,19 @@ _REQUIRED_CHECK_GROUPS_BY_GATE: dict[str, tuple[tuple[str, ...], ...]] = {
     ),
 }
 _REVIEWER_TASK = "miho_governance_reviewer"
+_ACADEMY_REVIEWER_TASK = "miho_governance_reviewer_academy"
+_DELIVERY_REVIEWER_TASK = "miho_governance_reviewer_delivery"
+_DEV_REVIEWER_TASK = "miho_governance_reviewer_dev"
+_RESEARCH_REVIEWER_TASK = "miho_governance_reviewer_research"
+_REVIEWER_TASK_BY_PLAYBOOK = {
+    "academy_hakjong_report": _ACADEMY_REVIEWER_TASK,
+    "academy_practical_recommendation": _ACADEMY_REVIEWER_TASK,
+    "susi_score_calculation": _ACADEMY_REVIEWER_TASK,
+    "life_record_ingest": _ACADEMY_REVIEWER_TASK,
+    "discord_attachment_delivery": _DELIVERY_REVIEWER_TASK,
+    "dev_code_update": _DEV_REVIEWER_TASK,
+    "research_brief": _RESEARCH_REVIEWER_TASK,
+}
 _AUXILIARY_ALWAYS_PLAYBOOKS = frozenset(
     {
         "academy_hakjong_report",
@@ -184,6 +197,10 @@ def auxiliary_review_policy_for_playbook(playbook_key: str) -> AuxiliaryReviewPo
     return "auto"
 
 
+def reviewer_task_for_playbook(playbook_key: str) -> str:
+    return _REVIEWER_TASK_BY_PLAYBOOK.get(str(playbook_key or ""), _REVIEWER_TASK)
+
+
 def _loads_object(value: Any) -> dict[str, Any] | None:
     if isinstance(value, dict):
         return value
@@ -237,7 +254,7 @@ def _evaluate_auxiliary_review(
 ) -> ReviewGateOutcome:
     try:
         result = _call_auxiliary_reviewer(
-            task=_REVIEWER_TASK,
+            task=reviewer_task_for_playbook(playbook_key),
             playbook_key=playbook_key,
             tool_name=tool_name,
             payload=payload,
