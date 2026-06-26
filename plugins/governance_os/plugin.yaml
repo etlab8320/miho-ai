@@ -19,5 +19,6 @@ provides_auxiliary_tasks:
   - miho_self_harness_weakness_miner
   - miho_self_harness_proposer
   - miho_governance_final_delivery
+  - miho_governance_blocked_delivery_recovery
   - miho_governance_final_qa
   - miho_governance_final_qa_repair

@@ -28,7 +28,7 @@ from .delivery_safety import (
 )
 from .dispatcher import dispatch_request
 from .final_delivery_agent import review_final_delivery
-from .final_delivery_fail_closed import recover_blocked_delivery
+from .final_delivery_recovery import recover_blocked_delivery
 from .registry import GovernanceRegistry
 from .review import auxiliary_review_policy_for_playbook, evaluate_review_gate
 from .versioning import load_runtime_registry

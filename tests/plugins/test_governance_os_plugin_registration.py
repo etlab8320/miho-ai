@@ -36,6 +36,8 @@ def test_governance_plugin_registers_auxiliary_judge_tasks() -> None:
         "miho_governance_promotion_judge",
         "miho_self_harness_weakness_miner",
         "miho_self_harness_proposer",
+        "miho_governance_final_delivery",
+        "miho_governance_blocked_delivery_recovery",
         "miho_governance_final_qa",
         "miho_governance_final_qa_repair",
     }.issubset(keys)
@@ -58,6 +60,8 @@ def test_governance_auxiliary_tasks_include_operational_instructions() -> None:
     promotion = tasks["miho_governance_promotion_judge"]["defaults"]["instructions"]
     weakness_miner = tasks["miho_self_harness_weakness_miner"]["defaults"]["instructions"]
     self_harness_proposer = tasks["miho_self_harness_proposer"]["defaults"]["instructions"]
+    final_delivery = tasks["miho_governance_final_delivery"]["defaults"]["instructions"]
+    blocked_recovery = tasks["miho_governance_blocked_delivery_recovery"]["defaults"]["instructions"]
     final_qa = tasks["miho_governance_final_qa"]["defaults"]["instructions"]
     final_qa_repair = tasks["miho_governance_final_qa_repair"]["defaults"]["instructions"]
 
@@ -76,6 +80,10 @@ def test_governance_auxiliary_tasks_include_operational_instructions() -> None:
     assert "기존 미호 동작" in self_harness_proposer
     assert "activation" in self_harness_proposer
     assert "regression" in self_harness_proposer
+    assert "Final Delivery Agent" in final_delivery
+    assert "Python guard" in final_delivery
+    assert "Blocked Delivery Recovery Agent" in blocked_recovery
+    assert "Python fallback" in blocked_recovery
     assert "사용자 질문" in final_qa
     assert "최종 답변 후보" in final_qa
     assert "새 최종 답변" in final_qa_repair
@@ -113,6 +121,8 @@ def test_governance_plugin_loads_as_bundled_backend(tmp_path, monkeypatch) -> No
         "miho_self_harness_proposer",
         "miho_governance_final_qa",
         "miho_governance_final_qa_repair",
+        "miho_governance_final_delivery",
+        "miho_governance_blocked_delivery_recovery",
     }.issubset(declared_tasks)
     assert "miho_governance_dispatcher" in keys
     assert "miho_governance_reviewer" in keys
@@ -120,5 +130,7 @@ def test_governance_plugin_loads_as_bundled_backend(tmp_path, monkeypatch) -> No
     assert "miho_governance_reviewer_delivery" in keys
     assert "miho_self_harness_weakness_miner" in keys
     assert "miho_self_harness_proposer" in keys
+    assert "miho_governance_final_delivery" in keys
+    assert "miho_governance_blocked_delivery_recovery" in keys
     assert "miho_governance_final_qa" in keys
     assert "miho_governance_final_qa_repair" in keys

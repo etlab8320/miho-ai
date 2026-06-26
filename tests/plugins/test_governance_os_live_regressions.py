@@ -9,6 +9,8 @@ from plugins.governance_os.delivery_gate import governance_transform_llm_output
 
 
 _SELF_BLOCKING_SNIPPETS = (
+    "확정 검수 전",
+    "같은 요청을 다시",
     "그대로 전달하지 않겠습니다",
     "필요한 확인을 다시 거쳐 이어서",
     "최종 전달할 수 없습니다",

@@ -73,9 +73,55 @@ def test_meta_review_false_positive_is_resolved_by_final_delivery_agent() -> Non
     assert calls
 
 
-def test_blocked_answer_fail_closes_when_all_delivery_agents_fail() -> None:
-    def broken_call_llm(*_args: object, **_kwargs: object) -> object:
-        raise RuntimeError("provider down")
+def test_blocked_answer_uses_recovery_agent_after_final_delivery_invalid() -> None:
+    calls: list[str] = []
+    original = "서연이 수시 환산점수는 947.3점입니다."
+
+    def fake_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        task = str(kwargs.get("task") or "")
+        calls.append(task)
+        if task == "miho_governance_final_delivery":
+            return {"content": "not-json"}
+        if task == "miho_governance_final_qa_repair":
+            return {"content": original}
+        if task == "miho_governance_final_qa":
+            return {"content": "pass"}
+        if task == "miho_governance_blocked_delivery_recovery":
+            return {"content": "검증 도구 결과를 확인한 뒤 계산 결과를 전달하겠습니다."}
+        raise AssertionError(f"unexpected task: {task}")
+
+    transformed = governance_transform_llm_output(
+        response_text=original,
+        user_message="서연이 수시 환산점수 계산해줘",
+        platform="discord",
+        governance_outcomes=[],
+        final_delivery_call_llm=fake_call_llm,
+        final_delivery_extract_content=_extract,
+    )
+
+    assert transformed == "검증 도구 결과를 확인한 뒤 계산 결과를 전달하겠습니다."
+    assert "947.3" not in transformed
+    assert "후검증" not in transformed
+    assert "전용 도구" not in transformed
+    assert "retry_tools" not in transformed
+    assert calls[-1] == "miho_governance_blocked_delivery_recovery"
+
+
+def test_blocked_answer_uses_default_recovery_when_injected_agent_fails(monkeypatch) -> None:
+    default_calls: list[str] = []
+
+    def broken_injected_llm(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("injected transport down")
+
+    def default_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        task = str(kwargs.get("task") or "")
+        default_calls.append(task)
+        if task == "miho_governance_blocked_delivery_recovery":
+            return {"content": "검증 가능한 계산 자료를 확인한 뒤 결과를 전달하겠습니다."}
+        raise AssertionError(f"unexpected default task: {task}")
+
+    monkeypatch.setattr("agent.auxiliary_client.call_llm", default_call_llm)
+    monkeypatch.setattr("agent.auxiliary_client.extract_content_or_reasoning", _extract)
 
     original = "서연이 수시 환산점수는 947.3점입니다."
     transformed = governance_transform_llm_output(
@@ -83,13 +129,10 @@ def test_blocked_answer_fail_closes_when_all_delivery_agents_fail() -> None:
         user_message="서연이 수시 환산점수 계산해줘",
         platform="discord",
         governance_outcomes=[],
-        final_delivery_call_llm=broken_call_llm,
+        final_delivery_call_llm=broken_injected_llm,
         final_delivery_extract_content=_extract,
     )
 
-    assert transformed is not None
-    assert transformed != original
+    assert transformed == "검증 가능한 계산 자료를 확인한 뒤 결과를 전달하겠습니다."
     assert "947.3" not in transformed
-    assert "후검증" not in transformed
-    assert "전용 도구" not in transformed
-    assert "retry_tools" not in transformed
+    assert default_calls == ["miho_governance_blocked_delivery_recovery"]

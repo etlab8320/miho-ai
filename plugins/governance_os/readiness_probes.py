@@ -351,8 +351,17 @@ def _final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
             return str(typed.get("content") or "")
         return str(response or "")
 
-    def broken_call_llm(*_args: object, **_kwargs: object) -> object:
-        raise RuntimeError("down")
+    def recovery_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        task = str(kwargs.get("task") or "")
+        if task == "miho_governance_final_delivery":
+            return {"content": "not-json"}
+        if task == "miho_governance_final_qa_repair":
+            return {"content": "서연이 수시 환산점수는 947.3점입니다."}
+        if task == "miho_governance_final_qa":
+            return {"content": "pass"}
+        if task == "miho_governance_blocked_delivery_recovery":
+            return {"content": "검증된 계산 결과를 확인한 뒤 전달합니다."}
+        return {"content": ""}
 
     blocked = evaluate_final_delivery(
         registry,
@@ -380,11 +389,11 @@ def _final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
         final_delivery_call_llm=fake_call_llm,
         final_delivery_extract_content=extract,
     )
-    fail_closed = governance_transform_llm_output(
+    recovered = governance_transform_llm_output(
         response_text="서연이 수시 환산점수는 947.3점입니다.",
         user_message="서연이 수시 환산점수 계산해줘",
         governance_outcomes=[],
-        final_delivery_call_llm=broken_call_llm,
+        final_delivery_call_llm=recovery_call_llm,
         final_delivery_extract_content=extract,
     )
     return (
@@ -393,8 +402,9 @@ def _final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
         and passed.action == "allow"
         and transformed is not None
         and "검증된 계산 결과" in transformed
-        and fail_closed is not None
-        and "947.3" not in fail_closed
+        and recovered is not None
+        and "947.3" not in recovered
+        and "검증된 계산 결과" in recovered
         and "후검증" not in transformed
         and "전용 도구" not in transformed
     )

@@ -7,6 +7,7 @@ from typing import Any
 from .dispatcher import governance_pre_gateway_dispatch
 from .delivery_gate import governance_transform_llm_output
 from .final_delivery_agent import FINAL_DELIVERY_TASK
+from .final_delivery_recovery import BLOCKED_DELIVERY_RECOVERY_TASK
 from .final_qa import FINAL_QA_REPAIR_TASK, FINAL_QA_TASK
 from .guard import governance_pre_tool_call
 from .result_transform import governance_transform_tool_result
@@ -79,6 +80,12 @@ FINAL_DELIVERY_INSTRUCTIONS = (
     "Python guard가 사용자 문구를 생성하지 않도록 deliver/revise/block JSON을 반환한다. "
     "거버넌스/셀프하네스 적대적 리뷰 요청은 도메인 단어가 있어도 리뷰 결과로 취급하고, "
     "내부 guard/retry/fallback 문구는 노출하지 않는다."
+)
+BLOCKED_DELIVERY_RECOVERY_INSTRUCTIONS = (
+    "Blocked Delivery Recovery Agent로서 Final Delivery JSON 판정이나 Final QA repair가 "
+    "사용 가능한 답변을 만들지 못했을 때 마지막으로 사용자에게 보낼 본문을 직접 작성한다. "
+    "Python fallback 문구를 대신 출력하지 말고, 질문 의도에 맞는 한국어 평문 답변만 작성한다. "
+    "도구 evidence가 부족한 완료/첨부/점수 claim은 확정하지 않는다."
 )
 
 
@@ -197,6 +204,17 @@ def register(ctx: Any) -> None:
             "timeout": 30,
             "extra_body": {"reasoning": {"effort": "medium"}},
             "instructions": FINAL_DELIVERY_INSTRUCTIONS,
+        },
+    )
+    ctx.register_auxiliary_task(
+        key=BLOCKED_DELIVERY_RECOVERY_TASK,
+        display_name="Miho governance blocked delivery recovery agent",
+        description="Produces the final answer when earlier delivery agents return no usable replacement",
+        defaults={
+            "provider": "auto",
+            "timeout": 20,
+            "extra_body": {"reasoning": {"effort": "medium"}},
+            "instructions": BLOCKED_DELIVERY_RECOVERY_INSTRUCTIONS,
         },
     )
     _ensure_self_harness_autopilot_cron()
