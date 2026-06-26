@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from typing import cast
 
 from .registry import GovernanceRegistry
 from .readiness_autonomy_probes import (
@@ -336,6 +337,20 @@ def _transform_ledger_probe_passed() -> bool:
 def _final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
     from .delivery_gate import evaluate_final_delivery, governance_transform_llm_output
 
+    def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "content": (
+                '{"action":"revise","answer":"서연이 수시 환산점수는 검증된 계산 결과가 '
+                '확인된 뒤 전달합니다."}'
+            )
+        }
+
+    def extract(response: object) -> str:
+        if isinstance(response, dict):
+            typed = cast("dict[str, object]", response)
+            return str(typed.get("content") or "")
+        return str(response or "")
+
     blocked = evaluate_final_delivery(
         registry,
         response_text="서연이 수시 환산점수는 947.3점입니다.",
@@ -359,13 +374,15 @@ def _final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
         response_text="서연이 수시 환산점수는 947.3점입니다.",
         user_message="서연이 수시 환산점수 계산해줘",
         governance_outcomes=[],
+        final_delivery_call_llm=fake_call_llm,
+        final_delivery_extract_content=extract,
     )
     return (
         blocked.action == "block"
         and blocked.reason == "review_evidence_missing"
         and passed.action == "allow"
         and transformed is not None
-        and "확인 근거" in transformed
+        and "검증된 계산 결과" in transformed
         and "후검증" not in transformed
         and "전용 도구" not in transformed
     )

@@ -13,10 +13,7 @@ from .delivery_gate_constants import (
     DOMAIN_DELIVERY_TERMS as _DOMAIN_DELIVERY_TERMS,
     DOMAIN_VERDICT_MARKERS as _DOMAIN_VERDICT_MARKERS,
     FINAL_CLAIM_MARKERS as _FINAL_CLAIM_MARKERS,
-    GOVERNANCE_JSON_LEAK_KEYS as _GOVERNANCE_JSON_LEAK_KEYS,
-    GOVERNANCE_JSON_LEAK_PAIRS as _GOVERNANCE_JSON_LEAK_PAIRS,
     GOVERNANCE_REVIEW_MARKERS as _GOVERNANCE_REVIEW_MARKERS,
-    INTERNAL_GUARD_LEAK_MARKERS as _INTERNAL_GUARD_LEAK_MARKERS,
     META_EXPLANATION_TERMS as _META_EXPLANATION_TERMS,
     PERSONALIZED_DELIVERY_TERMS as _PERSONALIZED_DELIVERY_TERMS,
     PLAYBOOK_BY_TOOL as _PLAYBOOK_BY_TOOL,
@@ -30,10 +27,9 @@ from .delivery_safety import (
     normalized_blob as _shared_normalized_blob,
 )
 from .dispatcher import dispatch_request
-from .final_qa_runtime import repair_blocked_answer
+from .final_delivery_agent import review_final_delivery
 from .registry import GovernanceRegistry
 from .review import auxiliary_review_policy_for_playbook, evaluate_review_gate
-from .user_messages import SAFE_EVIDENCE_FALLBACK, SAFE_INTERNAL_REPAIR_FALLBACK
 from .versioning import load_runtime_registry
 
 
@@ -109,15 +105,14 @@ def governance_transform_llm_output(
     )
     if decision.action != "block":
         return media_prepared
-    repaired = repair_blocked_answer(
-        user_text=user_text,
-        response_text=effective_text,
-        decision=decision,
-        context=context,
+    delivered = review_final_delivery(
+        question=user_text,
+        answer=effective_text,
+        evidence=_delivery_evidence(decision, context=context, outcomes=outcomes),
+        call_llm=context.get("final_delivery_call_llm"),
+        extract_content=context.get("final_delivery_extract_content"),
     )
-    if repaired:
-        return repaired
-    return decision.message_ko
+    return delivered
 
 
 def evaluate_final_delivery(
@@ -132,14 +127,18 @@ def evaluate_final_delivery(
         user_text=user_text,
         response_text=response_text,
     )
-    if _contains_hard_internal_leak(response_text) or (
+    if _contains_hard_internal_leak(response_text) and not review_context:
+        return FinalDeliveryDecision(
+            action="block",
+            reason="internal_guard_leak",
+        )
+    if (
         _contains_internal_guard_leak(response_text)
         and not _is_review_quote_context(review_context, response_text)
     ):
         return FinalDeliveryDecision(
             action="block",
             reason="internal_guard_leak",
-            message_ko=SAFE_INTERNAL_REPAIR_FALLBACK,
         )
     if review_context:
         return FinalDeliveryDecision(action="allow", reason="governance_review_context")
@@ -174,9 +173,27 @@ def evaluate_final_delivery(
         action="block",
         reason="review_evidence_missing",
         playbook_key=playbook_key,
-        message_ko=SAFE_EVIDENCE_FALLBACK,
         retry_tools=playbook.required_tools,
     )
+
+
+def _delivery_evidence(
+    decision: FinalDeliveryDecision,
+    *,
+    context: dict[str, Any],
+    outcomes: Any,
+) -> dict[str, Any]:
+    return {
+        "decision": {
+            "action": decision.action,
+            "reason": decision.reason,
+            "playbook_key": decision.playbook_key,
+            "retry_tools": list(decision.retry_tools),
+        },
+        "governance_outcomes": outcomes if isinstance(outcomes, list | tuple) else [],
+        "platform": str(context.get("platform") or ""),
+        "session_id": str(context.get("session_id") or ""),
+    }
 
 
 def _playbook_key(
@@ -207,31 +224,28 @@ def _is_governance_review_context(
     user_decision = dispatch_request(registry, user_text)
     if user_decision.playbook_key and user_decision.domain not in {"dev", "research"}:
         return False
-    if _contains_concrete_governed_delivery_claim(registry, response_text):
+    user_blob = _normalized_blob(user_text)
+    response_blob = _normalized_blob(response_text)
+    if not user_blob and not response_blob:
         return False
-    blob = " ".join(f"{user_text}\n{response_text}".casefold().split())
-    if not blob:
-        return False
-    return any(marker in blob for marker in _GOVERNANCE_REVIEW_MARKERS)
-
-
-def _contains_concrete_governed_delivery_claim(
-    registry: GovernanceRegistry,
-    response_text: str,
-) -> bool:
-    blob = " ".join(str(response_text or "").casefold().split())
-    if not blob:
-        return False
-    if _contains_score_delivery_claim(blob):
-        return True
-    decision = dispatch_request(registry, response_text)
-    if not decision.playbook_key or decision.domain in {"dev", "research"}:
-        return False
-    return _is_final_delivery_claim(
-        registry,
-        response_text=response_text,
-        playbook_key=decision.playbook_key,
+    has_review_marker = any(
+        marker in user_blob or marker in response_blob for marker in _GOVERNANCE_REVIEW_MARKERS
     )
+    if not has_review_marker:
+        return False
+    return not _contains_personalized_delivery_claim(response_text)
+
+
+def _contains_personalized_delivery_claim(response_text: str) -> bool:
+    if _STUDENT_SCORE_CLAIM_RE.search(_normalized_blob(response_text)):
+        return True
+    blob = _normalized_blob(response_text)
+    has_person = any(term in blob for term in _PERSONALIZED_DELIVERY_TERMS)
+    if not has_person:
+        return False
+    if any(marker in blob for marker in _COMPLETION_CLAIM_MARKERS):
+        return True
+    return any(marker in blob for marker in _DOMAIN_VERDICT_MARKERS)
 
 
 def _is_final_delivery_claim(

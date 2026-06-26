@@ -9,7 +9,6 @@ from collections.abc import Callable
 from typing import Any
 
 from .delivery_safety import contains_internal_guard_leak
-from .user_messages import SAFE_EVIDENCE_FALLBACK
 
 
 logger = logging.getLogger(__name__)
@@ -20,7 +19,6 @@ FINAL_QA_REPAIR_TIMEOUT_SECONDS = 20
 FINAL_QA_REPAIR_ATTEMPTS = 2
 PASS_VERDICT = "pass"
 REVISE_VERDICT = "revise"
-SAFE_REPAIR_FALLBACK = SAFE_EVIDENCE_FALLBACK
 
 
 async def verdict_or_pass(
@@ -179,7 +177,7 @@ def repair_answer_until_pass(
             "previous_final_qa_verdict": verdict,
             "repair_attempt": attempt,
         }
-    return SAFE_REPAIR_FALLBACK
+    return str(answer or "")
 
 
 def _request_repair(

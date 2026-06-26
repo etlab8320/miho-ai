@@ -13,6 +13,8 @@ from .delivery_gate_constants import (
 
 HARD_INTERNAL_LEAK_MARKERS = (
     "확인 근거가 충분하지 않아",
+    "확인 근거를 다시 모아",
+    "확정 점수나 첨부 완료처럼 검증이 필요한 결과",
     "그대로 전달하지 않겠습니다",
     "필요한 확인을 다시 거쳐 이어서",
     "최종 전달할 수 없습니다",

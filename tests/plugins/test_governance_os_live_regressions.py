@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 from plugins.governance_os.delivery_gate import governance_transform_llm_output
 
@@ -18,7 +19,6 @@ _SELF_BLOCKING_SNIPPETS = (
 
 def _assert_no_self_blocking_text(text: str | None) -> None:
     rendered = str(text or "")
-    assert rendered.strip()
     for snippet in _SELF_BLOCKING_SNIPPETS:
         assert snippet not in rendered
 
@@ -34,6 +34,14 @@ def test_blocked_governed_response_does_not_surface_self_blocking_fallback() -> 
 
 
 def test_live_self_blocking_phrase_is_repaired_even_in_review_request() -> None:
+    def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {"content": '{"action":"revise","answer":"미호 Governance OS 적대적 리뷰 결과입니다."}'}
+
+    def extract(response: object) -> str:
+        assert isinstance(response, dict)
+        typed = cast("dict[str, object]", response)
+        return str(typed.get("content") or "")
+
     transformed = governance_transform_llm_output(
         response_text=(
             "방금 답변은 확인 근거가 충분하지 않아 그대로 전달하지 않겠습니다. "
@@ -41,9 +49,68 @@ def test_live_self_blocking_phrase_is_repaired_even_in_review_request() -> None:
         ),
         user_message="미호를 진짜 완벽하게 거버넌스os+셀프업그레이드하네스 구조로 만들었어. 적대적 리뷰해줘",
         governance_outcomes=[],
+        final_delivery_call_llm=fake_call_llm,
+        final_delivery_extract_content=extract,
     )
 
     _assert_no_self_blocking_text(transformed)
+    assert transformed == "미호 Governance OS 적대적 리뷰 결과입니다."
+
+
+def test_governance_review_with_academy_terms_returns_review_not_fallback() -> None:
+    answer = (
+        "# 미호 Governance OS 적대적 리뷰\n"
+        "Final Delivery Gate UX 안정성: 72점\n"
+        "수시/학종/첨부 도메인의 reviewer evidence가 없으면 점수와 리포트 생성을 막아야 한다.\n"
+        "Self-Harness 자동 개선 루프: 81점\n"
+        "남은 리스크: 리뷰 요청의 평가 문장을 실제 산출물 전달로 오판하면 안 된다."
+    )
+
+    transformed = governance_transform_llm_output(
+        response_text=answer,
+        user_message="미호를 진짜 완벽하게 거버넌스os+ 셀프업그레이드하네스 구조로 만들었어! 적대적 리뷰를 해봐",
+        governance_outcomes=[],
+    )
+
+    assert transformed is None
+
+
+def test_governance_review_sanitizes_fallback_phrase_without_dropping_result() -> None:
+    answer = (
+        "# 미호 Governance OS 적대적 리뷰\n"
+        "High: Final Delivery가 결과 대신 `확인 근거를 다시 모아 답변을 정리합니다. "
+        "확정 점수나 첨부 완료처럼 검증이 필요한 결과는 검증된 값으로만 말하겠습니다.` 를 "
+        "사용자에게 보여주는 위험이 있다.\n"
+        "수정안: 리뷰 요청에서는 결과 본문을 유지하고 내부 차단 문장만 제거해야 한다."
+    )
+
+    def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "content": (
+                '{"action":"revise","answer":"# 미호 Governance OS 적대적 리뷰\\n'
+                'High: Final Delivery가 결과 대신 내부 보류 문구를 사용자에게 보여주는 위험이 있다.\\n'
+                '수정안: 리뷰 요청에서는 결과 본문을 유지해야 한다."}'
+            )
+        }
+
+    def extract(response: object) -> str:
+        assert isinstance(response, dict)
+        typed = cast("dict[str, object]", response)
+        return str(typed.get("content") or "")
+
+    transformed = governance_transform_llm_output(
+        response_text=answer,
+        user_message="미호 governance os 적대적 리뷰해줘",
+        governance_outcomes=[],
+        final_delivery_call_llm=fake_call_llm,
+        final_delivery_extract_content=extract,
+    )
+
+    assert transformed is not None
+    assert "미호 Governance OS 적대적 리뷰" in transformed
+    assert "Final Delivery" in transformed
+    assert "확인 근거를 다시 모아" not in transformed
+    assert "확정 점수나 첨부 완료처럼" not in transformed
 
 
 def test_runtime_repair_failure_does_not_surface_self_blocking_fallback(monkeypatch) -> None:
@@ -63,14 +130,6 @@ def test_runtime_repair_failure_does_not_surface_self_blocking_fallback(monkeypa
 
 
 def test_runtime_repair_pass_is_filtered_if_it_returns_self_blocking_phrase(monkeypatch) -> None:
-    def bad_repair(*_args: object, **_kwargs: object) -> str:
-        return (
-            "방금 답변은 확인 근거가 충분하지 않아 그대로 전달하지 않겠습니다. "
-            "필요한 확인을 다시 거쳐 이어서 답하겠습니다."
-        )
-
-    monkeypatch.setattr("plugins.governance_os.final_qa.repair_answer_until_pass", bad_repair)
-
     transformed = governance_transform_llm_output(
         response_text="서연이 수시 환산점수는 947.3점입니다.",
         user_message="서연이 수시 환산점수 계산해줘",

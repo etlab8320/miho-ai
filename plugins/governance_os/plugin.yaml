@@ -14,5 +14,6 @@ provides_auxiliary_tasks:
   - miho_governance_promotion_judge
   - miho_self_harness_weakness_miner
   - miho_self_harness_proposer
+  - miho_governance_final_delivery
   - miho_governance_final_qa
   - miho_governance_final_qa_repair

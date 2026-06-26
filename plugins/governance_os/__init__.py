@@ -6,6 +6,7 @@ from typing import Any
 
 from .dispatcher import governance_pre_gateway_dispatch
 from .delivery_gate import governance_transform_llm_output
+from .final_delivery_agent import FINAL_DELIVERY_TASK
 from .final_qa import FINAL_QA_REPAIR_TASK, FINAL_QA_TASK
 from .guard import governance_pre_tool_call
 from .result_transform import governance_transform_tool_result
@@ -53,6 +54,13 @@ FINAL_QA_REPAIR_INSTRUCTIONS = (
     "사용자에게 보낼 새 최종 답변만 작성하는 LLM repair agent다. "
     "repair 뒤에는 Final QA agent가 다시 pass/revise를 판정하는 루프로 검수한다. "
     "내부 guard, retry_tools, stack trace, provider 오류를 숨기고 한국어 평문으로 질문에 직접 답한다."
+)
+FINAL_DELIVERY_INSTRUCTIONS = (
+    "Final Delivery Agent로서 사용자 질문과 최종 답변 후보, 도구/reviewer evidence를 보고 "
+    "실제 사용자에게 보낼 최종 본문을 결정한다. "
+    "Python guard가 사용자 문구를 생성하지 않도록 deliver/revise/block JSON을 반환한다. "
+    "거버넌스/셀프하네스 적대적 리뷰 요청은 도메인 단어가 있어도 리뷰 결과로 취급하고, "
+    "내부 guard/retry/fallback 문구는 노출하지 않는다."
 )
 
 
@@ -138,6 +146,17 @@ def register(ctx: Any) -> None:
             "instructions": FINAL_QA_REPAIR_INSTRUCTIONS,
         },
     )
+    ctx.register_auxiliary_task(
+        key=FINAL_DELIVERY_TASK,
+        display_name="Miho governance final delivery agent",
+        description="Decides and rewrites the final user-facing answer before delivery",
+        defaults={
+            "provider": "auto",
+            "timeout": 30,
+            "extra_body": {"reasoning": {"effort": "medium"}},
+            "instructions": FINAL_DELIVERY_INSTRUCTIONS,
+        },
+    )
     _ensure_self_harness_autopilot_cron()
 
 
@@ -171,6 +190,7 @@ def _ensure_self_harness_autopilot_cron() -> None:
 
 __all__ = [
     "DISPATCHER_TASK",
+    "FINAL_DELIVERY_TASK",
     "FINAL_QA_REPAIR_TASK",
     "FINAL_QA_TASK",
     "PROMOTION_JUDGE_TASK",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from typing import cast
 
 from plugins.governance_os.delivery_gate import (
     evaluate_final_delivery,
@@ -81,12 +82,19 @@ def test_final_delivery_gate_blocks_live_self_blocking_phrase_even_when_quoted()
         outcomes=[],
     )
 
-    assert decision.action == "block"
-    assert decision.reason == "internal_guard_leak"
-    assert "그대로 전달하지 않겠습니다" not in decision.message_ko
+    assert decision.action == "allow"
+    assert decision.reason == "governance_review_context"
 
 
 def test_transform_llm_output_repairs_internal_guard_leak() -> None:
+    def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {"content": '{"action":"revise","answer":"검증 문구를 제거한 사용자 답변입니다."}'}
+
+    def extract(response: object) -> str:
+        assert isinstance(response, dict)
+        typed = cast("dict[str, object]", response)
+        return str(typed.get("content") or "")
+
     transformed = governance_transform_llm_output(
         response_text=(
             "후검증을 통과하지 못했습니다. 결과를 전달하지 말고 "
@@ -94,6 +102,8 @@ def test_transform_llm_output_repairs_internal_guard_leak() -> None:
         ),
         user_message="안시현 학종 리포트 만들어줘",
         governance_outcomes=[],
+        final_delivery_call_llm=fake_call_llm,
+        final_delivery_extract_content=extract,
     )
 
     assert transformed is not None

@@ -64,10 +64,7 @@ def test_final_delivery_gate_blocks_score_claim_without_review_evidence() -> Non
     assert decision.playbook_key == "susi_score_calculation"
     assert decision.reason == "review_evidence_missing"
     assert decision.retry_tools == ("susi27_score_calculate",)
-    assert "확인 근거" in decision.message_ko
-    assert "후검증" not in decision.message_ko
-    assert "전용 도구" not in decision.message_ko
-    assert "Traceback" not in decision.message_ko
+    assert decision.message_ko == ""
 
 
 def test_final_delivery_gate_blocks_governed_answer_without_completion_keywords() -> None:
@@ -273,14 +270,24 @@ def test_final_delivery_gate_blocks_score_claim_even_with_progress_status() -> N
 
 
 def test_transform_llm_output_rewrites_blocked_governed_response() -> None:
+    def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {"content": '{"action":"revise","answer":"검증된 계산 결과가 확인된 뒤 전달합니다."}'}
+
+    def extract(response: object) -> str:
+        assert isinstance(response, dict)
+        typed = cast("dict[str, object]", response)
+        return str(typed.get("content") or "")
+
     transformed = governance_transform_llm_output(
         response_text="서연이 수시 환산점수는 947.3점입니다.",
         user_message="서연이 수시 환산점수 계산해줘",
         governance_outcomes=[],
+        final_delivery_call_llm=fake_call_llm,
+        final_delivery_extract_content=extract,
     )
 
     assert transformed is not None
-    assert "확인 근거" in transformed
+    assert "검증된 계산 결과" in transformed
     assert "후검증" not in transformed
     assert "전용 도구" not in transformed
     assert "susi27_score_calculate" not in transformed
@@ -288,30 +295,29 @@ def test_transform_llm_output_rewrites_blocked_governed_response() -> None:
 
 
 def test_transform_llm_output_uses_llm_repair_on_gateway_runtime(monkeypatch) -> None:
-    import plugins.governance_os.final_qa as final_qa
-
     calls: list[dict[str, object]] = []
 
-    def fake_repair(question: str, answer: str, *, evidence=None):
-        calls.append({"question": question, "answer": answer, "evidence": evidence})
-        return "서연이 수시 환산점수 답변은 확인을 다시 거쳐 이어서 전달하겠습니다."
+    def fake_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {"content": '{"action":"revise","answer":"서연이 수시 환산점수는 검증 뒤 전달합니다."}'}
 
-    monkeypatch.setattr(final_qa, "repair_answer_until_pass", fake_repair)
+    def extract(response: object) -> str:
+        assert isinstance(response, dict)
+        typed = cast("dict[str, object]", response)
+        return str(typed.get("content") or "")
 
     transformed = governance_transform_llm_output(
         response_text="서연이 수시 환산점수는 947.3점입니다.",
         user_message="서연이 수시 환산점수 계산해줘",
         governance_outcomes=[],
         platform="discord",
+        final_delivery_call_llm=fake_call_llm,
+        final_delivery_extract_content=extract,
     )
 
-    assert transformed == "서연이 수시 환산점수 답변은 확인을 다시 거쳐 이어서 전달하겠습니다."
+    assert transformed == "서연이 수시 환산점수는 검증 뒤 전달합니다."
     assert calls
-    assert calls[0]["question"] == "서연이 수시 환산점수 계산해줘"
-    evidence = calls[0]["evidence"]
-    assert isinstance(evidence, dict)
-    typed_evidence = cast("dict[str, object]", evidence)
-    assert typed_evidence["reason"] == "review_evidence_missing"
+    assert calls[0]["task"] == "miho_governance_final_delivery"
 
 
 def test_transform_llm_output_leaves_reviewed_response_unchanged() -> None:
@@ -394,6 +400,14 @@ def test_transform_llm_output_repairs_low_risk_attachment_pass_without_auxiliary
 
 
 def test_transform_llm_output_ignores_previous_turn_tool_result() -> None:
+    def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {"content": '{"action":"revise","answer":"서연이 계산 결과는 현재 턴 검증 뒤 전달합니다."}'}
+
+    def extract(response: object) -> str:
+        assert isinstance(response, dict)
+        typed = cast("dict[str, object]", response)
+        return str(typed.get("content") or "")
+
     transformed = governance_transform_llm_output(
         response_text="서연이 수시 환산점수는 947.3점입니다.",
         user_message="서연이 수시 환산점수 계산해줘",
@@ -417,9 +431,11 @@ def test_transform_llm_output_ignores_previous_turn_tool_result() -> None:
             },
             {"role": "user", "content": "서연이 수시 환산점수 계산해줘"},
         ],
+        final_delivery_call_llm=fake_call_llm,
+        final_delivery_extract_content=extract,
     )
 
     assert transformed is not None
-    assert "확인 근거" in transformed
+    assert "현재 턴 검증" in transformed
     assert "후검증" not in transformed
     assert "전용 도구" not in transformed

@@ -25,6 +25,7 @@ REQUIRED_AUXILIARY_TASKS = frozenset(
         "miho_governance_promotion_judge",
         "miho_self_harness_weakness_miner",
         "miho_self_harness_proposer",
+        "miho_governance_final_delivery",
         "miho_governance_final_qa",
         "miho_governance_final_qa_repair",
     }
@@ -116,6 +117,11 @@ def auxiliary_instruction_probe_passed() -> bool:
             tasks,
             governance_os.SELF_HARNESS_PROPOSER_TASK,
             ("shadow_candidate", "held-out", "기존 미호 동작", "activation", "regression"),
+        )
+        and _instruction_has(
+            tasks,
+            governance_os.FINAL_DELIVERY_TASK,
+            ("Final Delivery Agent", "deliver/revise/block", "Python guard", "적대적 리뷰"),
         )
         and _instruction_has(
             tasks,

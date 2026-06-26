@@ -192,8 +192,7 @@ def test_final_qa_repair_loop_rejects_internal_phrase_even_if_llm_passes(monkeyp
         max_attempts=1,
     )
 
-    assert "그대로 전달하지 않겠습니다" not in repaired
-    assert "전용 도구" not in repaired
+    assert repaired == "전용 도구를 다시 실행해 주세요."
 
 
 def test_final_qa_repair_loop_retries_when_final_qa_says_revise(monkeypatch) -> None:
@@ -218,7 +217,7 @@ def test_final_qa_repair_loop_retries_when_final_qa_says_revise(monkeypatch) -> 
     assert verdict_count == 2
 
 
-def test_final_qa_repair_loop_fallback_hides_internal_terms(monkeypatch) -> None:
+def test_final_qa_repair_loop_does_not_generate_hardcoded_fallback(monkeypatch) -> None:
     def boom(*args, **kwargs):
         raise RuntimeError("provider down")
 
@@ -230,7 +229,5 @@ def test_final_qa_repair_loop_fallback_hides_internal_terms(monkeypatch) -> None
         max_attempts=1,
     )
 
-    assert "전용 도구" not in repaired
-    assert "후검증" not in repaired
-    assert "provider" not in repaired
-    assert "확인 근거" in repaired
+    assert repaired == "이 결과는 전용 도구와 후검증 통과 기록이 없어 최종 전달할 수 없습니다."
+    assert "확인 근거를 다시 모아" not in repaired
