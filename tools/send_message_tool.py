@@ -13,6 +13,7 @@ import re
 import ssl
 import time
 from email.utils import formatdate
+from pathlib import Path
 from typing import Dict, Optional
 
 from agent.redact import redact_sensitive_text
@@ -502,14 +503,21 @@ async def _send_via_adapter(
         if adapter is not None:
             try:
                 metadata = {"thread_id": thread_id} if thread_id else None
-                result = await adapter.send(chat_id=chat_id, content=chunk, metadata=metadata)
+                result = await _send_live_adapter_payload(
+                    adapter,
+                    chat_id=chat_id,
+                    content=chunk,
+                    metadata=metadata,
+                    media_files=media_files,
+                    force_document=force_document,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 return {"error": f"Plugin platform send failed: {e}"}
-            if result.success:
-                return {"success": True, "message_id": result.message_id}
-            return {"error": f"Adapter send failed: {result.error}"}
+            if result.get("success"):
+                return result
+            return {"error": f"Adapter send failed: {result.get('error')}"}
 
     platform_name = platform.value if hasattr(platform, "value") else str(platform)
     entry = None
@@ -553,6 +561,84 @@ async def _send_via_adapter(
             f"register a standalone_sender_fn on its PlatformEntry."
         )
     }
+
+
+async def _send_live_adapter_payload(
+    adapter,
+    *,
+    chat_id: str,
+    content: str,
+    metadata,
+    media_files=None,
+    force_document: bool = False,
+) -> dict:
+    last_payload: dict | None = None
+    if content.strip():
+        text_result = await adapter.send(chat_id=chat_id, content=content, metadata=metadata)
+        last_payload = _adapter_send_result_payload(text_result)
+        if not last_payload.get("success"):
+            return last_payload
+
+    for media_path, is_voice in media_files or []:
+        media_result = await _send_live_adapter_media(
+            adapter,
+            chat_id=chat_id,
+            media_path=str(media_path),
+            is_voice=bool(is_voice),
+            metadata=metadata,
+            force_document=force_document,
+        )
+        last_payload = _adapter_send_result_payload(media_result)
+        if not last_payload.get("success"):
+            return last_payload
+
+    return last_payload or {"success": True, "message_id": None}
+
+
+async def _send_live_adapter_media(
+    adapter,
+    *,
+    chat_id: str,
+    media_path: str,
+    is_voice: bool,
+    metadata,
+    force_document: bool,
+):
+    from gateway.platforms.base import should_send_media_as_audio
+
+    ext = Path(media_path).suffix.lower()
+    platform = getattr(adapter, "platform", getattr(adapter, "_platform", None))
+    if should_send_media_as_audio(platform, ext, is_voice=is_voice):
+        return await adapter.send_voice(
+            chat_id=chat_id,
+            audio_path=media_path,
+            metadata=metadata,
+        )
+    if ext in _VIDEO_EXTS:
+        return await adapter.send_video(
+            chat_id=chat_id,
+            video_path=media_path,
+            metadata=metadata,
+        )
+    if ext in _IMAGE_EXTS and not force_document:
+        return await adapter.send_image_file(
+            chat_id=chat_id,
+            image_path=media_path,
+            metadata=metadata,
+        )
+    return await adapter.send_document(
+        chat_id=chat_id,
+        file_path=media_path,
+        metadata=metadata,
+    )
+
+
+def _adapter_send_result_payload(result) -> dict:
+    if isinstance(result, dict):
+        return result
+    if bool(getattr(result, "success", False)):
+        return {"success": True, "message_id": getattr(result, "message_id", None)}
+    return {"error": getattr(result, "error", None) or "live adapter send failed"}
 
 
 async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None, force_document=False):
@@ -642,27 +728,20 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     if platform == Platform.WEIXIN:
         return await _send_weixin(pconfig, chat_id, message, media_files=media_files)
 
-    # --- Discord: chunked delivery via the registry's standalone_sender_fn.
-    # The plugin's ``_standalone_send`` (registered in
-    # plugins/platforms/discord/adapter.py) handles forum channels, threads,
-    # and multipart media uploads.  ``_send_via_adapter`` tries the live
-    # in-process adapter first via ``adapter.send()``, but Discord's elif
-    # historically went straight to the HTTP path; we preserve that by
-    # explicitly invoking the registry hook here so behavior is unchanged.
+    # --- Discord: prefer the live gateway adapter, then fall back to the
+    # registry standalone sender for out-of-process CLI/cron calls.
     if platform == Platform.DISCORD:
-        from gateway.platform_registry import platform_registry
-        entry = platform_registry.get("discord")
-        if entry is None or entry.standalone_sender_fn is None:
-            return {"error": "Discord plugin not registered or missing standalone_sender_fn"}
         last_result = None
         for i, chunk in enumerate(chunks):
             is_last = (i == len(chunks) - 1)
-            result = await entry.standalone_sender_fn(
+            result = await _send_via_adapter(
+                platform,
                 pconfig,
                 chat_id,
                 chunk,
                 thread_id=thread_id,
                 media_files=media_files if is_last else [],
+                force_document=force_document,
             )
             if isinstance(result, dict) and result.get("error"):
                 return result

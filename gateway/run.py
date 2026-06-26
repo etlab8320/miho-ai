@@ -17157,21 +17157,9 @@ class GatewayRunner:
 
             if _is_resume_pending:
                 _reason = getattr(_resume_entry, "resume_reason", None) or "restart_timeout"
-                _reason_phrase = (
-                    "a gateway restart"
-                    if _reason == "restart_timeout"
-                    else "a gateway shutdown"
-                    if _reason == "shutdown_timeout"
-                    else "a gateway interruption"
-                )
-                message = (
-                    f"[System note: Your previous turn in this session was interrupted "
-                    f"by {_reason_phrase}. The conversation history below is intact. "
-                    f"If it contains unfinished tool result(s), process them first and "
-                    f"summarize what was accomplished, then address the user's new "
-                    f"message below.]\n\n"
-                    + message
-                )
+                from gateway.resume_prompts import build_resume_pending_message
+
+                message = build_resume_pending_message(message, reason=_reason)
             elif _has_fresh_tool_tail:
                 message = (
                     "[System note: Your previous turn was interrupted before you could "

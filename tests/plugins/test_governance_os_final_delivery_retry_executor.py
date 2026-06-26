@@ -361,3 +361,98 @@ def test_final_delivery_orchestrator_composes_answer_after_verified_retry(
             },
         )
     ]
+
+
+def test_final_delivery_orchestrator_falls_back_to_default_transport(
+    monkeypatch,
+) -> None:
+    _patch_academy_auxiliary_pass(monkeypatch)
+    tool_calls: list[tuple[str, dict[str, Any]]] = []
+    default_modes: list[str] = []
+
+    def fake_dispatch(name: str, args: dict[str, Any], **_kwargs: object) -> str:
+        tool_calls.append((name, args))
+        return json.dumps(
+            {
+                "status": "calculated",
+                "student_record_score": 947.3,
+                "reviewer": {
+                    "name": "academy_result_reviewer",
+                    "status": "pass",
+                    "checked": ["필수 산출 필드", "상태값"],
+                },
+            },
+            ensure_ascii=False,
+        )
+
+    def broken_orchestrator_llm(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("primary orchestrator transport down")
+
+    def default_orchestrator_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        prompt = kwargs["messages"][1]["content"]
+        assert isinstance(prompt, str)
+        mode = str(json.loads(prompt).get("mode") or "")
+        default_modes.append(mode)
+        if mode == "plan_tools":
+            return {
+                "content": json.dumps(
+                    {
+                        "action": "run_tools",
+                        "steps": [
+                            {
+                                "tool_name": "susi27_score_calculate",
+                                "args": {
+                                    "student_name": "김서연",
+                                    "university": "테스트대학교",
+                                    "department": "체육학과",
+                                },
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                )
+            }
+        return {
+            "content": json.dumps(
+                {
+                    "action": "deliver",
+                    "answer": "서연이 수시 환산점수는 947.3점입니다.",
+                },
+                ensure_ascii=False,
+            )
+        }
+
+    def final_delivery_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        prompt = str(kwargs["messages"][-1]["content"])
+        answer = prompt.split("\nEVIDENCE: ", 1)[0].split("\nA: ", 1)[1]
+        return {"content": json.dumps({"action": "deliver", "answer": answer}, ensure_ascii=False)}
+
+    monkeypatch.setattr("tools.registry.registry.dispatch", fake_dispatch)
+    monkeypatch.setattr("agent.auxiliary_client.call_llm", default_orchestrator_llm)
+    monkeypatch.setattr("agent.auxiliary_client.extract_content_or_reasoning", _extract)
+
+    transformed = governance_transform_llm_output(
+        response_text="서연이 수시 환산점수는 980.0점입니다.",
+        user_message="서연이 수시 환산점수 계산해줘",
+        governance_outcomes=[],
+        conversation_history=[
+            {"role": "user", "content": "서연이 수시 환산점수 계산해줘"},
+        ],
+        final_delivery_orchestrator_call_llm=broken_orchestrator_llm,
+        final_delivery_orchestrator_extract_content=_extract,
+        final_delivery_call_llm=final_delivery_llm,
+        final_delivery_extract_content=_extract,
+    )
+
+    assert transformed == "서연이 수시 환산점수는 947.3점입니다."
+    assert default_modes == ["plan_tools", "compose_answer"]
+    assert tool_calls == [
+        (
+            "susi27_score_calculate",
+            {
+                "student_name": "김서연",
+                "university": "테스트대학교",
+                "department": "체육학과",
+            },
+        )
+    ]

@@ -108,31 +108,53 @@ def _request_orchestrator_payload(
     call_llm: Callable[..., Any] | None,
     extract_content: Callable[[Any], str] | None,
 ) -> dict[str, Any] | None:
+    injected_call_llm = call_llm
+    injected_extract = extract_content
     if call_llm is None or extract_content is None:
-        from agent.auxiliary_client import call_llm as default_call_llm
-        from agent.auxiliary_client import extract_content_or_reasoning
-
+        default_call_llm, default_extract = _default_llm_pair()
         call_llm = call_llm or default_call_llm
-        extract_content = extract_content or extract_content_or_reasoning
+        extract_content = extract_content or default_extract
 
-    response = call_llm(
+    messages = final_delivery_orchestrator_messages(
+        mode=mode,
+        question=question,
+        answer=answer,
+        playbook_key=playbook_key,
+        allowed_tools=allowed_tools,
+        conversation_history=conversation_history,
+        evidence=evidence,
+        verified_tool_results=verified_tool_results,
+    )
+    try:
+        response = _call_orchestrator(call_llm, messages)
+    except Exception:
+        if injected_call_llm is None and injected_extract is None:
+            raise
+        default_call_llm, default_extract = _default_llm_pair()
+        response = _call_orchestrator(default_call_llm, messages)
+        extract_content = default_extract
+    parsed = _parse_json_payload(str(extract_content(response) or ""))
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _default_llm_pair() -> tuple[Callable[..., Any], Callable[[Any], str]]:
+    from agent.auxiliary_client import call_llm as default_call_llm
+    from agent.auxiliary_client import extract_content_or_reasoning
+
+    return default_call_llm, extract_content_or_reasoning
+
+
+def _call_orchestrator(
+    call_llm: Callable[..., Any],
+    messages: list[dict[str, str]],
+) -> Any:
+    return call_llm(
         task=FINAL_DELIVERY_ORCHESTRATOR_TASK,
-        messages=final_delivery_orchestrator_messages(
-            mode=mode,
-            question=question,
-            answer=answer,
-            playbook_key=playbook_key,
-            allowed_tools=allowed_tools,
-            conversation_history=conversation_history,
-            evidence=evidence,
-            verified_tool_results=verified_tool_results,
-        ),
+        messages=messages,
         temperature=0,
         max_tokens=1600,
         timeout=FINAL_DELIVERY_ORCHESTRATOR_TIMEOUT_SECONDS,
     )
-    parsed = _parse_json_payload(str(extract_content(response) or ""))
-    return parsed if isinstance(parsed, dict) else None
 
 
 def final_delivery_orchestrator_messages(
