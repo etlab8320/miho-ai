@@ -257,23 +257,8 @@ def _answer_from_payload(*, question: str, payload: dict[str, Any]) -> str:
             return value
     media_tag = str(payload.get("media_tag") or "").strip()
     if media_tag:
-        return f"파일이야.\n{media_tag}"
-    score = _first_number(payload.get("student_record_score"))
-    if score is not None:
-        return f"계산 결과는 {score:g}점입니다."
+        return media_tag
     return ""
-
-
-def _first_number(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        text = str(value).strip()
-        return float(text) if text else None
-    except (TypeError, ValueError):
-        return None
 
 
 def _usable_answer(answer: str) -> bool:

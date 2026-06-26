@@ -224,6 +224,8 @@ def pdf_attachment_quality_loop_probe_passed(registry: GovernanceRegistry) -> bo
     import plugins.governance_os.review as review_module
 
     from .result_transform import governance_transform_tool_result
+    from tools.html_pdf_autocorrect_tool import html_pdf_autocorrect_tool
+    from tools.html_pdf_quality_gate_tool import html_pdf_quality_gate_tool
 
     if "designed_pdf_artifact" not in registry.playbooks:
         return False
@@ -233,49 +235,28 @@ def pdf_attachment_quality_loop_probe_passed(registry: GovernanceRegistry) -> bo
     source = base / "source.html"
     corrected = base / "source.autofixed.html"
     pdf_path = base / "report.pdf"
-    sheet_path = base / "contact_sheet.png"
-    source.write_text("<html><body><footer>맥스체대입시</footer></body></html>", encoding="utf-8")
-    corrected.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-    pdf_path.write_bytes(b"%PDF-1.7 fake")
-    sheet_path.write_bytes(b"png")
+    source.write_text(
+        (
+            "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
+            "<style>@page{size:A4;margin:18mm 16mm 20mm}"
+            "body{font-family:Arial,sans-serif;line-height:1.55;color:#111}"
+            "h1{font-size:24px}p{font-size:13px}footer{margin-top:24px;font-size:10px}"
+            "</style></head><body><h1>4개월 시즌 운동 프로그램</h1>"
+            "<p>고강도 훈련은 목적에 맞춰 배치하고 회복일과 기록 측정일을 분리한다.</p>"
+            "<p>월수목금토 기준으로 오후 훈련과 야간 훈련을 나누어 운영한다.</p>"
+            "<footer>맥스체대입시 상담자료</footer></body></html>"
+        ),
+        encoding="utf-8",
+    )
     calls: list[tuple[str, dict[str, object]]] = []
 
     def fake_dispatch(name: str, args: dict[str, object], **_kwargs: object) -> str:
         calls.append((name, args))
         if name == "html_pdf_autocorrect":
-            return json.dumps(
-                {
-                    "success": True,
-                    "html_path": str(corrected),
-                    "corrected_html_path": str(corrected),
-                    "artifact_path": str(corrected),
-                },
-                ensure_ascii=False,
-            )
+            return html_pdf_autocorrect_tool(args)
         if name == "html_pdf_quality_gate" and not args.get("visual_review"):
-            return json.dumps(
-                {
-                    "success": False,
-                    "artifact_path": str(pdf_path),
-                    "contact_sheet_path": str(sheet_path),
-                    "pdf_quality_gate": {
-                        "ok": True,
-                        "contact_sheet": str(sheet_path),
-                        "review_prompt": "footer와 줄맞춤 검수",
-                    },
-                    "reviewer": {
-                        "name": "html_pdf_quality_review",
-                        "status": "retry_needed",
-                        "checked": [
-                            "html_source",
-                            "pdf_rendered",
-                            "metadata_scrubbed",
-                            "page_previews",
-                            "contact_sheet",
-                        ],
-                    },
-                },
-                ensure_ascii=False,
+            return html_pdf_quality_gate_tool(
+                {**args, "engine": "playwright", "timeout": 60}
             )
         if name == "vision_analyze":
             return json.dumps(
@@ -292,26 +273,8 @@ def pdf_attachment_quality_loop_probe_passed(registry: GovernanceRegistry) -> bo
                 ensure_ascii=False,
             )
         if name == "html_pdf_quality_gate" and args.get("visual_review"):
-            return json.dumps(
-                {
-                    "success": True,
-                    "artifact_path": str(pdf_path),
-                    "pdf_path": str(pdf_path),
-                    "pdf_quality_gate": {"ok": True, "page_count": 1},
-                    "reviewer": {
-                        "name": "html_pdf_quality_review",
-                        "status": "pass",
-                        "checked": [
-                            "html_source",
-                            "pdf_rendered",
-                            "metadata_scrubbed",
-                            "page_previews",
-                            "contact_sheet",
-                            "visual_review",
-                        ],
-                    },
-                },
-                ensure_ascii=False,
+            return html_pdf_quality_gate_tool(
+                {**args, "engine": "playwright", "timeout": 60}
             )
         if name == "media_delivery_contract":
             return json.dumps(
@@ -351,6 +314,7 @@ def pdf_attachment_quality_loop_probe_passed(registry: GovernanceRegistry) -> bo
     original_reviewer = review_module._call_auxiliary_reviewer
     tool_registry.dispatch = fake_dispatch  # type: ignore[method-assign]
     review_module._call_auxiliary_reviewer = fake_auxiliary_reviewer
+    passed = False
     try:
         transformed = governance_transform_tool_result(
             tool_name="html_pdf_quality_gate",
@@ -393,23 +357,25 @@ def pdf_attachment_quality_loop_probe_passed(registry: GovernanceRegistry) -> bo
             ),
             governance_skip_ledger=True,
         )
+        passed = (
+            bool(transformed)
+            and json.loads(str(transformed))["media_tag"] == f"MEDIA:{pdf_path.resolve()}"
+            and [name for name, _args in calls]
+            == [
+                "html_pdf_autocorrect",
+                "html_pdf_quality_gate",
+                "vision_analyze",
+                "html_pdf_quality_gate",
+                "media_delivery_contract",
+            ]
+            and Path(str(calls[1][1].get("html_path") or "")).resolve()
+            == corrected.resolve()
+            and Path(str(calls[2][1].get("image_url") or "")).is_file()
+            and calls[3][1].get("visual_review") is not None
+            and calls[4][1].get("artifact_path") == str(pdf_path.resolve())
+        )
     finally:
         tool_registry.dispatch = original_dispatch  # type: ignore[method-assign]
         review_module._call_auxiliary_reviewer = original_reviewer
         temp_dir.cleanup()
-    return (
-        bool(transformed)
-        and json.loads(str(transformed))["media_tag"] == f"MEDIA:{pdf_path}"
-        and [name for name, _args in calls]
-        == [
-            "html_pdf_autocorrect",
-            "html_pdf_quality_gate",
-            "vision_analyze",
-            "html_pdf_quality_gate",
-            "media_delivery_contract",
-        ]
-        and calls[1][1].get("html_path") == str(corrected)
-        and calls[2][1].get("image_url") == str(sheet_path)
-        and calls[3][1].get("visual_review") is not None
-        and calls[4][1].get("artifact_path") == str(pdf_path)
-    )
+    return passed

@@ -22,6 +22,8 @@ class ValidationLoopReport:
     score: int
     failures: tuple[str, ...] = field(default_factory=tuple)
     passed: tuple[str, ...] = field(default_factory=tuple)
+    smoke_mode: str = ""
+    live_delivery_verified: bool = False
 
 
 def run_adversarial_validator(
@@ -79,6 +81,8 @@ def evaluate_validation_loop(
     failures: list[str] = []
     passed: list[str] = []
     checks: list[bool] = []
+    smoke_mode = _smoke_mode(smoke_receipts)
+    live_delivery_verified = _live_delivery_verified(smoke_receipts)
 
     for kind in _REQUIRED_TESTS:
         ok, failure = _required_passed_receipt(test_receipts, kind, label="test")
@@ -109,7 +113,33 @@ def evaluate_validation_loop(
         score=score,
         failures=tuple(failures),
         passed=tuple(passed),
+        smoke_mode=smoke_mode,
+        live_delivery_verified=live_delivery_verified,
     )
+
+
+def _smoke_mode(receipts: tuple[dict[str, Any], ...]) -> str:
+    modes = {
+        str(receipt.get("mode") or "").strip()
+        for receipt in receipts
+        if str(receipt.get("kind") or "") == "live_gateway_smoke"
+    }
+    if "live" in modes:
+        return "live"
+    if "live_safe" in modes:
+        return "live_safe"
+    return ""
+
+
+def _live_delivery_verified(receipts: tuple[dict[str, Any], ...]) -> bool:
+    for receipt in receipts:
+        if str(receipt.get("kind") or "") != "live_gateway_smoke":
+            continue
+        if str(receipt.get("mode") or "").strip() != "live":
+            continue
+        if receipt.get("send_attempted") is True and receipt.get("sent") is True:
+            return True
+    return False
 
 
 def _required_passed_receipt(

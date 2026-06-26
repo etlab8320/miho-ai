@@ -51,7 +51,15 @@ def review_final_delivery(
     if contains_internal_guard_leak(candidate) or contains_non_result_deferral(candidate):
         return None
     original = str(answer or "").strip()
+    if candidate == original and _requires_agent_verdict(evidence):
+        return candidate
     return candidate if candidate != original else None
+
+
+def _requires_agent_verdict(evidence: dict[str, Any]) -> bool:
+    if not isinstance(evidence, dict):
+        return False
+    return bool(evidence.get("require_agent_verdict"))
 
 
 def _request_final_delivery(

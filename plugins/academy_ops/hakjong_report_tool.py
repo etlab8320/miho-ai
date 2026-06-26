@@ -9,6 +9,7 @@ inputs.
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
 import jinja2
@@ -16,23 +17,128 @@ import jinja2
 from miho_constants import get_miho_home
 
 from . import hakjong_report_contract as _contract
+from . import hakjong_grounding_checks as _grounding_checks
+from . import hakjong_record_context as _record_context
+from . import hakjong_report_rendering as _rendering
+from .brand_assets import academy_brand_logo_src
 from .pdf_autocorrect import autocorrect as _autocorrect
 from .hakjong_live_research import apply_live_research_enrichment as _apply_live_research_enrichment
 from .hakjong_manifest import build_hakjong_manifest, collect_pdf_checks
 from .hakjong_grounding import apply_gap_plan_grounding
-from .hakjong_grounding_checks import grounding_errors as _grounding_errors
-from .hakjong_record_context import STAGE_KO as _STAGE_KO
-from .hakjong_record_context import infer_stage_from_birth as _infer_stage_from_birth
 from .hakjong_report_registration import register_hakjong_report_tool as _register_hakjong_report_tool
-from .hakjong_report_rendering import render_html as _render_html
-from .hakjong_report_rendering import render_pdf_fit as _render_pdf_fit
-from .hakjong_report_rendering import _TEMPLATE_PATH
-from .hakjong_report_rendering import safe_stem as _safe_stem
-from .hakjong_report_rendering import unique_pair as _unique_pair
-from .hakjong_report_rendering import university_names_from_content as _university_names_from_content
-from .hakjong_report_rendering import validate_pdf_physical as _validate_pdf_physical
 from .hakjong_report_schema import validate_content_with_checks
 from .hakjong_stage_contract import normalize_student_stage
+from .report_fonts import report_font_css
+
+
+_CENTRAL_LIFE_DB = _record_context.CENTRAL_LIFE_DB
+_STAGE_KO = _record_context.STAGE_KO
+_TEMPLATE_PATH = _rendering._TEMPLATE_PATH
+_RENDERING_PATCH_LOCK = threading.RLock()
+
+
+def _sync_legacy_db_path() -> None:
+    _record_context.CENTRAL_LIFE_DB = _CENTRAL_LIFE_DB
+    _grounding_checks.CENTRAL_LIFE_DB = _CENTRAL_LIFE_DB
+
+
+def _render_html(content: dict[str, Any], body_class: str = "", student_stage: str = "") -> str:
+    with _RENDERING_PATCH_LOCK:
+        original_font = _rendering.report_font_css
+        original_logo = _rendering.academy_brand_logo_src
+        _rendering.report_font_css = report_font_css
+        _rendering.academy_brand_logo_src = academy_brand_logo_src
+        try:
+            return _rendering.render_html(content, body_class=body_class, student_stage=student_stage)
+        finally:
+            _rendering.report_font_css = original_font
+            _rendering.academy_brand_logo_src = original_logo
+
+
+def _chromium_print_to_pdf(html_path: Any, pdf_path: Any) -> None:
+    return _rendering._chromium_print_to_pdf(html_path, pdf_path)
+
+
+def _render_pdf_fit(
+    content: dict[str, Any],
+    packaged_html: Any,
+    packaged_pdf: Any,
+    student_stage: str = "",
+) -> str:
+    with _RENDERING_PATCH_LOCK:
+        original_print = _rendering._chromium_print_to_pdf
+        original_font = _rendering.report_font_css
+        original_logo = _rendering.academy_brand_logo_src
+        _rendering.report_font_css = report_font_css
+        _rendering.academy_brand_logo_src = academy_brand_logo_src
+        _rendering._chromium_print_to_pdf = _chromium_print_to_pdf
+        try:
+            return _rendering.render_pdf_fit(
+                content,
+                packaged_html,
+                packaged_pdf,
+                student_stage=student_stage,
+            )
+        finally:
+            _rendering._chromium_print_to_pdf = original_print
+            _rendering.report_font_css = original_font
+            _rendering.academy_brand_logo_src = original_logo
+
+
+def _safe_stem(*parts: str) -> str:
+    return _rendering.safe_stem(*parts)
+
+
+def _unique_pair(html_path: Any, pdf_path: Any) -> tuple[Any, Any]:
+    return _rendering.unique_pair(html_path, pdf_path)
+
+
+def _university_names_from_content(content: dict[str, Any]) -> list[str]:
+    return _rendering.university_names_from_content(content)
+
+
+def _validate_pdf_physical(
+    pdf_path: Any,
+    *,
+    content: dict[str, Any] | None = None,
+    student_name: str,
+    university_names: list[str],
+    errors: list[str],
+) -> None:
+    return _rendering.validate_pdf_physical(
+        pdf_path,
+        content=content,
+        student_name=student_name,
+        university_names=university_names,
+        errors=errors,
+    )
+
+
+def _grounding_errors(student_name: str, student_stage: str, content: dict[str, Any]) -> list[str]:
+    _sync_legacy_db_path()
+    return _grounding_checks.grounding_errors(student_name, student_stage, content)
+
+
+def _evaluation_axes(elements: Any) -> set[str]:
+    return _grounding_checks._evaluation_axes(elements)
+
+
+def _field_of(subject: str) -> str:
+    return _record_context.field_of(subject)
+
+
+def _infer_stage_from_birth(student_name: str) -> str | None:
+    _sync_legacy_db_path()
+    return _record_context.infer_stage_from_birth(student_name)
+
+
+def _stage_grade(student_stage: str) -> int | None:
+    return _record_context.stage_grade(student_stage)
+
+
+def _student_record_brief(student_name: str) -> dict[str, list[str]]:
+    _sync_legacy_db_path()
+    return _record_context.student_record_brief(student_name)
 
 
 

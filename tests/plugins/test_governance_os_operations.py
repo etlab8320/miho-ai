@@ -51,6 +51,8 @@ def test_readiness_passes_with_builtin_registry(tmp_path, monkeypatch) -> None:
     assert report.tool_contract_probe_passed
     assert report.academy_accuracy_probe_passed
     assert report.validation_loop_probe_passed
+    assert report.validation_loop_smoke_mode == "live_safe"
+    assert report.live_discord_verified is False
     assert report.domain_packs_passed
     assert report.quality_score == 100
     assert report.rollback_status == "builtin"

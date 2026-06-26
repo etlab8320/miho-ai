@@ -73,3 +73,23 @@ def test_final_delivery_agent_unavailable_does_not_generate_python_fallback() ->
     )
 
     assert result is None
+
+
+def test_final_delivery_agent_can_return_same_answer_when_verdict_required() -> None:
+    def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "content": json.dumps(
+                {"action": "deliver", "answer": "MEDIA:/tmp/report.pdf"},
+                ensure_ascii=False,
+            )
+        }
+
+    result = final_delivery_agent.review_final_delivery(
+        question="리포트 pdf로 줘",
+        answer="MEDIA:/tmp/report.pdf",
+        evidence={"require_agent_verdict": True},
+        call_llm=fake_call_llm,
+        extract_content=_extract,
+    )
+
+    assert result == "MEDIA:/tmp/report.pdf"

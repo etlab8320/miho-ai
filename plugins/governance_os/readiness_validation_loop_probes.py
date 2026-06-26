@@ -8,6 +8,11 @@ from pathlib import Path
 
 
 def validation_loop_probe_passed() -> bool:
+    report = validation_loop_probe_report()
+    return report.ready and report.score == 100
+
+
+def validation_loop_probe_report():
     from .discord_live_smoke import build_discord_delivery_smoke
     from .validation_loop import evaluate_validation_loop, run_adversarial_validator
 
@@ -45,7 +50,7 @@ def validation_loop_probe_passed() -> bool:
                 smoke_receipts=smoke_receipts,
                 adversarial_reviews=(adversarial_review,),
             )
-            return report.ready and report.score == 100
+            return report
         finally:
             if previous_allow_dirs is None:
                 os.environ.pop("MIHO_MEDIA_ALLOW_DIRS", None)

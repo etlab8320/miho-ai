@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import importlib
 import json
+import shutil
 from pathlib import Path
+
+import pytest
 
 from toolsets import resolve_multiple_toolsets
 
@@ -187,3 +190,64 @@ def test_html_pdf_quality_gate_tool_is_visible_to_discord_academy_toolsets() -> 
     assert "html_pdf_quality_gate" in resolve_multiple_toolsets(
         ["miho-discord", "academy_ops"]
     )
+
+
+def test_html_pdf_quality_gate_real_runner_renders_scrubbed_pdf(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    if not shutil.which("playwright"):
+        pytest.skip("playwright CLI is required for the real PDF runner smoke")
+    monkeypatch.delenv("MIHO_HTML_PDF_QUALITY_GATE_SCRIPT", raising=False)
+
+    import tools.html_pdf_quality_gate_tool as tool
+
+    importlib.reload(tool)
+    html = tmp_path / "season.html"
+    pdf = tmp_path / "season.pdf"
+    html.write_text(
+        (
+            "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
+            "<style>@page{size:A4;margin:18mm 16mm 20mm}"
+            "body{font-family:Arial,sans-serif;line-height:1.55;color:#111}"
+            "h1{font-size:24px}p{font-size:13px}footer{margin-top:24px;font-size:10px}"
+            "</style></head><body><h1>4개월 시즌 운동 프로그램</h1>"
+            "<p>고강도 훈련은 목적에 맞춰 배치하고 회복일과 기록 측정일을 분리한다.</p>"
+            "<p>월수목금토 기준으로 오후 훈련과 야간 훈련을 나누어 운영한다.</p>"
+            "<footer>맥스체대입시 상담자료</footer></body></html>"
+        ),
+        encoding="utf-8",
+    )
+
+    result = _json(
+        tool.html_pdf_quality_gate_tool(
+            {
+                "html_path": str(html),
+                "pdf_path": str(pdf),
+                "engine": "playwright",
+                "timeout": 60,
+                "visual_review": {
+                    "status": "pass",
+                    "checked": [
+                        "line_alignment",
+                        "footer_layout",
+                        "no_text_overlap",
+                        "design_quality",
+                    ],
+                },
+            }
+        )
+    )
+
+    gate = result["pdf_quality_gate"]
+    assert result["success"] is True
+    assert Path(result["artifact_path"]).is_file()
+    assert Path(result["contact_sheet_path"]).is_file()
+    assert gate["engine"] == "playwright"
+    assert gate["ok"] is True
+    assert gate["text_length"] > 0
+    assert gate["layout_errors"] == []
+    assert gate["forbidden_text_hits"] == []
+    assert gate["forbidden_byte_hits"] == []
+    scrubbed_keys = ("title", "author", "subject", "keywords", "creator", "producer")
+    assert all(not str(gate["metadata"].get(key) or "").strip() for key in scrubbed_keys)

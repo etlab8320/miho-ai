@@ -36,7 +36,7 @@ from .readiness_tool_contract_probes import (
     tool_contract_probe_failures as _tool_contract_probe_failures,
 )
 from .readiness_validation_loop_probes import (
-    validation_loop_probe_passed as _validation_loop_probe_passed,
+    validation_loop_probe_report as _validation_loop_probe_report,
 )
 
 
@@ -68,6 +68,8 @@ class ReadinessProbeResults:
     tool_contract_probe_passed: bool
     validation_loop_probe_passed: bool
     academy_accuracy_probe_passed: bool
+    validation_loop_smoke_mode: str = ""
+    live_discord_verified: bool = False
     failures: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -173,7 +175,10 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
     tool_contract_probe_passed = not tool_contract_failures
     failures.extend(tool_contract_failures)
 
-    validation_loop_probe_passed = _validation_loop_probe_passed()
+    validation_loop_report = _validation_loop_probe_report()
+    validation_loop_probe_passed = (
+        validation_loop_report.ready and validation_loop_report.score == 100
+    )
     if not validation_loop_probe_passed:
         failures.append("validation loop probe did not prove tests, smoke, and independent review")
 
@@ -209,6 +214,8 @@ def run_readiness_probes(registry: GovernanceRegistry) -> ReadinessProbeResults:
         routing_loop_probe_passed=routing_loop_probe_passed,
         tool_contract_probe_passed=tool_contract_probe_passed,
         validation_loop_probe_passed=validation_loop_probe_passed,
+        validation_loop_smoke_mode=validation_loop_report.smoke_mode,
+        live_discord_verified=validation_loop_report.live_delivery_verified,
         academy_accuracy_probe_passed=academy_accuracy_probe_passed,
         failures=tuple(failures),
     )

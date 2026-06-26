@@ -34,6 +34,7 @@ def _patch_academy_auxiliary_pass(monkeypatch) -> None:
 def test_final_delivery_retry_executor_reruns_tool_from_current_turn_args(monkeypatch) -> None:
     _patch_academy_auxiliary_pass(monkeypatch)
     calls: list[tuple[str, dict[str, Any]]] = []
+    orchestrator_modes: list[str] = []
 
     def fake_dispatch(name: str, args: dict[str, Any], **_kwargs: object) -> str:
         calls.append((name, args))
@@ -58,6 +59,23 @@ def test_final_delivery_retry_executor_reruns_tool_from_current_turn_args(monkey
             "checked": ["media_tag", "artifact_path"],
         },
     )
+
+    def fake_orchestrator_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        prompt = kwargs["messages"][1]["content"]
+        assert isinstance(prompt, str)
+        payload = json.loads(prompt)
+        mode = str(payload.get("mode") or "")
+        orchestrator_modes.append(mode)
+        assert mode == "compose_answer"
+        return {
+            "content": json.dumps(
+                {
+                    "action": "deliver",
+                    "answer": "서연이 수시 환산점수는 947.3점입니다.",
+                },
+                ensure_ascii=False,
+            )
+        }
 
     transformed = governance_transform_llm_output(
         response_text="서연이 수시 환산점수는 980.0점입니다.",
@@ -94,6 +112,8 @@ def test_final_delivery_retry_executor_reruns_tool_from_current_turn_args(monkey
         ],
         final_delivery_call_llm=_broken_llm,
         final_delivery_extract_content=_extract,
+        final_delivery_orchestrator_call_llm=fake_orchestrator_llm,
+        final_delivery_orchestrator_extract_content=_extract,
     )
 
     assert transformed is not None
@@ -111,6 +131,7 @@ def test_final_delivery_retry_executor_reruns_tool_from_current_turn_args(monkey
             },
         )
     ]
+    assert orchestrator_modes == ["compose_answer"]
 
 
 def test_final_delivery_retry_executor_uses_retry_args_from_review_payload(monkeypatch) -> None:

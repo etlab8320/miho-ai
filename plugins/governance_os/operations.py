@@ -48,6 +48,8 @@ class GovernanceReadinessReport:
     academy_accuracy_probe_passed: bool
     domain_packs_passed: bool
     rollback_status: str
+    validation_loop_smoke_mode: str = ""
+    live_discord_verified: bool = False
     active_snapshot_id: str = ""
     failures: tuple[str, ...] = field(default_factory=tuple)
     drill_results: tuple[DrillResult, ...] = field(default_factory=tuple)
@@ -210,6 +212,8 @@ def run_readiness_check() -> GovernanceReadinessReport:
         academy_accuracy_probe_passed=probe_results.academy_accuracy_probe_passed,
         domain_packs_passed=domain_packs_passed,
         rollback_status=rollback_status,
+        validation_loop_smoke_mode=probe_results.validation_loop_smoke_mode,
+        live_discord_verified=probe_results.live_discord_verified,
         active_snapshot_id=active_snapshot_id,
         failures=tuple(failures),
         drill_results=drill_results,

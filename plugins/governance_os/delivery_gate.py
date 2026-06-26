@@ -146,6 +146,7 @@ def governance_transform_llm_output(
                 "review_reason": retry.review_reason,
                 "review_status": "pass",
             }
+            retry_evidence["require_agent_verdict"] = True
             delivered = review_final_delivery(
                 question=user_text,
                 answer=retry.answer,

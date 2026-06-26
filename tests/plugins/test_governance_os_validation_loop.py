@@ -250,6 +250,8 @@ def test_run_adversarial_validator_builds_llm_receipt(tmp_path) -> None:
 
     assert report.ready
     assert report.score == 100
+    assert report.smoke_mode == "live_safe"
+    assert report.live_delivery_verified is False
 
 
 def test_validation_loop_passes_with_full_required_evidence(tmp_path) -> None:
@@ -297,3 +299,55 @@ def test_validation_loop_passes_with_full_required_evidence(tmp_path) -> None:
     assert report.ready
     assert report.score == 100
     assert report.failures == ()
+    assert report.smoke_mode == "live_safe"
+    assert report.live_delivery_verified is False
+
+
+def test_validation_loop_marks_real_live_discord_delivery(tmp_path) -> None:
+    artifact = tmp_path / "report.pdf"
+    artifact.write_bytes(b"%PDF-1.4\n%%EOF\n")
+
+    report = evaluate_validation_loop(
+        test_receipts=(
+            _receipt("tests/plugins/test_focus.py", "focused_tests"),
+            _receipt("tests/plugins/test_wider.py", "wider_gate"),
+            _receipt("readiness", "runtime_readiness"),
+        ),
+        smoke_receipts=(
+            {
+                "name": "gateway live smoke",
+                "kind": "live_gateway_smoke",
+                "status": "passed",
+                "mode": "live",
+                "send_attempted": True,
+                "sent": True,
+                "evidence": "gateway sent a Discord smoke attachment",
+            },
+            {
+                "name": "attachment artifact",
+                "kind": "attachment_artifact_smoke",
+                "status": "passed",
+                "artifact_path": str(artifact),
+                "media_tag": f"MEDIA:`{artifact}`",
+                "evidence": "local artifact staged",
+            },
+        ),
+        adversarial_reviews=(
+            {
+                "reviewer": "validator",
+                "task": ADVERSARIAL_VALIDATOR_TASK,
+                "status": "passed",
+                "score": 100,
+                "independent": True,
+                "llm_receipt": True,
+                "transport": "auxiliary_llm",
+                "prompt_sha256": "abc123",
+                "findings": [],
+            },
+        ),
+    )
+
+    assert report.ready
+    assert report.score == 100
+    assert report.smoke_mode == "live"
+    assert report.live_delivery_verified is True
