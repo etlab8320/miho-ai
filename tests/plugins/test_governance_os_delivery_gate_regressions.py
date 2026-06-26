@@ -261,6 +261,47 @@ def test_transform_llm_output_leaves_already_deliverable_attachment(monkeypatch)
     assert transformed is None
 
 
+def test_transform_llm_output_delivers_existing_pdf_when_final_answer_self_blocks(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+
+    import gateway.platforms.base as base
+    import miho_constants
+
+    importlib.reload(miho_constants)
+    importlib.reload(base)
+
+    artifact = tmp_path / "miho_home" / "media_cache" / "season-plan.pdf"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"%PDF-1.4\n")
+
+    transformed = governance_transform_llm_output(
+        response_text=(
+            "맥스, 지금은 PDF 파일이 실제로 생성·첨부됐는지, 메타데이터가 제거됐는지 "
+            "확인할 근거가 없어 완료본이라고 전달하긴 어려워."
+        ),
+        user_message="이거 AI가 한 듯한 메타데이터 다 빼고 PDF로 정리해서 줄래?",
+        conversation_history=[
+            {"role": "user", "content": "이거 메타데이터 다 빼고 PDF로 정리해서 줄래?"},
+            {
+                "role": "tool",
+                "name": "terminal",
+                "content": f"PDF saved: {artifact}",
+            },
+        ],
+        governance_outcomes=[],
+    )
+
+    assert transformed is not None
+    assert "MEDIA:" in transformed
+    assert "season-plan" in transformed
+    assert "확인할 근거가 없어" not in transformed
+    assert "전달하긴 어려워" not in transformed
+    assert base.resolve_media_delivery_path(transformed.split("MEDIA:", 1)[1].strip("` \n"))
+
+
 def test_final_delivery_gate_does_not_trust_stale_global_ledger(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
 

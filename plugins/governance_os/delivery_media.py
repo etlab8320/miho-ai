@@ -21,16 +21,46 @@ _BROKEN_ARTIFACT_CLAIM_TERMS = ("생성했습니다", "만들었습니다", "저
 _ARTIFACT_NOUNS = ("파일", "pdf", "mhtml", "리포트", "첨부")
 
 
-def prepare_delivery_media(response_text: str, conversation_history: Any = None) -> str | None:
+def prepare_delivery_media(
+    response_text: str,
+    conversation_history: Any = None,
+    *,
+    user_text: str = "",
+) -> str | None:
     """Append omitted tool media directives, then stage unsafe local paths."""
 
     original = str(response_text or "")
     if not original:
         return None
+    artifact_delivery = _complete_artifact_delivery(
+        original,
+        user_text=user_text,
+        conversation_history=conversation_history,
+    )
+    if artifact_delivery:
+        return artifact_delivery
     with_missing_media = _append_missing_media(original, conversation_history)
     repaired = _repair_attachment_paths(with_missing_media)
     final = repaired if repaired is not None else with_missing_media
     return final if final != original else None
+
+
+def _complete_artifact_delivery(
+    response_text: str,
+    *,
+    user_text: str,
+    conversation_history: Any,
+) -> str | None:
+    try:
+        from .delivery_artifacts import complete_artifact_delivery
+
+        return complete_artifact_delivery(
+            response_text,
+            user_text=user_text,
+            conversation_history=conversation_history,
+        )
+    except Exception:
+        return None
 
 
 def _append_missing_media(response_text: str, conversation_history: Any) -> str:

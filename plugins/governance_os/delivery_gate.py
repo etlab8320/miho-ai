@@ -88,7 +88,11 @@ def governance_transform_llm_output(
     # Final Delivery Gate owns the whole attachment contract. Tool media that the
     # model omitted is appended before path repair so the gateway never receives
     # an unchecked MEDIA directive after this hook.
-    media_prepared = prepare_delivery_media(original_text, context.get("conversation_history"))
+    media_prepared = prepare_delivery_media(
+        original_text,
+        context.get("conversation_history"),
+        user_text=user_text,
+    )
     effective_text = media_prepared if media_prepared is not None else original_text
 
     outcomes = context.get("governance_outcomes")

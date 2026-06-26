@@ -136,3 +136,25 @@ def test_blocked_answer_uses_default_recovery_when_injected_agent_fails(monkeypa
     assert transformed == "검증 가능한 계산 자료를 확인한 뒤 결과를 전달하겠습니다."
     assert "947.3" not in transformed
     assert default_calls == ["miho_governance_blocked_delivery_recovery"]
+
+
+def test_blocked_answer_returns_current_result_when_all_recovery_agents_fail() -> None:
+    def broken_llm(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("provider down")
+
+    original = "서연이 수시 환산점수는 947.3점입니다."
+    transformed = governance_transform_llm_output(
+        response_text=original,
+        user_message="서연이 수시 환산점수 계산해줘",
+        platform="discord",
+        governance_outcomes=[],
+        final_delivery_call_llm=broken_llm,
+        final_delivery_extract_content=_extract,
+    )
+
+    assert transformed is not None
+    assert "947.3" not in transformed
+    assert "확인 후" not in transformed
+    assert "다시" not in transformed
+    assert "현재 대화 기준" in transformed
+    assert "확정 환산점수 산출 불가" in transformed

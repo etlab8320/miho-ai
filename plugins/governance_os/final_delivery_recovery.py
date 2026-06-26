@@ -46,7 +46,7 @@ def recover_blocked_delivery(
     )
     if _is_usable_replacement(recovered, original):
         return recovered.strip()
-    return None
+    return _current_turn_result(question=question, evidence=evidence)
 
 
 def _request_blocked_recovery(
@@ -146,3 +146,22 @@ def _is_usable_replacement(candidate: str, original: str) -> bool:
         and replacement != original
         and not contains_internal_guard_leak(replacement)
     )
+
+
+def _current_turn_result(*, question: str, evidence: dict[str, Any]) -> str:
+    decision = evidence.get("decision") if isinstance(evidence, dict) else {}
+    playbook_key = str(decision.get("playbook_key") or "") if isinstance(decision, dict) else ""
+    retry_tools = decision.get("retry_tools") if isinstance(decision, dict) else []
+    question_blob = str(question or "").casefold()
+    if playbook_key == "susi_score_calculation" or "환산점수" in question_blob:
+        return (
+            "현재 대화 기준 확정 환산점수 산출 불가.\n"
+            "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
+        )
+    if playbook_key == "discord_attachment_delivery" or any(
+        term in question_blob for term in ("첨부", "pdf", "파일")
+    ):
+        return "현재 대화 기준 첨부 가능한 산출물 없음.\n필요한 입력: 전달할 파일 경로 또는 생성된 산출물."
+    if retry_tools:
+        return "현재 대화 기준 확정 결과 없음.\n필요한 입력: 계산이나 산출에 필요한 원자료."
+    return "현재 대화 기준 답변 가능한 결론 없음.\n필요한 입력: 요청을 판단할 원자료."
