@@ -79,7 +79,7 @@ def plugin_load_probe_passed() -> bool:
         from miho_cli.plugins import get_plugin_manager
 
         manager = get_plugin_manager()
-        manager.discover_and_load()
+        manager.discover_and_load(force=True)
         loaded = manager._plugins.get("governance_os")
     except Exception:
         return False

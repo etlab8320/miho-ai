@@ -130,6 +130,20 @@ def test_readiness_flags_invalid_active_registry_pointer(tmp_path, monkeypatch) 
     assert any("active registry" in failure for failure in report.failures)
 
 
+def test_readiness_flags_governance_plugin_disabled(tmp_path, monkeypatch) -> None:
+    _reload_home(tmp_path, monkeypatch)
+    config_path = tmp_path / "miho_home" / "config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("plugins:\n  disabled:\n    - governance_os\n", encoding="utf-8")
+
+    report = run_readiness_check()
+
+    assert not report.ready
+    assert report.quality_score < 100
+    assert not report.plugin_load_probe_passed
+    assert any("plugin load probe" in failure for failure in report.failures)
+
+
 def test_readiness_flags_active_registry_missing_routing_playbook(
     tmp_path,
     monkeypatch,

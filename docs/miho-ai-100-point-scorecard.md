@@ -55,7 +55,7 @@
 
 현재 총평: local/live-safe 기준 100/100, full-system live-required 기준 100/100.
 
-이 표는 구현 진척 점수가 아니라 적대적 검수 점수다. Hermes / Decision Twin 라우팅, 도구 맵과 tool contract, Governance reviewer 구조, Final Delivery Orchestrator, PDF / 첨부 품질 루프, Self-Harness 자동 개선, 학원 도구 정확도, 하드코딩 의미판단 제거, 테스트 + 적대적 리뷰 루프, 유지보수 구조는 focused/wider/runtime receipt와 live-safe smoke를 통과해 local readiness 100점 계약으로 닫혔다. 실제 Discord write-smoke는 `full_system_score`로 별도 판정하며 현재 `live_discord_verified=True`라 full-system 100점 조건도 충족했다. repo-wide legacy `gateway/run.py` 1.8만 줄 분리는 별도 유지보수 에픽이다.
+이 표는 구현 진척 점수가 아니라 적대적 검수 점수다. Hermes / Decision Twin 라우팅, 도구 맵과 tool contract, Governance reviewer 구조, Final Delivery Orchestrator, PDF / 첨부 품질 루프, Self-Harness 자동 개선, 학원 도구 정확도, 하드코딩 의미판단 제거, 테스트 + 적대적 리뷰 루프, 유지보수 구조는 focused/wider/runtime receipt와 live-safe smoke를 통과해 local readiness 100점 계약으로 닫혔다. 실제 Discord write-smoke는 `full_system_score`로 별도 판정하며 현재 `live_discord_verified=True`라 full-system 100점 조건도 충족했다. `governance_os`와 `decision_twin`은 config allow-list, `miho plugins list`, 실제 PluginManager hook/aux task에서 enabled다. repo-wide legacy `gateway/run.py` 1.8만 줄 분리는 별도 유지보수 에픽이다.
 
 점수 산식: local readiness 1000 / 1000 = 100, full-system은 live-required validation score가 상한이다.
 
