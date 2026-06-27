@@ -3,110 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable
 
-
-PromotionAction = Literal["add_forbidden_tool", "add_required_tool", "add_review_gate"]
-
-_REQUIRED_PROMOTION_SAFETY_TESTS = (
-    "tests/plugins/test_governance_os_promotion_activation.py",
-    "tests/plugins/test_governance_os_versioning.py",
+from .promotion_models import (
+    PromotionAction,
+    PromotionActivation,
+    PromotionCandidate,
+    PromotionTestReceipt,
 )
-_DEFAULT_PROMOTION_TESTS = (
-    "tests/plugins/test_governance_os_policy.py",
-    "tests/plugins/test_governance_os_review_retry.py",
-)
-_PROMOTION_TESTS_BY_PLAYBOOK: dict[str, tuple[str, ...]] = {
-    "academy_hakjong_report": ("tests/plugins/test_academy_result_reviewer.py",),
-    "academy_practical_reco": (
-        "tests/plugins/test_academy_result_reviewer.py",
-        "tests/plugins/test_academy_practical_reco.py",
-    ),
-    "discord_attachment_delivery": (
-        "tests/e2e/test_discord_governance_delivery.py",
-        "tests/tools/test_media_delivery_contract_tool.py",
-    ),
-    "research_brief": ("tests/plugins/test_governance_os_council.py",),
-    "memory_policy_update": ("tests/plugins/test_governance_os_simulator.py",),
-}
-_PROMOTION_TESTS_BY_FAILURE: dict[str, tuple[str, ...]] = {
-    "forbidden_tool": (
-        "tests/plugins/test_governance_os_policy.py",
-        "tests/plugins/test_governance_os_drills.py",
-    ),
-    "reviewer_missing": (
-        "tests/plugins/test_governance_os_review_retry.py",
-        "tests/plugins/test_governance_os_council.py",
-    ),
-}
+from .promotion_requirements import tests_required_for_candidate
+
 _PASS_STATUSES = {"pass", "passed", "ok", "success", "succeeded", "green"}
 _FAIL_STATUSES = {"fail", "failed", "error", "blocked", "red"}
-
-
-@dataclass(frozen=True)
-class PromotionCandidate:
-    playbook_key: str
-    source_failure: str
-    recurrence_count: int
-    proposed_policy: str
-    evidence: tuple[str, ...] = field(default_factory=tuple)
-    tests_required: tuple[str, ...] = field(default_factory=tuple)
-    rollback: str = ""
-
-    def to_metadata(self) -> dict[str, Any]:
-        return {
-            "playbook_key": self.playbook_key,
-            "source_failure": self.source_failure,
-            "recurrence_count": int(self.recurrence_count),
-            "proposed_policy": self.proposed_policy,
-            "evidence": list(self.evidence),
-            "tests_required": list(self.tests_required),
-            "rollback": self.rollback,
-        }
-
-
-@dataclass(frozen=True)
-class PromotionActivation:
-    playbook_key: str
-    action: PromotionAction
-    value: str
-    snapshot_id: str
-    rollback_snapshot_id: str
-    fingerprint: str
-    event_id: int
-
-    def to_metadata(self) -> dict[str, Any]:
-        return {
-            "playbook_key": self.playbook_key,
-            "action": self.action,
-            "value": self.value,
-            "snapshot_id": self.snapshot_id,
-            "rollback_snapshot_id": self.rollback_snapshot_id,
-            "fingerprint": self.fingerprint,
-            "event_id": self.event_id,
-        }
-
-
-@dataclass(frozen=True)
-class PromotionTestReceipt:
-    name: str
-    passed: bool
-    status: str = ""
-    exit_code: int | None = None
-    command: str = ""
-    evidence: str = ""
-
-    def to_metadata(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "passed": self.passed,
-            "status": self.status,
-            "exit_code": self.exit_code,
-            "command": self.command,
-            "evidence": self.evidence,
-        }
 
 
 def validate_candidate(candidate: PromotionCandidate) -> list[str]:
@@ -440,23 +349,7 @@ def _proposed_policy(playbook_key: str, failure: str) -> str:
 
 
 def _tests_required(playbook_key: str, failure: str) -> tuple[str, ...]:
-    return _dedupe_tests(
-        _PROMOTION_TESTS_BY_PLAYBOOK.get(playbook_key, _DEFAULT_PROMOTION_TESTS),
-        _PROMOTION_TESTS_BY_FAILURE.get(failure, ()),
-        _REQUIRED_PROMOTION_SAFETY_TESTS,
-    )
-
-
-def _dedupe_tests(*groups: tuple[str, ...]) -> tuple[str, ...]:
-    tests: list[str] = []
-    seen: set[str] = set()
-    for group in groups:
-        for test_path in group:
-            if test_path in seen:
-                continue
-            seen.add(test_path)
-            tests.append(test_path)
-    return tuple(tests)
+    return tests_required_for_candidate(playbook_key, failure)
 
 
 def _tuple_str(value: Any) -> tuple[str, ...]:
