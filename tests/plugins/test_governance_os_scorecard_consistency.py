@@ -11,10 +11,7 @@ SCORECARD = Path("docs/miho-ai-100-point-scorecard.md")
 
 def test_scorecard_table_matches_section_scores() -> None:
     text = SCORECARD.read_text(encoding="utf-8")
-    table_scores = {
-        name.strip(): int(score)
-        for name, score in re.findall(r"^\| ([^|]+?) \| (\d+) \| 100 \|$", text, re.MULTILINE)
-    }
+    table_scores = _table_scores(text)
     section_scores = {
         _section_table_name(name): int(score)
         for name, score in re.findall(
@@ -27,11 +24,27 @@ def test_scorecard_table_matches_section_scores() -> None:
     assert table_scores == section_scores
 
 
+def test_scorecard_summary_matches_table_average() -> None:
+    text = SCORECARD.read_text(encoding="utf-8")
+    table_scores = _table_scores(text)
+    summary = re.search(r"현재 총평: 사용자 운영 통합 기준 (\d+)/100", text)
+
+    assert summary is not None
+    assert int(summary.group(1)) == round(sum(table_scores.values()) / len(table_scores))
+
+
 def test_scorecard_does_not_call_readiness_score_operational_completion() -> None:
     text = SCORECARD.read_text(encoding="utf-8")
     assert "현재 총평: local/live-safe 기준 100/100" not in text
     assert "사용자 운영 통합 기준" in text
     assert "readiness 100은 필요조건" in text
+
+
+def _table_scores(text: str) -> dict[str, int]:
+    return {
+        name.strip(): int(score)
+        for name, score in re.findall(r"^\| ([^|]+?) \| (\d+) \| 100 \|$", text, re.MULTILINE)
+    }
 
 
 def _section_table_name(section_name: str) -> str:

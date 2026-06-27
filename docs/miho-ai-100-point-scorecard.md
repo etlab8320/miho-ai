@@ -51,9 +51,9 @@
 | 학원 도구 정확도 | 92 | 100 |
 | 하드코딩 의미판단 제거 | 94 | 100 |
 | 테스트 + 적대적 리뷰 루프 | 94 | 100 |
-| 유지보수 구조 | 58 | 100 |
+| 유지보수 구조 | 62 | 100 |
 
-현재 총평: 사용자 운영 통합 기준 93/100. local/live-safe readiness와 full-system live-required probe는 100/100이지만, 운영 통합 점수와 동일시하지 않는다.
+현재 총평: 사용자 운영 통합 기준 92/100. local/live-safe readiness와 full-system live-required probe는 100/100이지만, 운영 통합 점수와 동일시하지 않는다.
 
 이 표는 자동 probe 점수가 아니라 실제 Discord 운영에서 사용자가 원하는 결과가 나오는지를 보는 적대적 운영 점수다. readiness 100은 필요조건일 뿐이며, 운영 점수 100은 라이브 적용, 상호 연동, 사용자-facing 실패 미노출, 산출물 품질, self-harness 흡수, 유지보수 구조까지 같이 닫힐 때만 준다. `governance_os`와 `decision_twin`은 config allow-list, `miho plugins list`, 실제 PluginManager hook/aux task에서 enabled다. repo-wide legacy `gateway/run.py` 1.8만 줄 분리는 아직 운영 통합 100점의 감점 요소다.
 
@@ -112,7 +112,7 @@
 | 7 | Hermes / Decision Twin 라우팅 | 82 | 100 | 100 | 100점 닫힘 | hook-level context payload, executable directive, unknown tool rejection, auxiliary allow handling, active registry readiness, live-safe gateway smoke |
 | 8 | 도구 맵과 tool contract | 84 | 100 | 100 | 100점 닫힘 | tool-contract/v2 schema, required/forbidden coverage, blocked_capability, readiness probe, live-safe payload smoke |
 | 9 | 테스트 + 적대적 리뷰 루프 | 82 | 94 | 100 | 운영 통합 미완료 | validation loop는 통과. 남은 것은 점수 혼선 방지와 독립 운영 적대리뷰를 매 루프 강제 |
-| 10 | 유지보수 구조 | 65 | 58 | 100 | 적대적 재점수, 미완료 | 남은 500줄 초과 runtime 파일 분리 계획 수립 |
+| 10 | 유지보수 구조 | 65 | 62 | 100 | 적대적 재점수, 미완료 | self_harness_loop 분리 완료. 남은 gateway/400줄 경고선 runtime 파일 분리 |
 
 ## 공통 100점 기준
 
@@ -441,7 +441,7 @@ Builder
 
 ## 10. 유지보수 구조
 
-현재: 58/100
+현재: 62/100
 
 100점 기준:
 
@@ -455,11 +455,12 @@ Builder
 - 이번 라우팅/tool contract 루프에서 새로 추가한 runtime 파일은 500줄 이하를 지켰다.
 - PDF 품질 게이트, delivery contract, reviewer 일부는 분리되어 있다.
 - readiness/tool contract probe는 기존 대형 파일을 더 키우지 않고 별도 파일로 추가했다.
+- `self_harness_loop.py`는 receipt runner와 cron 등록을 분리해 500줄에서 394줄로 낮췄다.
 
 남은 리스크:
 
 - `gateway/run.py`가 18k줄대라 gateway 책임 분리가 아직 부족하다.
-- `plugins/academy_ops/hakjong_report_tool.py`가 1145줄이라 학종 PDF 수정 리스크가 높다.
+- `plugins/academy_ops/hakjong_report_tool.py`는 393줄로 낮아졌지만 학종 주변 파일 다수가 400줄 경고선에 있다.
 - `tools/governance_os_tool.py`, `plugins/governance_os/delivery_gate.py`, `plugins/governance_os/review.py`는 400줄 경고선을 넘었다.
 - 유지보수 구조는 아직 100점과 거리가 멀다.
 
