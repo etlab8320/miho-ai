@@ -11,6 +11,7 @@ class _Ctx:
     def __init__(self) -> None:
         self.tasks: list[dict[str, Any]] = []
         self.hooks: list[str] = []
+        self.cli_commands: list[dict[str, Any]] = []
 
     def register_auxiliary_task(self, key: str, **kwargs: Any) -> None:
         self.tasks.append({"key": key, **kwargs})
@@ -18,6 +19,9 @@ class _Ctx:
     def register_hook(self, hook_name: str, callback: Any) -> None:
         del callback
         self.hooks.append(hook_name)
+
+    def register_cli_command(self, **kwargs: Any) -> None:
+        self.cli_commands.append(kwargs)
 
 
 def test_governance_plugin_registers_auxiliary_judge_tasks() -> None:
@@ -47,6 +51,7 @@ def test_governance_plugin_registers_auxiliary_judge_tasks() -> None:
     assert "pre_tool_call" in ctx.hooks
     assert "transform_tool_result" in ctx.hooks
     assert "transform_llm_output" in ctx.hooks
+    assert any(command["name"] == "governance" for command in ctx.cli_commands)
 
 
 def test_governance_auxiliary_tasks_include_operational_instructions() -> None:
@@ -89,17 +94,17 @@ def test_governance_auxiliary_tasks_include_operational_instructions() -> None:
     assert "activation" in self_harness_proposer
     assert "regression" in self_harness_proposer
     assert "Final Delivery Agent" in final_delivery
-    assert "Python guard" in final_delivery
+    assert "deterministic guard" in final_delivery
     assert "Final Delivery Orchestrator" in final_delivery_orchestrator
     assert "allowed_tools" in final_delivery_orchestrator
     assert "tool_contracts" in final_delivery_orchestrator
-    assert "Python feature" in semantic_judge
+    assert "runtime feature" in semantic_judge
     assert "참고 신호" in semantic_judge
     assert "최종 의미판단" in semantic_judge
     assert "비결과 답변" in semantic_judge
     assert "물리적 안전" in semantic_judge
     assert "Blocked Delivery Recovery Agent" in blocked_recovery
-    assert "Python fallback" in blocked_recovery
+    assert "fallback" in blocked_recovery
     assert "사용자 질문" in final_qa
     assert "최종 답변 후보" in final_qa
     assert "새 최종 답변" in final_qa_repair

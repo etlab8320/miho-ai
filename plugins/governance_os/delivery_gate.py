@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -20,6 +19,7 @@ from .delivery_gate_constants import (
     STUDENT_SCORE_CLAIM_RE as _STUDENT_SCORE_CLAIM_RE,
 )
 from .delivery_history import outcomes_from_conversation_history
+from .delivery_exception_recovery import recover_transform_exception
 from .delivery_media import prepare_delivery_media
 from .delivery_safety import (
     contains_hard_internal_leak as _contains_hard_internal_leak,
@@ -92,7 +92,7 @@ def governance_transform_llm_output(
         return _governance_transform_llm_output(response_text=response_text, **context)
     except Exception as exc:
         logger.warning("governance final delivery hook recovered from exception: %s", exc)
-        return _recover_transform_exception(response_text=response_text, context=context)
+        return recover_transform_exception(response_text=response_text, context=context)
 
 
 def _governance_transform_llm_output(
@@ -186,53 +186,6 @@ def _governance_transform_llm_output(
         call_llm=context.get("final_delivery_call_llm"),
         extract_content=context.get("final_delivery_extract_content"),
     )
-
-
-def _recover_transform_exception(*, response_text: str, context: dict[str, Any]) -> str | None:
-    user_text = str(context.get("user_message") or context.get("user_text") or "")
-    original_text = str(response_text or "")
-    if not _is_transform_fail_closed_candidate(user_text=user_text, response_text=original_text):
-        return None
-    decision = FinalDeliveryDecision(
-        action="block",
-        reason="final_delivery_hook_exception",
-        retry_tools=tuple(str(tool) for tool in context.get("retry_tools") or ()),
-    )
-    evidence = {
-        "decision": {
-            "action": decision.action,
-            "reason": decision.reason,
-            "retry_tools": list(decision.retry_tools),
-        },
-        "hook_exception_recovery": True,
-        "session_id": str(context.get("session_id") or ""),
-    }
-    try:
-        return recover_blocked_delivery(
-            question=user_text,
-            answer=original_text,
-            evidence=evidence,
-            call_llm=context.get("final_delivery_call_llm"),
-            extract_content=context.get("final_delivery_extract_content"),
-        )
-    except Exception as exc:
-        logger.warning("governance hook exception recovery failed closed: %s", exc)
-        return "현재 가능한 결론: 확정 결과 없음.\n필요한 입력: 요청을 판단할 원자료."
-
-
-def _is_transform_fail_closed_candidate(*, user_text: str, response_text: str) -> bool:
-    if _contains_hard_internal_leak(response_text):
-        return True
-    if _contains_internal_guard_leak(response_text):
-        return True
-    if _contains_non_result_deferral(response_text):
-        return True
-    if _contains_score_delivery_claim(response_text) and (
-        _has_admission_context(user_text) or _has_admission_context(response_text)
-    ):
-        return True
-    blob = _normalized_blob(response_text)
-    return "media:" in blob or "첨부 파일 형식:" in blob
 
 
 def evaluate_final_delivery(

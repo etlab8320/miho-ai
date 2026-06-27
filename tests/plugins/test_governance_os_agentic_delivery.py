@@ -35,7 +35,7 @@ def test_allowed_answer_still_runs_universal_final_delivery_agent() -> None:
     evidence = json.loads(calls[0]["messages"][1]["content"].split("EVIDENCE: ", 1)[1])
     assert evidence["decision"]["action"] == "allow"
     assert evidence["final_delivery_agent_scope"] == "universal"
-    assert evidence["python_semantic_decision_is_advisory"] is True
+    assert evidence["runtime_semantic_signal_is_advisory"] is True
 
 
 def test_meta_review_false_positive_is_resolved_by_final_delivery_agent() -> None:
@@ -226,7 +226,7 @@ def test_blocked_answer_rejects_recovery_deferral_after_final_delivery_invalid()
         if task == "miho_governance_blocked_delivery_recovery":
             return {
                 "content": (
-                    "현재 가능한 결론: 확정 환산점수 산출 불가.\n"
+                    "현재 결론: 확정 환산점수 산출 불가.\n"
                     "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
                 )
             }
@@ -242,7 +242,7 @@ def test_blocked_answer_rejects_recovery_deferral_after_final_delivery_invalid()
     )
 
     assert transformed == (
-        "현재 가능한 결론: 확정 환산점수 산출 불가.\n"
+        "현재 결론: 확정 환산점수 산출 불가.\n"
         "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
     )
     assert "947.3" not in transformed
@@ -268,7 +268,7 @@ def test_blocked_answer_uses_default_recovery_when_injected_agent_fails(monkeypa
         if task == "miho_governance_blocked_delivery_recovery":
             return {
                 "content": (
-                    "현재 가능한 결론: 확정 환산점수 산출 불가.\n"
+                    "현재 결론: 확정 환산점수 산출 불가.\n"
                     "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
                 )
             }
@@ -288,7 +288,7 @@ def test_blocked_answer_uses_default_recovery_when_injected_agent_fails(monkeypa
     )
 
     assert transformed == (
-        "현재 가능한 결론: 확정 환산점수 산출 불가.\n"
+        "현재 결론: 확정 환산점수 산출 불가.\n"
         "필요한 입력: 학생 성적, 지원 대학, 전형, 실기 기록."
     )
     assert "947.3" not in transformed
@@ -318,5 +318,5 @@ def test_blocked_answer_returns_current_result_when_all_recovery_agents_fail() -
     assert "947.3" not in transformed
     assert "확인 후" not in transformed
     assert "다시" not in transformed
-    assert "현재 가능한 결론: 확정 결과 없음" in transformed
+    assert "현재 결론: 확정 산출물 없음" in transformed
     assert "환산점수" not in transformed

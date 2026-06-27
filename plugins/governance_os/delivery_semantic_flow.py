@@ -20,7 +20,7 @@ def delivery_evidence(decision: Any, *, context: dict[str, Any], outcomes: Any) 
         "platform": str(context.get("platform") or ""),
         "session_id": str(context.get("session_id") or ""),
         "final_delivery_agent_scope": "universal",
-        "python_semantic_decision_is_advisory": True,
+        "runtime_semantic_signal_is_advisory": True,
     }
 
 

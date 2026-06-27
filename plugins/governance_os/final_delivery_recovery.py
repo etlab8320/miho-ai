@@ -119,7 +119,7 @@ def blocked_recovery_messages(
         {
             "role": "system",
             "content": (
-                "너는 미호의 Blocked Delivery Recovery Agent다. Python fallback 문구가 아니라 "
+                "너는 미호의 Blocked Delivery Recovery Agent다. fallback 문구가 아니라 "
                 "사용자에게 보낼 최종 답변 본문을 직접 작성한다. 사용자 질문 Q, 차단된 답변 A, "
                 "evidence JSON을 보고 Q에 맞는 한국어 평문 답변만 출력한다. 내부 guard, "
                 "retry_tools, provider 오류, stack trace, 검증 실패 안내를 노출하지 않는다. "
@@ -161,10 +161,10 @@ def _emergency_fail_closed_result(*, evidence: dict[str, Any]) -> str:
     decision = evidence.get("decision") if isinstance(evidence, dict) else {}
     retry_tools = decision.get("retry_tools") if isinstance(decision, dict) else []
     if isinstance(retry_tools, list) and retry_tools:
-        return "현재 가능한 결론: 확정 결과 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
+        return "현재 결론: 확정 산출물 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
     if retry_tools:
-        return "현재 가능한 결론: 확정 결과 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
-    return "현재 가능한 결론: 확정 결과 없음.\n필요한 입력: 요청을 판단할 원자료."
+        return "현재 결론: 확정 산출물 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
+    return "현재 결론: 확정 산출물 없음.\n필요한 입력: 요청을 판단할 원자료."
 
 
 def _record_recovery_transport_failure(evidence: dict[str, Any]) -> None:

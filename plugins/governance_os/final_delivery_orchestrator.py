@@ -172,7 +172,7 @@ def final_delivery_orchestrator_messages(
         {
             "role": "system",
             "content": (
-                "너는 미호의 Final Delivery Orchestrator다. Python fallback 문구가 아니라 "
+                "너는 미호의 Final Delivery Orchestrator다. fallback 문구가 아니라 "
                 "LLM agent로 최종 전달을 완성한다. "
                 "mode=plan_tools이면 현재 턴 안에서 실행할 도구 계획만 JSON으로 반환한다. "
                 "mode=compose_answer이면 verified_tool_results와 evidence만 근거로 "

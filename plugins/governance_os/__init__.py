@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .cli import governance_command, register_cli
 from .dispatcher import governance_pre_gateway_dispatch
 from .delivery_gate import governance_transform_llm_output
 from .final_delivery_agent import FINAL_DELIVERY_TASK
@@ -82,7 +83,7 @@ FINAL_QA_REPAIR_INSTRUCTIONS = (
 FINAL_DELIVERY_INSTRUCTIONS = (
     "Final Delivery Agent로서 사용자 질문과 최종 답변 후보, 도구/reviewer evidence를 보고 "
     "실제 사용자에게 보낼 최종 본문을 결정한다. "
-    "Python guard가 사용자 문구를 생성하지 않도록 deliver/revise/block JSON을 반환한다. "
+    "deterministic guard가 사용자 문구를 생성하지 않도록 deliver/revise/block JSON을 반환한다. "
     "거버넌스/셀프하네스 적대적 리뷰 요청은 도메인 단어가 있어도 리뷰 결과로 취급하고, "
     "내부 guard/retry/fallback 문구는 노출하지 않는다."
 )
@@ -97,7 +98,7 @@ FINAL_DELIVERY_ORCHESTRATOR_INSTRUCTIONS = (
 SEMANTIC_DELIVERY_JUDGE_INSTRUCTIONS = (
     "Semantic Delivery Judge로서 Python이 수집한 후보 feature와 evidence를 참고하되 "
     "사용자 질문과 답변 전체 맥락으로 최종 의미판단을 직접 수행한다. "
-    "Python feature는 최종 allow/block 판정이 아니라 참고 신호일 뿐이다. "
+    "runtime feature는 최종 allow/block 판정이 아니라 참고 신호일 뿐이다. "
     "확인 후 전달, 검증 뒤 전달, 자료를 보내주면 처리 같은 비결과 답변도 "
     "문구 규칙이 아니라 질문·답변·evidence 맥락으로 직접 판단한다. "
     "거버넌스/셀프하네스/코드/시스템 적대적 리뷰 요청이면 수시, 학종, PDF, 점수 같은 "
@@ -107,7 +108,7 @@ SEMANTIC_DELIVERY_JUDGE_INSTRUCTIONS = (
 BLOCKED_DELIVERY_RECOVERY_INSTRUCTIONS = (
     "Blocked Delivery Recovery Agent로서 Final Delivery JSON 판정이나 Final QA repair가 "
     "사용 가능한 답변을 만들지 못했을 때 마지막으로 사용자에게 보낼 본문을 직접 작성한다. "
-    "Python fallback 문구를 대신 출력하지 말고, 질문 의도에 맞는 한국어 평문 답변만 작성한다. "
+    "fallback 문구를 대신 출력하지 말고, 질문 의도에 맞는 한국어 평문 답변만 작성한다. "
     "도구 evidence가 부족한 완료/첨부/점수 claim은 확정하지 않는다."
 )
 ADVERSARIAL_VALIDATOR_INSTRUCTIONS = (
@@ -120,6 +121,13 @@ ADVERSARIAL_VALIDATOR_INSTRUCTIONS = (
 
 
 def register(ctx: Any) -> None:
+    ctx.register_cli_command(
+        name="governance",
+        help="Inspect Miho Governance OS live status",
+        setup_fn=register_cli,
+        handler_fn=governance_command,
+        description="Operational status, readiness, hooks, failures, and Self-Harness autopilot.",
+    )
     ctx.register_hook("pre_gateway_dispatch", governance_pre_gateway_dispatch)
     ctx.register_hook("pre_tool_call", governance_pre_tool_call)
     ctx.register_hook("transform_tool_result", governance_transform_tool_result)
@@ -250,7 +258,7 @@ def register(ctx: Any) -> None:
     ctx.register_auxiliary_task(
         key=SEMANTIC_DELIVERY_JUDGE_TASK,
         display_name="Miho governance semantic delivery judge",
-        description="LLM semantic judge that overrides advisory keyword delivery blocks",
+        description="LLM semantic judge that corrects advisory runtime delivery decisions",
         defaults={
             "provider": "auto",
             "timeout": 20,

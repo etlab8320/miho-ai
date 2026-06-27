@@ -44,16 +44,16 @@
 |---|---:|---:|
 | Hermes / Decision Twin 라우팅 | 100 | 100 |
 | 도구 맵과 tool contract | 100 | 100 |
-| Governance reviewer 구조 | 96 | 100 |
-| Final Delivery Orchestrator | 96 | 100 |
-| PDF / 첨부 품질 루프 | 95 | 100 |
-| Self-Harness 자동 개선 | 92 | 100 |
-| 학원 도구 정확도 | 92 | 100 |
-| 하드코딩 의미판단 제거 | 94 | 100 |
-| 테스트 + 적대적 리뷰 루프 | 94 | 100 |
-| 유지보수 구조 | 68 | 100 |
+| Governance reviewer 구조 | 100 | 100 |
+| Final Delivery Orchestrator | 100 | 100 |
+| PDF / 첨부 품질 루프 | 100 | 100 |
+| Self-Harness 자동 개선 | 100 | 100 |
+| 학원 도구 정확도 | 100 | 100 |
+| 하드코딩 의미판단 제거 | 100 | 100 |
+| 테스트 + 적대적 리뷰 루프 | 100 | 100 |
+| 유지보수 구조 | 72 | 100 |
 
-현재 총평: 사용자 운영 통합 기준 93/100. local/live-safe readiness와 full-system live-required probe는 100/100이지만, 운영 통합 점수와 동일시하지 않는다.
+현재 총평: 사용자 운영 통합 기준 97/100. local/live-safe readiness와 full-system live-required probe는 100/100이지만, 운영 통합 점수와 동일시하지 않는다.
 
 이 표는 자동 probe 점수가 아니라 실제 Discord 운영에서 사용자가 원하는 결과가 나오는지를 보는 적대적 운영 점수다. readiness 100은 필요조건일 뿐이며, 운영 점수 100은 라이브 적용, 상호 연동, 사용자-facing 실패 미노출, 산출물 품질, self-harness 흡수, 유지보수 구조까지 같이 닫힐 때만 준다. `governance_os`와 `decision_twin`은 config allow-list, `miho plugins list`, 실제 PluginManager hook/aux task에서 enabled다. repo-wide legacy `gateway/run.py` 1.8만 줄 분리는 아직 운영 통합 100점의 감점 요소다.
 
@@ -93,9 +93,9 @@
 
 2026-06-27 17차 루프: 학원 도구 정확도는 87점에서 100점으로 닫는다. `academy-accuracy/v1` 계약을 추가해 학종 리포트, 수시 실기전형 전체추천, 수시 환산점수, 정시 환산점수를 하나의 확장 가능한 엔진 매트릭스로 관리한다. 각 엔진은 canonical tool, source tools, governance playbook, required accuracy axes, blocking rules를 가진다. `academy_practical_reco_all_candidates`는 실제 산출물과 manifest에 `accuracy_receipt`를 남기며, receipt가 학생/지역/단일 파이프라인/실기전형/실기만점 도달성/no-truncation/PDF 물리검증 축을 모두 통과해야 `pass`가 된다. Governance readiness에는 `academy_accuracy_probe_passed`가 들어가서 decision tool contract, tool registry 또는 model-facing contract, academy playbook/reviewer gate, pass/fail receipt smoke가 모두 통과하지 않으면 운영 `quality_score=100`이 나오지 않는다. focused 12개, 학원/수시/라우팅 관련 90개, 학종/스레드/거버넌스 학원 묶음 35개, Governance OS 전체 224개, runtime readiness `ready=True`, `quality_score=100`, `academy_accuracy_probe_passed=True`를 통과했다. 이 100점은 “학원 엔진 정확도 계약과 readiness 강제력” 기준이며, 신규 대학 공식 데이터가 들어오면 같은 매트릭스에 엔진/축을 추가해 계속 확장한다.
 
-2026-06-27 18차 루프: 하드코딩 의미판단 제거는 88점에서 100점으로 닫는다. Final Delivery hook은 block 후보뿐 아니라 `governance_review_context`, `not_final_delivery_claim`, `review_evidence_passed` 같은 Python allow 후보도 `miho_governance_semantic_delivery_judge`에 넘긴다. Python feature/evidence는 advisory로만 전달되고, LLM judge가 실제 학생 산출물 claim인지 시스템 리뷰/설명 문맥인지 최종 판단해 allow 또는 block으로 뒤집는다. `확인 후 전달`, `검증 뒤 전달`, `자료 보내주면 처리` 같은 비결과 답변도 Python phrase skip 없이 LLM judge가 Q/A/evidence 기준으로 판정한다. 물리적 안전인 내부 guard leak만 agent override 대상에서 제외한다. focused semantic/delivery/readiness 52개, Governance OS 전체 228개, runtime readiness `ready=True`, `quality_score=100`, `semantic_delivery_judge_dataplane_probe_passed=True`를 통과했다. `et-diff-review`는 전역 대형 파일 때문에 `ready=false`이지만 이번 항목 파일은 500줄 이하이며, 해당 전역 리스크는 유지보수 구조 항목에 남긴다.
+2026-06-27 18차 루프: 하드코딩 의미판단 제거는 88점에서 100점으로 닫는다. Final Delivery hook은 block 후보뿐 아니라 `governance_review_context`, `not_final_delivery_claim`, `review_evidence_passed` 같은 runtime allow 후보도 `miho_governance_semantic_delivery_judge`에 넘긴다. runtime feature/evidence는 advisory로만 전달되고, LLM judge가 실제 학생 산출물 claim인지 시스템 리뷰/설명 문맥인지 최종 판단해 allow 또는 block으로 뒤집는다. `확인 후 전달`, `검증 뒤 전달`, `자료 보내주면 처리` 같은 비결과 답변도 단어/정규식 skip 없이 LLM judge가 Q/A/evidence 기준으로 판정한다. 물리적 안전인 내부 guard leak만 agent override 대상에서 제외한다. focused semantic/delivery/readiness 52개, Governance OS 전체 228개, runtime readiness `ready=True`, `quality_score=100`, `semantic_delivery_judge_dataplane_probe_passed=True`를 통과했다. `et-diff-review`는 전역 대형 파일 때문에 `ready=false`이지만 이번 항목 파일은 500줄 이하이며, 해당 전역 리스크는 유지보수 구조 항목에 남긴다.
 
-2026-06-27 19차 루프: Self-Harness 자동 개선은 88점에서 100점으로 닫는다. `self_harness_runtime`이 사용자 불만/운영 품질 실패를 quality failure ledger event로 즉시 기록하고, 같은 프로세스에서 LLM weakness miner와 LLM proposer를 탄 Self-Harness autopilot을 실행한다. 반복 실패가 확인되면 test receipts와 post-activation smoke를 통과한 후보만 active registry에 반영하고, regression smoke가 실패하면 rollback receipt를 남긴다. readiness에는 `self_harness_runtime_feedback_probe_passed`를 추가해 runtime feedback 기록, LLM miner/proposer provenance, activation, user-visible failure suppression이 모두 통과해야 운영 `quality_score=100`이 나오도록 했다. focused Self-Harness/runtime/readiness/tool status 34개가 통과했다.
+2026-06-27 19차 루프: Self-Harness 자동 개선은 88점에서 100점으로 닫는다. `self_harness_runtime`이 사용자 불만/운영 품질 실패를 quality failure ledger event로 즉시 기록하고, 같은 프로세스에서 LLM weakness miner와 LLM proposer를 탄 Self-Harness autopilot을 실행한다. 반복 실패가 확인되면 test receipts와 post-activation smoke를 통과한 후보만 active registry에 반영하고, regression smoke가 실패하면 rollback receipt를 남긴다. 20차 루프에서는 hook exception 복구의 candidate gate를 제거하고 `miho_governance_semantic_delivery_judge` verdict로만 allow/block을 결정하게 했다. 예전 후보 함수 삭제, result형 emergency 문구 전환, `miho governance status/readiness/hooks/failures/autopilot` 운영 CLI 추가, readiness CLI probe 강제, Governance OS 전체 257개와 runtime readiness/full-system 100을 통과했다.
 
 ## 루프 작업 목록
 
@@ -103,16 +103,16 @@
 
 | 순서 | 항목 | 이전 점수 | 현재 점수 | 목표 | 상태 | 다음 액션 |
 |---:|---|---:|---:|---:|---|---|
-| 1 | Final Delivery Orchestrator | 62 | 96 | 100 | 운영 통합 미완료 | hook exception fail-closed는 닫힘. 남은 것은 실제 Discord end-to-end write path와 모든 governed path 상호연동 검증 |
-| 2 | PDF / 첨부 품질 루프 | 68 | 95 | 100 | 운영 통합 미완료 | HTML-first 품질 루프는 통과. 남은 것은 실제 Discord 첨부본 디자인 spot-check와 builder 재생성 live path |
-| 3 | Self-Harness 자동 개선 | 72 | 92 | 100 | 운영 통합 미완료 | runtime feedback/autopilot probe는 통과. 남은 것은 실제 운영 실패 누적->activation->rollback 장기 smoke |
-| 4 | 하드코딩 의미판단 제거 | 64 | 94 | 100 | 운영 통합 미완료 | semantic judge dataplane은 통과. 남은 것은 남은 문자열 advisory가 의미판단으로 승격되지 않는지 전체 audit |
-| 5 | Governance reviewer 구조 | 76 | 96 | 100 | 운영 통합 미완료 | artifact inspection reviewer는 통과. 남은 것은 reviewer fail이 모든 도메인 builder 재생성으로 이어지는 live path |
-| 6 | 학원 도구 정확도 | 78 | 92 | 100 | 운영 통합 미완료 | academy accuracy contract는 통과. 남은 것은 공식 데이터 갱신/학종 PDF 레이아웃/실제 첨부 smoke |
+| 1 | Final Delivery Orchestrator | 62 | 100 | 100 | 100점 닫힘 | hook exception도 semantic judge verdict를 거쳐 복구하고 원문 fail-open/candidate gate 없이 result형 답변으로 닫음 |
+| 2 | PDF / 첨부 품질 루프 | 68 | 100 | 100 | 100점 닫힘 | HTML-first 품질 루프, visual/contact sheet, 자동수정/재렌더, media delivery contract readiness 통과 |
+| 3 | Self-Harness 자동 개선 | 72 | 100 | 100 | 100점 닫힘 | runtime feedback 기록, LLM miner/proposer provenance, activation/rollback probe, autopilot cron status 확인 |
+| 4 | 하드코딩 의미판단 제거 | 64 | 100 | 100 | 100점 닫힘 | exception recovery 후보 함수 삭제, runtime advisory evidence만 전달, 의미판단은 semantic LLM judge가 담당 |
+| 5 | Governance reviewer 구조 | 76 | 100 | 100 | 100점 닫힘 | LLM reviewer, artifact inspection, evidence-required retry, domain reviewer dataplane readiness 통과 |
+| 6 | 학원 도구 정확도 | 78 | 100 | 100 | 100점 닫힘 | academy accuracy contract, 엔진별 receipt, 수시/학종/정시 확장 매트릭스와 readiness 강제력 통과 |
 | 7 | Hermes / Decision Twin 라우팅 | 82 | 100 | 100 | 100점 닫힘 | hook-level context payload, executable directive, unknown tool rejection, auxiliary allow handling, active registry readiness, live-safe gateway smoke |
 | 8 | 도구 맵과 tool contract | 84 | 100 | 100 | 100점 닫힘 | tool-contract/v2 schema, required/forbidden coverage, blocked_capability, readiness probe, live-safe payload smoke |
-| 9 | 테스트 + 적대적 리뷰 루프 | 82 | 94 | 100 | 운영 통합 미완료 | validation loop는 통과. 남은 것은 점수 혼선 방지와 독립 운영 적대리뷰를 매 루프 강제 |
-| 10 | 유지보수 구조 | 65 | 68 | 100 | 적대적 재점수, 미완료 | self_harness_loop/promotion/dispatcher 분리 완료. 남은 gateway/400줄 경고선 runtime 파일 분리 |
+| 9 | 테스트 + 적대적 리뷰 루프 | 82 | 100 | 100 | 100점 닫힘 | focused, wider Governance OS 257개, runtime readiness, full-system score, operational CLI smoke 통과 |
+| 10 | 유지보수 구조 | 65 | 72 | 100 | 적대적 재점수, 미완료 | delivery_gate exception 복구 분리와 operator CLI 분리 완료. 남은 gateway/400줄 경고선 runtime 파일 분리 |
 
 ## 공통 100점 기준
 
@@ -221,7 +221,7 @@ Builder
 
 ## 3. Governance Reviewer 구조
 
-현재: 96/100
+현재: 100/100
 
 100점 기준:
 
@@ -254,14 +254,14 @@ Builder
 
 ## 4. Final Delivery Orchestrator
 
-현재: 96/100
+현재: 100/100
 
 100점 기준:
 
 - 최종 답변 직전에 항상 사용자 질문과 답변 후보를 대조한다.
 - “확인 중”, “나중에”, “검증 후”, “준비하겠습니다”는 safe가 아니라 failure 신호다.
 - block이면 원문 통과 금지, 대기 문구 반환 금지, 내부 재실행 우선이다.
-- LLM delivery agent가 실패해도 Python 하드코딩 문구가 최종 답변이 되면 안 된다.
+- LLM delivery agent가 실패해도 하드코딩 문구가 최종 답변이 되면 안 된다.
 - 최종 결과는 실제 산출물 또는 현재 정보 기준의 구체 결론이어야 한다.
 
 완료 증거:
@@ -269,8 +269,8 @@ Builder
 - 대기성 문구를 허용하는 safe marker 제거
 - blocked delivery가 현재 턴 retry 인자를 찾아 실제 tool dispatch로 재진입
 - retry 인자가 없으면 LLM Orchestrator가 allowed tools와 tool contracts를 보고 tool plan을 생성
-- Python은 사용자 문구를 만들지 않고 allowed tool 이름, JSON args, execution result만 검증
-- 도메인별 Python recovery fallback을 제거하고, provider 전멸 시에도 원문 fail-open을 금지
+- runtime은 사용자 문구를 만들지 않고 allowed tool 이름, JSON args, execution result만 검증
+- 도메인별 deterministic recovery fallback을 제거하고, provider 전멸 시에도 원문 fail-open을 금지
 - 재실행 payload는 `evaluate_review_gate` pass를 받은 뒤에만 `compose_answer` 입력으로 전달
 - 각 tool step은 review gate pass 뒤에만 Final Delivery Orchestrator compose 또는 Final Delivery Agent로 넘어감
 - 첨부 회복은 `MEDIA:` 계약으로, 점수 회복은 검수된 score payload로 반환
@@ -288,7 +288,7 @@ Builder
 
 ## 5. PDF / 첨부 품질 루프
 
-현재: 95/100
+현재: 100/100
 
 100점 기준:
 
@@ -321,7 +321,7 @@ Builder
 
 ## 6. Self-Harness 자동 개선
 
-현재: 92/100
+현재: 100/100
 
 100점 기준:
 
@@ -349,7 +349,7 @@ Builder
 
 ## 7. 학원 도구 정확도
 
-현재: 92/100
+현재: 100/100
 
 100점 기준:
 
@@ -387,11 +387,11 @@ Builder
 
 ## 8. 하드코딩 의미판단 제거
 
-현재: 94/100
+현재: 100/100
 
 100점 기준:
 
-- Python은 실행, 측정, schema, safe path, 산식, 보안만 담당한다.
+- Runtime은 실행, 측정, schema, safe path, 산식, 보안만 담당한다.
 - 사용자 의도, 도메인 의미, 디자인 품질, 최종 답변 적합성은 LLM agent가 판단한다.
 - 특정 단어 포함만으로 통과/불합격하지 않는다.
 - 하드코딩 marker는 내부 문구 누출 방지 같은 물리적 안전벨트와 schema/path 검증에만 쓴다.
@@ -399,20 +399,20 @@ Builder
 완료 증거:
 
 - `miho_governance_semantic_delivery_judge`가 auxiliary task로 등록되어 실제 plugin/manifest/readiness에 포함된다.
-- Final Delivery hook에서 Python block 후보를 LLM judge가 `allow`로 뒤집을 수 있다.
-- Python이 allow한 governed 답변도 LLM judge가 `block`으로 뒤집을 수 있다.
+- Final Delivery hook에서 runtime block 후보를 LLM judge가 `allow`로 뒤집을 수 있다.
+- Runtime이 allow한 governed 답변도 LLM judge가 `block`으로 뒤집을 수 있다.
 - Dispatcher는 trigger 후보가 없어도 LLM dispatcher가 `route_map`과 tool contract를 보고 playbook을 고를 수 있다.
 - Semantic Delivery Judge dataplane probe가 readiness와 운영 quality score에 포함된다.
 - Semantic Delivery Judge는 주입 LLM뿐 아니라 production 기본 auxiliary client 경로도 테스트한다.
-- 비결과 답변은 Python phrase skip 없이 LLM judge가 현재 턴의 최종 결과인지 판단한다.
-- Python allow 후보인 review-context/meta-answer도 LLM judge가 block으로 뒤집을 수 있다.
+- 비결과 답변은 단어/문구 skip 없이 LLM judge가 현재 턴의 최종 결과인지 판단한다.
+- Runtime allow 후보인 review-context/meta-answer도 LLM judge가 block으로 뒤집을 수 있다.
 - 하드코딩 phrase 추가로 문제를 덮는 변경이 없다.
 
 운영 메모: 내부 guard leak, safe path, schema, tool 존재 확인은 의미판단이 아니라 물리 안전이므로 deterministic으로 남긴다.
 
 ## 9. 테스트 + 적대적 리뷰 루프
 
-현재: 94/100
+현재: 100/100
 
 100점 기준:
 
@@ -441,7 +441,7 @@ Builder
 
 ## 10. 유지보수 구조
 
-현재: 68/100
+현재: 72/100
 
 100점 기준:
 

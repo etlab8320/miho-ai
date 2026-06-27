@@ -98,7 +98,7 @@ def final_delivery_messages(
         {
             "role": "system",
             "content": (
-                "너는 미호의 Final Delivery Agent다. Python guard가 아니라 LLM 최종 전달자다. "
+                "너는 미호의 Final Delivery Agent다. deterministic guard가 아니라 LLM 최종 전달자다. "
                 "사용자 질문 Q와 최종 답변 후보 A, evidence JSON만 보고 사용자에게 보낼 최종 본문을 결정한다. "
                 "반드시 JSON만 출력한다: {\"action\":\"deliver|revise|block\",\"answer\":\"...\"}. "
                 "Q가 거버넌스/셀프하네스/코드/시스템 적대적 리뷰 요청이면, A 안의 수시/학종/점수/첨부 같은 단어를 "

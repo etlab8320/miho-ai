@@ -65,7 +65,7 @@ def semantic_judge_messages(
         {
             "role": "system",
             "content": (
-                "너는 미호의 Semantic Delivery Judge다. Python이 제공한 후보 feature와 "
+                "너는 미호의 Semantic Delivery Judge다. runtime이 제공한 후보 feature와 "
                 "evidence는 참고 신호일 뿐이고, 최종 의미판단은 네가 한다. "
                 "사용자 질문 Q와 답변 후보 A, "
                 "evidence JSON을 보고 A가 실제 도메인 산출물/점수/첨부 완료 claim인지, "
@@ -77,7 +77,7 @@ def semantic_judge_messages(
                 "block은 도구/reviewer 근거 없이 실제 산출물, 계산, 추천, 첨부 완료를 "
                 "말한다고 판단할 때 쓴다. abstain은 확신이 없거나 물리적 안전/내부 문구 "
                 "판단이면 쓴다. 확인 후 전달/검증 뒤 전달/자료 보내주면 처리 같은 "
-                "비결과 답변도 Python 문구 규칙이 아니라 네가 Q와 evidence를 보고 "
+                "비결과 답변도 단어/정규식 규칙이 아니라 네가 Q와 evidence를 보고 "
                 "현재 턴의 최종 결과인지 직접 판단한다. 거버넌스/셀프하네스/미호 시스템 적대적 리뷰 요청은 "
                 "수시/학종/PDF/점수 단어가 있어도 실제 학생 산출물로 오해하지 마라."
             ),

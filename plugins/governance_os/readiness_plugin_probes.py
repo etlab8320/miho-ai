@@ -19,6 +19,7 @@ REQUIRED_HOOKS = frozenset(
         "transform_llm_output",
     }
 )
+REQUIRED_CLI_COMMANDS = frozenset({"governance"})
 REQUIRED_AUXILIARY_TASKS = frozenset(
     {
         "miho_governance_dispatcher",
@@ -53,7 +54,12 @@ def hook_probe_passed() -> bool:
     governance_os.register(ctx)
     registered_hooks = {hook for hook, callback in ctx.hooks if callable(callback)}
     registered_tasks = {str(task.get("key") or "") for task in ctx.tasks}
-    return REQUIRED_HOOKS <= registered_hooks and REQUIRED_AUXILIARY_TASKS <= registered_tasks
+    registered_cli = {str(command.get("name") or "") for command in ctx.cli_commands}
+    return (
+        REQUIRED_HOOKS <= registered_hooks
+        and REQUIRED_AUXILIARY_TASKS <= registered_tasks
+        and REQUIRED_CLI_COMMANDS <= registered_cli
+    )
 
 
 def manifest_probe_passed() -> bool:
@@ -87,6 +93,9 @@ def plugin_load_probe_passed() -> bool:
         return False
     loaded_tasks = set(manager._aux_tasks)
     if not REQUIRED_AUXILIARY_TASKS <= loaded_tasks:
+        return False
+    loaded_cli = set(getattr(manager, "_cli_commands", {}))
+    if not REQUIRED_CLI_COMMANDS <= loaded_cli:
         return False
     return all(
         _has_governance_callback(manager._hooks.get(hook, ()), module)
@@ -149,7 +158,7 @@ def auxiliary_instruction_probe_passed() -> bool:
         and _instruction_has(
             tasks,
             governance_os.FINAL_DELIVERY_TASK,
-            ("Final Delivery Agent", "deliver/revise/block", "Python guard", "적대적 리뷰"),
+            ("Final Delivery Agent", "deliver/revise/block", "deterministic guard", "적대적 리뷰"),
         )
         and _instruction_has(
             tasks,
@@ -159,7 +168,7 @@ def auxiliary_instruction_probe_passed() -> bool:
         and _instruction_has(
             tasks,
             governance_os.SEMANTIC_DELIVERY_JUDGE_TASK,
-            ("Python feature", "참고 신호", "최종 의미판단", "비결과 답변", "물리적 안전"),
+            ("runtime feature", "참고 신호", "최종 의미판단", "비결과 답변", "물리적 안전"),
         )
         and _instruction_has(
             tasks,
@@ -361,7 +370,7 @@ def semantic_delivery_judge_dataplane_probe_passed(registry: GovernanceRegistry)
         ),
         evidence={
             "decision": {"action": "block", "reason": "review_evidence_missing"},
-            "python_semantic_decision_is_advisory": True,
+            "runtime_semantic_signal_is_advisory": True,
         },
         call_llm=fake_call_llm,
         extract_content=_extract_probe_content,
@@ -371,7 +380,7 @@ def semantic_delivery_judge_dataplane_probe_passed(registry: GovernanceRegistry)
         answer="확인한 뒤 PDF로 전달하겠습니다.",
         evidence={
             "decision": {"action": "block", "reason": "non_result_deferral"},
-            "python_semantic_decision_is_advisory": True,
+            "runtime_semantic_signal_is_advisory": True,
         },
         call_llm=fake_call_llm,
         extract_content=_extract_probe_content,
@@ -430,9 +439,13 @@ class _HookProbeContext:
     def __init__(self) -> None:
         self.hooks: list[tuple[str, object]] = []
         self.tasks: list[dict[str, object]] = []
+        self.cli_commands: list[dict[str, object]] = []
 
     def register_hook(self, hook_name: str, callback: object) -> None:
         self.hooks.append((hook_name, callback))
 
     def register_auxiliary_task(self, **kwargs: object) -> None:
         self.tasks.append(dict(kwargs))
+
+    def register_cli_command(self, **kwargs: object) -> None:
+        self.cli_commands.append(dict(kwargs))

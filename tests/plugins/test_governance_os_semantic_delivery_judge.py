@@ -30,7 +30,7 @@ def test_semantic_delivery_judge_parses_fenced_json_allow() -> None:
     verdict = semantic_delivery_judge.judge_delivery_semantics(
         question="미호 거버넌스 적대적 리뷰해줘",
         answer="예시 점수 문구는 리뷰 문맥입니다.",
-        evidence={"python_semantic_decision_is_advisory": True},
+        evidence={"runtime_semantic_signal_is_advisory": True},
         call_llm=fake_call_llm,
         extract_content=_extract,
     )
@@ -65,7 +65,7 @@ def test_semantic_delivery_judge_uses_default_auxiliary_client(monkeypatch) -> N
     verdict = semantic_delivery_judge.judge_delivery_semantics(
         question="서연이 실기 추천해줘",
         answer="서연이는 한국체대 교과전형 쪽으로 잡는 게 맞습니다.",
-        evidence={"python_semantic_decision_is_advisory": True},
+        evidence={"runtime_semantic_signal_is_advisory": True},
     )
 
     assert verdict is not None
@@ -109,7 +109,7 @@ def test_semantic_delivery_judge_reviews_non_result_deferral() -> None:
     verdict = semantic_delivery_judge.judge_delivery_semantics(
         question="동하 대전대 학종 리포트 pdf로 줘",
         answer="확인한 뒤 PDF로 전달하겠습니다.",
-        evidence={"python_semantic_decision_is_advisory": True},
+        evidence={"runtime_semantic_signal_is_advisory": True},
         call_llm=fake_call_llm,
         extract_content=_extract,
     )
