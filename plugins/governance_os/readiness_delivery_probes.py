@@ -11,6 +11,7 @@ from .registry import GovernanceRegistry
 
 
 def final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
+    from . import delivery_gate as delivery_module
     from .delivery_gate import evaluate_final_delivery, governance_transform_llm_output
 
     def fake_call_llm(*_args: object, **_kwargs: object) -> dict[str, object]:
@@ -72,6 +73,22 @@ def final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
         final_delivery_call_llm=recovery_call_llm,
         final_delivery_extract_content=extract,
     )
+    original_loader = delivery_module.load_runtime_registry
+
+    def broken_runtime_registry() -> object:
+        raise RuntimeError("readiness probe registry failure")
+
+    delivery_module.load_runtime_registry = broken_runtime_registry
+    try:
+        hook_exception_recovered = governance_transform_llm_output(
+            response_text="서연이 수시 환산점수는 947.3점입니다.",
+            user_message="서연이 수시 환산점수 계산해줘",
+            governance_outcomes=[],
+            final_delivery_call_llm=recovery_call_llm,
+            final_delivery_extract_content=extract,
+        )
+    finally:
+        delivery_module.load_runtime_registry = original_loader
     return (
         blocked.action == "block"
         and blocked.reason == "review_evidence_missing"
@@ -81,6 +98,9 @@ def final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
         and recovered is not None
         and "947.3" not in recovered
         and "확정 환산점수 산출 불가" in recovered
+        and hook_exception_recovered is not None
+        and "947.3" not in hook_exception_recovered
+        and "확정 환산점수 산출 불가" in hook_exception_recovered
         and "확인된 뒤" not in transformed
         and "확인한 뒤" not in recovered
         and "후검증" not in transformed

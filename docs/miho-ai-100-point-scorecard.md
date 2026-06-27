@@ -44,18 +44,18 @@
 |---|---:|---:|
 | Hermes / Decision Twin 라우팅 | 100 | 100 |
 | 도구 맵과 tool contract | 100 | 100 |
-| Governance reviewer 구조 | 100 | 100 |
-| Final Delivery Orchestrator | 100 | 100 |
-| PDF / 첨부 품질 루프 | 100 | 100 |
-| Self-Harness 자동 개선 | 100 | 100 |
-| 학원 도구 정확도 | 100 | 100 |
-| 하드코딩 의미판단 제거 | 100 | 100 |
-| 테스트 + 적대적 리뷰 루프 | 100 | 100 |
-| 유지보수 구조 | 100 | 100 |
+| Governance reviewer 구조 | 96 | 100 |
+| Final Delivery Orchestrator | 96 | 100 |
+| PDF / 첨부 품질 루프 | 95 | 100 |
+| Self-Harness 자동 개선 | 92 | 100 |
+| 학원 도구 정확도 | 92 | 100 |
+| 하드코딩 의미판단 제거 | 94 | 100 |
+| 테스트 + 적대적 리뷰 루프 | 94 | 100 |
+| 유지보수 구조 | 58 | 100 |
 
-현재 총평: local/live-safe 기준 100/100, full-system live-required 기준 100/100.
+현재 총평: 사용자 운영 통합 기준 93/100. local/live-safe readiness와 full-system live-required probe는 100/100이지만, 운영 통합 점수와 동일시하지 않는다.
 
-이 표는 구현 진척 점수가 아니라 적대적 검수 점수다. Hermes / Decision Twin 라우팅, 도구 맵과 tool contract, Governance reviewer 구조, Final Delivery Orchestrator, PDF / 첨부 품질 루프, Self-Harness 자동 개선, 학원 도구 정확도, 하드코딩 의미판단 제거, 테스트 + 적대적 리뷰 루프, 유지보수 구조는 focused/wider/runtime receipt와 live-safe smoke를 통과해 local readiness 100점 계약으로 닫혔다. 실제 Discord write-smoke는 `full_system_score`로 별도 판정하며 현재 `live_discord_verified=True`라 full-system 100점 조건도 충족했다. `governance_os`와 `decision_twin`은 config allow-list, `miho plugins list`, 실제 PluginManager hook/aux task에서 enabled다. repo-wide legacy `gateway/run.py` 1.8만 줄 분리는 별도 유지보수 에픽이다.
+이 표는 자동 probe 점수가 아니라 실제 Discord 운영에서 사용자가 원하는 결과가 나오는지를 보는 적대적 운영 점수다. readiness 100은 필요조건일 뿐이며, 운영 점수 100은 라이브 적용, 상호 연동, 사용자-facing 실패 미노출, 산출물 품질, self-harness 흡수, 유지보수 구조까지 같이 닫힐 때만 준다. `governance_os`와 `decision_twin`은 config allow-list, `miho plugins list`, 실제 PluginManager hook/aux task에서 enabled다. repo-wide legacy `gateway/run.py` 1.8만 줄 분리는 아직 운영 통합 100점의 감점 요소다.
 
 점수 산식: local readiness 1000 / 1000 = 100, full-system은 live-required validation score가 상한이다.
 
@@ -103,15 +103,15 @@
 
 | 순서 | 항목 | 이전 점수 | 현재 점수 | 목표 | 상태 | 다음 액션 |
 |---:|---|---:|---:|---:|---|---|
-| 1 | Final Delivery Orchestrator | 62 | 100 | 100 | 100점 닫힘 | LLM orchestrator tool plan, allowed-tool execution, review-gated retry, Final Delivery Agent 최종화, runtime readiness |
-| 2 | PDF / 첨부 품질 루프 | 68 | 100 | 100 | 100점 닫힘 | HTML-first render, metadata scrub, layout/footer inspection, visual fail autocorrect/rerender, media delivery contract, runtime readiness |
-| 3 | Self-Harness 자동 개선 | 72 | 100 | 100 | 100점 닫힘 | runtime feedback ledger, LLM miner/proposer, same-process autopilot, activation/rollback smoke, readiness quality gate |
-| 4 | 하드코딩 의미판단 제거 | 64 | 100 | 100 | 100점 닫힘 | Python feature/evidence advisory화, allow/block semantic override, non-result answer LLM 판정, readiness dataplane, 물리 안전만 deterministic 유지 |
-| 5 | Governance reviewer 구조 | 76 | 100 | 100 | 100점 닫힘 | all governed review gates use LLM reviewer, opened artifact inspection bundle, evidence-required academy/PDF/media contracts, runtime readiness probe |
-| 6 | 학원 도구 정확도 | 78 | 100 | 100 | 100점 닫힘 | academy-accuracy/v1 엔진 매트릭스, 수시 전체추천 receipt/manifest, 학종·수시·정시 contract/playbook/readiness probe, focused/wider/runtime readiness |
+| 1 | Final Delivery Orchestrator | 62 | 96 | 100 | 운영 통합 미완료 | hook exception fail-closed는 닫힘. 남은 것은 실제 Discord end-to-end write path와 모든 governed path 상호연동 검증 |
+| 2 | PDF / 첨부 품질 루프 | 68 | 95 | 100 | 운영 통합 미완료 | HTML-first 품질 루프는 통과. 남은 것은 실제 Discord 첨부본 디자인 spot-check와 builder 재생성 live path |
+| 3 | Self-Harness 자동 개선 | 72 | 92 | 100 | 운영 통합 미완료 | runtime feedback/autopilot probe는 통과. 남은 것은 실제 운영 실패 누적->activation->rollback 장기 smoke |
+| 4 | 하드코딩 의미판단 제거 | 64 | 94 | 100 | 운영 통합 미완료 | semantic judge dataplane은 통과. 남은 것은 남은 문자열 advisory가 의미판단으로 승격되지 않는지 전체 audit |
+| 5 | Governance reviewer 구조 | 76 | 96 | 100 | 운영 통합 미완료 | artifact inspection reviewer는 통과. 남은 것은 reviewer fail이 모든 도메인 builder 재생성으로 이어지는 live path |
+| 6 | 학원 도구 정확도 | 78 | 92 | 100 | 운영 통합 미완료 | academy accuracy contract는 통과. 남은 것은 공식 데이터 갱신/학종 PDF 레이아웃/실제 첨부 smoke |
 | 7 | Hermes / Decision Twin 라우팅 | 82 | 100 | 100 | 100점 닫힘 | hook-level context payload, executable directive, unknown tool rejection, auxiliary allow handling, active registry readiness, live-safe gateway smoke |
 | 8 | 도구 맵과 tool contract | 84 | 100 | 100 | 100점 닫힘 | tool-contract/v2 schema, required/forbidden coverage, blocked_capability, readiness probe, live-safe payload smoke |
-| 9 | 테스트 + 적대적 리뷰 루프 | 82 | 100 | 100 | 100점 닫힘 | validation loop receipt, live-safe gateway smoke, attachment artifact smoke, 독립 adversarial validator readiness 포함 |
+| 9 | 테스트 + 적대적 리뷰 루프 | 82 | 94 | 100 | 운영 통합 미완료 | validation loop는 통과. 남은 것은 점수 혼선 방지와 독립 운영 적대리뷰를 매 루프 강제 |
 | 10 | 유지보수 구조 | 65 | 58 | 100 | 적대적 재점수, 미완료 | 남은 500줄 초과 runtime 파일 분리 계획 수립 |
 
 ## 공통 100점 기준
