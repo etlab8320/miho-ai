@@ -51,7 +51,7 @@
 | 학원 도구 정확도 | 100 | 100 |
 | 하드코딩 의미판단 제거 | 100 | 100 |
 | 테스트 + 적대적 리뷰 루프 | 100 | 100 |
-| 유지보수 구조 | 72 | 100 |
+| 유지보수 구조 | 74 | 100 |
 
 현재 총평: 사용자 운영 통합 기준 97/100. local/live-safe readiness와 full-system live-required probe는 100/100이지만, 운영 통합 점수와 동일시하지 않는다.
 
@@ -95,7 +95,7 @@
 
 2026-06-27 18차 루프: 하드코딩 의미판단 제거는 88점에서 100점으로 닫는다. Final Delivery hook은 block 후보뿐 아니라 `governance_review_context`, `not_final_delivery_claim`, `review_evidence_passed` 같은 runtime allow 후보도 `miho_governance_semantic_delivery_judge`에 넘긴다. runtime feature/evidence는 advisory로만 전달되고, LLM judge가 실제 학생 산출물 claim인지 시스템 리뷰/설명 문맥인지 최종 판단해 allow 또는 block으로 뒤집는다. `확인 후 전달`, `검증 뒤 전달`, `자료 보내주면 처리` 같은 비결과 답변도 단어/정규식 skip 없이 LLM judge가 Q/A/evidence 기준으로 판정한다. 물리적 안전인 내부 guard leak만 agent override 대상에서 제외한다. focused semantic/delivery/readiness 52개, Governance OS 전체 228개, runtime readiness `ready=True`, `quality_score=100`, `semantic_delivery_judge_dataplane_probe_passed=True`를 통과했다. `et-diff-review`는 전역 대형 파일 때문에 `ready=false`이지만 이번 항목 파일은 500줄 이하이며, 해당 전역 리스크는 유지보수 구조 항목에 남긴다.
 
-2026-06-27 19차 루프: Self-Harness 자동 개선은 88점에서 100점으로 닫는다. `self_harness_runtime`이 사용자 불만/운영 품질 실패를 quality failure ledger event로 즉시 기록하고, 같은 프로세스에서 LLM weakness miner와 LLM proposer를 탄 Self-Harness autopilot을 실행한다. 반복 실패가 확인되면 test receipts와 post-activation smoke를 통과한 후보만 active registry에 반영하고, regression smoke가 실패하면 rollback receipt를 남긴다. 20차 루프에서는 hook exception 복구의 candidate gate를 제거하고 `miho_governance_semantic_delivery_judge` verdict로만 allow/block을 결정하게 했다. 예전 후보 함수 삭제, result형 emergency 문구 전환, `miho governance status/readiness/hooks/failures/autopilot` 운영 CLI 추가, readiness CLI probe 강제, Governance OS 전체 257개와 runtime readiness/full-system 100을 통과했다.
+2026-06-27 19~21차 루프: Self-Harness 자동 개선은 88점에서 100점으로 닫는다. `self_harness_runtime`이 사용자 불만/운영 품질 실패를 quality failure ledger event로 즉시 기록하고, 같은 프로세스에서 LLM weakness miner와 LLM proposer를 탄 Self-Harness autopilot을 실행한다. 반복 실패가 확인되면 test receipts와 post-activation smoke를 통과한 후보만 active registry에 반영하고, regression smoke가 실패하면 rollback receipt를 남긴다. 20차는 hook exception 복구 candidate gate를 제거하고 `miho_governance_semantic_delivery_judge` verdict로만 allow/block을 결정했다. 21차는 `miho governance status --json` UX, manifest CLI 선언, hook group/callback count, semantic/recovery timeout metric, playbook contract 기반 current-result 문구를 추가했다. 운영 통합 점수는 거대 gateway 표면 때문에 97에서 멈춘다.
 
 ## 루프 작업 목록
 
@@ -112,7 +112,7 @@
 | 7 | Hermes / Decision Twin 라우팅 | 82 | 100 | 100 | 100점 닫힘 | hook-level context payload, executable directive, unknown tool rejection, auxiliary allow handling, active registry readiness, live-safe gateway smoke |
 | 8 | 도구 맵과 tool contract | 84 | 100 | 100 | 100점 닫힘 | tool-contract/v2 schema, required/forbidden coverage, blocked_capability, readiness probe, live-safe payload smoke |
 | 9 | 테스트 + 적대적 리뷰 루프 | 82 | 100 | 100 | 100점 닫힘 | focused, wider Governance OS 257개, runtime readiness, full-system score, operational CLI smoke 통과 |
-| 10 | 유지보수 구조 | 65 | 72 | 100 | 적대적 재점수, 미완료 | delivery_gate exception 복구 분리와 operator CLI 분리 완료. 남은 gateway/400줄 경고선 runtime 파일 분리 |
+| 10 | 유지보수 구조 | 65 | 74 | 100 | 적대적 재점수, 미완료 | CLI/metrics/current-result 분리 완료. 남은 gateway/400줄 경고선 runtime 파일 분리 |
 
 ## 공통 100점 기준
 
@@ -441,7 +441,7 @@ Builder
 
 ## 10. 유지보수 구조
 
-현재: 72/100
+현재: 74/100
 
 100점 기준:
 

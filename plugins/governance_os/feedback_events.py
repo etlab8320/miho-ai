@@ -15,6 +15,7 @@ def build_quality_failure_entry(
     user_feedback: str,
     artifact_paths: tuple[str, ...] = (),
     tools_used: tuple[str, ...] = (),
+    duration_ms: int = 0,
     agent_chain: tuple[str, ...] = ("user_feedback_monitor", "self_harness_signal"),
 ) -> OutcomeLedgerEntry:
     return OutcomeLedgerEntry(
@@ -22,6 +23,7 @@ def build_quality_failure_entry(
         playbook_key=str(playbook_key or "").strip(),
         agent_chain=agent_chain,
         tools_used=tools_used,
+        duration_ms=int(duration_ms or 0),
         review_status="user_reported_failure",
         failures=(str(failure_signature or "").strip(),),
         artifact_paths=artifact_paths,
@@ -37,6 +39,8 @@ def record_quality_failure(
     user_feedback: str,
     artifact_paths: tuple[str, ...] = (),
     tools_used: tuple[str, ...] = (),
+    duration_ms: int = 0,
+    agent_chain: tuple[str, ...] = ("user_feedback_monitor", "self_harness_signal"),
 ) -> dict[str, Any]:
     return record_outcome(
         build_quality_failure_entry(
@@ -46,5 +50,7 @@ def record_quality_failure(
             user_feedback=user_feedback,
             artifact_paths=artifact_paths,
             tools_used=tools_used,
+            duration_ms=duration_ms,
+            agent_chain=agent_chain,
         )
     )

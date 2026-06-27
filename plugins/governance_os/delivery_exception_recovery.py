@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from .final_delivery_current_result import compose_current_result
 from .final_delivery_recovery import recover_blocked_delivery
 from .semantic_delivery_judge import SemanticDeliveryVerdict, judge_delivery_semantics
 
@@ -101,7 +102,4 @@ def _exception_evidence(
 
 
 def _limited_current_result(evidence: dict[str, Any]) -> str:
-    retry_tools = evidence.get("retry_tools") if isinstance(evidence, dict) else []
-    if retry_tools:
-        return "현재 결론: 확정 산출물 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
-    return "현재 결론: 확정 산출물 없음.\n필요한 입력: 요청을 판단할 원자료."
+    return compose_current_result(evidence)

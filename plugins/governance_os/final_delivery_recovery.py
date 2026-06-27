@@ -8,6 +8,8 @@ from collections.abc import Callable
 from typing import Any
 
 from .delivery_safety import contains_internal_guard_leak, contains_non_result_deferral
+from .final_delivery_current_result import compose_current_result
+from .final_delivery_metrics import elapsed_ms, monotonic_ms, record_delivery_recovery_metric
 from .final_qa import repair_answer_until_pass
 
 logger = logging.getLogger(__name__)
@@ -65,14 +67,24 @@ def _request_blocked_recovery(
         extract_content = extract_content or default_extract
 
     try:
+        start_ms = monotonic_ms()
         response = _call_recovery_agent(call_llm, question, answer, evidence=evidence)
     except Exception as exc:
         logger.info("governance blocked delivery recovery skipped: %s", exc)
+        record_delivery_recovery_metric(
+            evidence=evidence,
+            stage="blocked_recovery",
+            status=_transport_status(exc),
+            task=BLOCKED_DELIVERY_RECOVERY_TASK,
+            duration_ms=elapsed_ms(start_ms),
+            error=str(exc),
+        )
         if default_call_llm is None or default_extract is None:
             default_call_llm, default_extract = _default_llm_pair()
         if call_llm is default_call_llm:
             return ""
         try:
+            fallback_start_ms = monotonic_ms()
             response = _call_recovery_agent(
                 default_call_llm,
                 question,
@@ -82,6 +94,14 @@ def _request_blocked_recovery(
             extract_content = default_extract
         except Exception as fallback_exc:
             logger.info("governance blocked delivery default recovery skipped: %s", fallback_exc)
+            record_delivery_recovery_metric(
+                evidence=evidence,
+                stage="blocked_recovery_default",
+                status=_transport_status(fallback_exc),
+                task=BLOCKED_DELIVERY_RECOVERY_TASK,
+                duration_ms=elapsed_ms(fallback_start_ms),
+                error=str(fallback_exc),
+            )
             return ""
     return str(extract_content(response) or "").strip()
 
@@ -158,13 +178,7 @@ def _emergency_fail_closed_result(*, evidence: dict[str, Any]) -> str:
     """
 
     _record_recovery_transport_failure(evidence)
-    decision = evidence.get("decision") if isinstance(evidence, dict) else {}
-    retry_tools = decision.get("retry_tools") if isinstance(decision, dict) else []
-    if isinstance(retry_tools, list) and retry_tools:
-        return "현재 결론: 확정 산출물 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
-    if retry_tools:
-        return "현재 결론: 확정 산출물 없음.\n필요한 입력: 원자료 또는 생성된 산출물."
-    return "현재 결론: 확정 산출물 없음.\n필요한 입력: 요청을 판단할 원자료."
+    return compose_current_result(evidence)
 
 
 def _record_recovery_transport_failure(evidence: dict[str, Any]) -> None:
@@ -185,3 +199,10 @@ def _record_recovery_transport_failure(evidence: dict[str, Any]) -> None:
         )
     except Exception as exc:
         logger.debug("failed to record final delivery recovery transport failure: %s", exc)
+
+
+def _transport_status(exc: Exception) -> str:
+    text = str(exc).casefold()
+    if "timeout" in text or "timed out" in text:
+        return "timeout"
+    return "error"

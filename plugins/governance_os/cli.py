@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from .operations import GovernanceReadinessReport, run_readiness_check
@@ -14,11 +15,11 @@ from .self_harness_cron import CRON_JOB_NAME
 def register_cli(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     subcommands = subparser.add_subparsers(dest="governance_action")
-    subcommands.add_parser("status", help="Show live Governance OS status")
-    subcommands.add_parser("readiness", help="Run readiness checks")
-    subcommands.add_parser("hooks", help="Show registered governance hooks")
-    subcommands.add_parser("failures", help="Show readiness failures")
-    subcommands.add_parser("autopilot", help="Show Self-Harness autopilot cron status")
+    _add_action(subcommands, "status", "Show live Governance OS status")
+    _add_action(subcommands, "readiness", "Run readiness checks")
+    _add_action(subcommands, "hooks", "Show registered governance hooks")
+    _add_action(subcommands, "failures", "Show readiness failures")
+    _add_action(subcommands, "autopilot", "Show Self-Harness autopilot cron status")
     subparser.set_defaults(func=governance_command)
 
 
@@ -50,6 +51,16 @@ def _governance_payload(action: str) -> dict[str, Any]:
     }
 
 
+def _add_action(subcommands: Any, name: str, help_text: str) -> None:
+    parser = subcommands.add_parser(name, help=help_text)
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Print machine-readable JSON",
+    )
+
+
 def _readiness_payload(report: GovernanceReadinessReport) -> dict[str, Any]:
     raw = asdict(report)
     return {
@@ -73,17 +84,22 @@ def _plugin_payload() -> dict[str, Any]:
         manager = get_plugin_manager()
         plugins = {item["key"]: item for item in manager.list_plugins()}
         cli_commands = getattr(manager, "_cli_commands", {})
+        hooks = getattr(manager, "_hooks", {})
     except Exception as exc:
         return {"enabled": False, "error": str(exc)}
     plugin = plugins.get("governance_os") or {}
     governance_cli = cli_commands.get("governance") if isinstance(cli_commands, dict) else None
+    hook_groups = _registered_hook_group_count(hooks)
+    callback_count = _registered_hook_callback_count(hooks)
     return {
         "enabled": bool(plugin.get("enabled")),
         "error": str(plugin.get("error") or ""),
-        "hooks": int(plugin.get("hooks") or 0),
+        "registered_hook_groups": hook_groups,
+        "registered_hook_callbacks": callback_count,
         "commands": int(plugin.get("commands") or 0),
         "cli_commands": int(bool(governance_cli)),
         "operator_cli": bool(governance_cli),
+        "manifest_cli_commands": _manifest_cli_commands(),
         "kind": str(plugin.get("kind") or ""),
         "version": str(plugin.get("version") or ""),
     }
@@ -119,6 +135,34 @@ def _callback_modules(callbacks: Any) -> list[str]:
         name = str(getattr(callback, "__name__", repr(callback)))
         modules.append(f"{module}.{name}" if module else name)
     return modules
+
+
+def _registered_hook_group_count(hooks: Any) -> int:
+    if not isinstance(hooks, dict):
+        return 0
+    return sum(1 for callbacks in hooks.values() if callbacks)
+
+
+def _registered_hook_callback_count(hooks: Any) -> int:
+    if not isinstance(hooks, dict):
+        return 0
+    return sum(len(callbacks or ()) for callbacks in hooks.values())
+
+
+def _manifest_cli_commands() -> list[str]:
+    try:
+        import yaml
+
+        manifest_path = Path(__file__).with_name("plugin.yaml")
+        raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(raw, dict):
+        return []
+    commands = raw.get("provides_cli_commands")
+    if not isinstance(commands, list):
+        return []
+    return [str(command).strip() for command in commands if str(command).strip()]
 
 
 def _autopilot_payload() -> dict[str, Any]:

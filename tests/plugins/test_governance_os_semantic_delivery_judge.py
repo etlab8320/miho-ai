@@ -118,3 +118,43 @@ def test_semantic_delivery_judge_reviews_non_result_deferral() -> None:
     assert verdict.action == "block"
     assert verdict.reason == "answer_waits_instead_of_answering"
     assert calls[0]["task"] == semantic_delivery_judge.SEMANTIC_DELIVERY_JUDGE_TASK
+
+
+def test_semantic_delivery_judge_records_timeout_metric(monkeypatch) -> None:
+    events: list[dict[str, object]] = []
+
+    def broken_call_llm(*_args: object, **_kwargs: object) -> object:
+        raise TimeoutError("semantic judge timeout")
+
+    def fake_record_quality_failure(**kwargs: object) -> dict[str, object]:
+        events.append(dict(kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        "plugins.governance_os.feedback_events.record_quality_failure",
+        fake_record_quality_failure,
+    )
+
+    verdict = semantic_delivery_judge.judge_delivery_semantics(
+        question="서연이 실기 추천해줘",
+        answer="서연이는 한국체대 교과전형 쪽으로 잡는 게 맞습니다.",
+        evidence={
+            "session_id": "semantic-timeout-1",
+            "decision": {
+                "playbook_key": "academy_practical_recommendation",
+                "retry_tools": ["academy_practical_reco_all_candidates"],
+            },
+        },
+        call_llm=broken_call_llm,
+        extract_content=_extract,
+    )
+
+    assert verdict is None
+    assert events
+    event = events[0]
+    assert event["request_id"] == "semantic-timeout-1"
+    assert event["playbook_key"] == "academy_practical_recommendation"
+    assert event["failure_signature"] == "final_delivery_semantic_judge_timeout"
+    assert event["tools_used"] == ("academy_practical_reco_all_candidates",)
+    assert isinstance(event["duration_ms"], int)
+    assert event["agent_chain"] == ("final_delivery_orchestrator", "semantic_judge")

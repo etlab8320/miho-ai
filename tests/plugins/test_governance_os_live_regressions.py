@@ -159,8 +159,10 @@ def test_runtime_repair_failure_records_self_harness_signal(monkeypatch) -> None
 
     _assert_no_self_blocking_text(transformed)
     assert recorded
-    assert recorded[0]["failure_signature"] == "final_delivery_recovery_transport_unavailable"
-    assert recorded[0]["playbook_key"] == "susi_score_calculation"
+    signatures = {str(item["failure_signature"]) for item in recorded}
+    assert "final_delivery_recovery_transport_unavailable" in signatures
+    assert "final_delivery_blocked_recovery_error" in signatures
+    assert any(item["playbook_key"] == "susi_score_calculation" for item in recorded)
 
 
 def test_runtime_repair_pass_is_filtered_if_it_returns_self_blocking_phrase(monkeypatch) -> None:

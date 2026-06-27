@@ -8,6 +8,8 @@ provides_hooks:
   - pre_tool_call
   - transform_tool_result
   - transform_llm_output
+provides_cli_commands:
+  - governance
 provides_auxiliary_tasks:
   - miho_governance_dispatcher
   - miho_governance_reviewer

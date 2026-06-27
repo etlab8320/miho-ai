@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
 from .delivery_safety import contains_internal_guard_leak
+from .final_delivery_metrics import elapsed_ms, monotonic_ms, record_delivery_recovery_metric
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ def judge_delivery_semantics(
     if contains_internal_guard_leak(answer):
         return None
     try:
+        start_ms = monotonic_ms()
         payload = _request_semantic_verdict(
             question=question,
             answer=answer,
@@ -51,8 +53,26 @@ def judge_delivery_semantics(
         )
     except Exception as exc:
         logger.info("governance semantic delivery judge skipped: %s", exc)
+        record_delivery_recovery_metric(
+            evidence=evidence,
+            stage="semantic_judge",
+            status=_transport_status(exc),
+            task=SEMANTIC_DELIVERY_JUDGE_TASK,
+            duration_ms=elapsed_ms(start_ms),
+            error=str(exc),
+        )
         return None
-    return _verdict_from_payload(payload)
+    verdict = _verdict_from_payload(payload)
+    if verdict is None and payload is not None:
+        record_delivery_recovery_metric(
+            evidence=evidence,
+            stage="semantic_judge",
+            status="invalid",
+            task=SEMANTIC_DELIVERY_JUDGE_TASK,
+            duration_ms=elapsed_ms(start_ms),
+            error="invalid semantic verdict payload",
+        )
+    return verdict
 
 
 def semantic_judge_messages(
@@ -164,3 +184,10 @@ def _parse_json_payload(text: str) -> Any:
 
 def _running_under_pytest() -> bool:
     return "pytest" in sys.modules or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
+def _transport_status(exc: Exception) -> str:
+    text = str(exc).casefold()
+    if "timeout" in text or "timed out" in text:
+        return "timeout"
+    return "error"

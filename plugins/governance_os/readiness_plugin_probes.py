@@ -34,6 +34,7 @@ REQUIRED_AUXILIARY_TASKS = frozenset(
         "miho_governance_final_delivery",
         "miho_governance_final_delivery_orchestrator",
         "miho_governance_semantic_delivery_judge",
+        "miho_governance_blocked_delivery_recovery",
         "miho_governance_adversarial_validator",
         "miho_governance_final_qa",
         "miho_governance_final_qa_repair",
@@ -77,7 +78,12 @@ def manifest_probe_passed() -> bool:
         return False
     declared_hooks = _declared_set(raw.get("provides_hooks"))
     declared_tasks = _declared_set(raw.get("provides_auxiliary_tasks"))
-    return REQUIRED_HOOKS <= declared_hooks and REQUIRED_AUXILIARY_TASKS <= declared_tasks
+    declared_cli = _declared_set(raw.get("provides_cli_commands"))
+    return (
+        REQUIRED_HOOKS <= declared_hooks
+        and REQUIRED_AUXILIARY_TASKS <= declared_tasks
+        and REQUIRED_CLI_COMMANDS <= declared_cli
+    )
 
 
 def plugin_load_probe_passed() -> bool:

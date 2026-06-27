@@ -123,6 +123,8 @@ def test_governance_plugin_loads_as_bundled_backend(tmp_path, monkeypatch) -> No
     keys = {task["key"] for task in get_plugin_auxiliary_tasks()}
     declared_hooks = set(loaded.manifest.provides_hooks)
     declared_tasks = set(loaded.manifest.provides_auxiliary_tasks)
+    manifest_path = loaded.manifest.path
+    assert manifest_path
     assert loaded.enabled
     assert {
         "pre_gateway_dispatch",
@@ -159,3 +161,8 @@ def test_governance_plugin_loads_as_bundled_backend(tmp_path, monkeypatch) -> No
     assert "miho_governance_blocked_delivery_recovery" in keys
     assert "miho_governance_final_qa" in keys
     assert "miho_governance_final_qa_repair" in keys
+    import yaml
+    from pathlib import Path
+
+    raw = yaml.safe_load((Path(manifest_path) / "plugin.yaml").read_text(encoding="utf-8"))
+    assert "governance" in set(raw["provides_cli_commands"])

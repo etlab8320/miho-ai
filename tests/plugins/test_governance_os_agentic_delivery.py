@@ -318,5 +318,5 @@ def test_blocked_answer_returns_current_result_when_all_recovery_agents_fail() -
     assert "947.3" not in transformed
     assert "확인 후" not in transformed
     assert "다시" not in transformed
-    assert "현재 결론: 확정 산출물 없음" in transformed
-    assert "환산점수" not in transformed
+    assert "현재 결론: 확정 환산점수 없음" in transformed
+    assert "필요한 입력: 학생 교과 성적, 지원 대학/학과, 전형." in transformed
