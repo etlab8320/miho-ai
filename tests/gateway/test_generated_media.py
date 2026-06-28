@@ -325,6 +325,93 @@ def test_does_not_duplicate_original_when_promoted_copy_is_already_present(tmp_p
     assert response == final
 
 
+def test_dedupes_hakjong_retry_pdf_tags_in_final_text(tmp_path):
+    out_dir = tmp_path / ".miho" / "media_cache" / "susi_student_record" / "validated"
+    out_dir.mkdir(parents=True)
+    first = out_dir / "김동하_대전대_스포츠건강재활학과.pdf"
+    latest = out_dir / "김동하_대전대_스포츠건강재활학과_2.pdf"
+    first.write_bytes(b"%PDF-1.4\nfirst")
+    latest.write_bytes(b"%PDF-1.4\nlatest")
+    _write_hakjong_manifest(first)
+    _write_hakjong_manifest(latest)
+
+    response = append_missing_generated_media_directives(
+        f"학종 PDF 생성·검증 통과.\nMEDIA:{first}\nMEDIA:{latest}",
+        [],
+    )
+
+    assert f"MEDIA:{latest}" in response
+    assert f"MEDIA:{first}" not in response
+
+
+def test_dedupes_hakjong_retry_pdf_tool_outputs_keeps_latest(tmp_path):
+    out_dir = tmp_path / ".miho" / "media_cache" / "susi_student_record" / "validated"
+    out_dir.mkdir(parents=True)
+    first = out_dir / "김동하_대전대_스포츠건강재활학과.pdf"
+    latest = out_dir / "김동하_대전대_스포츠건강재활학과_2.pdf"
+    first.write_bytes(b"%PDF-1.4\nfirst")
+    latest.write_bytes(b"%PDF-1.4\nlatest")
+    _write_hakjong_manifest(first)
+    _write_hakjong_manifest(latest)
+
+    response = append_missing_generated_media_directives(
+        "학종 PDF 생성·검증 통과.",
+        [
+            _tool_message(json.dumps({"ok": True, "media_tag": f"MEDIA:{first}"}, ensure_ascii=False), "academy_hakjong_report_package"),
+            _tool_message(json.dumps({"ok": True, "media_tag": f"MEDIA:{latest}"}, ensure_ascii=False), "academy_hakjong_report_package"),
+        ],
+    )
+
+    assert f"MEDIA:{latest}" in response
+    assert f"MEDIA:{first}" not in response
+
+
+def test_dedupes_hakjong_retry_pdf_between_final_text_and_tool_output(tmp_path):
+    out_dir = tmp_path / ".miho" / "media_cache" / "susi_student_record" / "validated"
+    out_dir.mkdir(parents=True)
+    first = out_dir / "김동하_대전대_스포츠건강재활학과.pdf"
+    latest = out_dir / "김동하_대전대_스포츠건강재활학과_2.pdf"
+    first.write_bytes(b"%PDF-1.4\nfirst")
+    latest.write_bytes(b"%PDF-1.4\nlatest")
+    _write_hakjong_manifest(first)
+    _write_hakjong_manifest(latest)
+
+    response = append_missing_generated_media_directives(
+        f"학종 PDF 생성·검증 통과.\nMEDIA:{first}",
+        [
+            _tool_message(
+                json.dumps({"ok": True, "media_tag": f"MEDIA:{latest}"}, ensure_ascii=False),
+                "academy_hakjong_report_package",
+            ),
+        ],
+    )
+
+    assert f"MEDIA:{latest}" in response
+    assert f"MEDIA:{first}" not in response
+
+
+def test_keeps_distinct_hakjong_pdf_artifacts(tmp_path):
+    out_dir = tmp_path / ".miho" / "media_cache" / "susi_student_record" / "validated"
+    out_dir.mkdir(parents=True)
+    daejeon = out_dir / "김동하_대전대_스포츠건강재활학과.pdf"
+    seowon = out_dir / "김동하_서원대_헬스케어운동학과.pdf"
+    daejeon.write_bytes(b"%PDF-1.4\ndaejeon")
+    seowon.write_bytes(b"%PDF-1.4\nseowon")
+    _write_hakjong_manifest(daejeon, university="대전대")
+    _write_hakjong_manifest(seowon, university="서원대")
+
+    response = append_missing_generated_media_directives(
+        "학종 PDF 생성·검증 통과.",
+        [
+            _tool_message(json.dumps({"ok": True, "media_tag": f"MEDIA:{daejeon}"}, ensure_ascii=False), "academy_hakjong_report_package"),
+            _tool_message(json.dumps({"ok": True, "media_tag": f"MEDIA:{seowon}"}, ensure_ascii=False), "academy_hakjong_report_package"),
+        ],
+    )
+
+    assert f"MEDIA:{daejeon}" in response
+    assert f"MEDIA:{seowon}" in response
+
+
 def test_ignores_media_cache_path_in_stdout_text_not_structured(tmp_path, monkeypatch):
     # A media_cache path appearing only in stdout text (not a structured path
     # key) is still ignored — same policy as read_file/execute_code, so the new
@@ -345,3 +432,19 @@ def test_ignores_media_cache_path_in_stdout_text_not_structured(tmp_path, monkey
     )
 
     assert response == "완료"
+
+
+def _write_hakjong_manifest(path, *, university="대전대"):
+    path.with_suffix(".hakjong_validation.json").write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "pdf_path": str(path),
+                "student_name": "김동하",
+                "university_names": [university],
+                "student_stage": "grade3",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )

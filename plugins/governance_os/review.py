@@ -13,6 +13,8 @@ from .review_evidence import (
     review_evidence_failures,
     review_evidence_required,
 )
+from .delivery_gate_constants import PLAYBOOK_BY_TOOL
+from .package_contract import package_delivery_contract_pass
 
 
 ReviewStatus = Literal["pass", "fail", "needs_human_review", "retry_needed"]
@@ -30,6 +32,7 @@ _REQUIRED_CHECKS_BY_GATE: dict[str, tuple[str, ...]] = {
     ),
     "attachment_delivery_review": ("media_tag", "artifact_path"),
     "memory_promotion_review": ("evidence", "privacy"),
+    "sports_max_api_reviewer": ("API 원천", "학생/종목/지표", "페이지/필터"),
 }
 _REQUIRED_CHECK_GROUPS_BY_GATE: dict[str, tuple[tuple[str, ...], ...]] = {
     "academy_result_reviewer": (
@@ -55,6 +58,11 @@ _REVIEWER_TASK_BY_PLAYBOOK = {
     "dev_code_update": _DEV_REVIEWER_TASK,
     "research_brief": _RESEARCH_REVIEWER_TASK,
 }
+_FAST_CONTRACT_REVIEW_TOOLS = frozenset(
+    {
+        "susi27_recommend_candidates",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -84,7 +92,7 @@ def evaluate_review_gate(
     auxiliary_review_policy: AuxiliaryReviewPolicy = "auto",
 ) -> ReviewGateOutcome:
     playbook = registry.get_playbook(playbook_key)
-    if tool_name not in playbook.required_tools or not playbook.review_gates:
+    if not _review_required_for_tool(playbook, playbook_key=playbook_key, tool_name=tool_name):
         return ReviewGateOutcome(status="pass", reason="no_review_required")
 
     payload = _loads_object(result)
@@ -146,6 +154,19 @@ def evaluate_review_gate(
                 checked=checked,
                 warnings=evidence_failures,
                 retry_tools=playbook.required_tools,
+            )
+        if package_delivery_contract_pass(
+            playbook_key=playbook_key,
+            tool_name=tool_name,
+            payload=payload,
+            reviewer=reviewer,
+        ):
+            return ReviewGateOutcome(
+                status="pass",
+                reason="package_delivery_contract_pass",
+                gate_names=gate_names,
+                warnings=_tuple_str(reviewer.get("warnings")),
+                checked=checked,
             )
         if _auxiliary_review_required(
             policy=auxiliary_review_policy,
@@ -209,12 +230,27 @@ def evaluate_review_gate(
 
 
 def auxiliary_review_policy_for_playbook(playbook_key: str) -> AuxiliaryReviewPolicy:
-    del playbook_key
+    if str(playbook_key or "") == "sports_motion_analysis":
+        return "auto"
     return "always"
+
+
+def auxiliary_review_policy_for_tool(playbook_key: str, tool_name: str) -> AuxiliaryReviewPolicy:
+    if str(tool_name or "").strip() in _FAST_CONTRACT_REVIEW_TOOLS:
+        return "auto"
+    return auxiliary_review_policy_for_playbook(playbook_key)
 
 
 def reviewer_task_for_playbook(playbook_key: str) -> str:
     return _REVIEWER_TASK_BY_PLAYBOOK.get(str(playbook_key or ""), _REVIEWER_TASK)
+
+
+def _review_required_for_tool(playbook: Any, *, playbook_key: str, tool_name: str) -> bool:
+    if not playbook.review_gates:
+        return False
+    if tool_name in playbook.required_tools:
+        return True
+    return PLAYBOOK_BY_TOOL.get(tool_name) == playbook_key
 
 
 def _loads_object(value: Any) -> dict[str, Any] | None:

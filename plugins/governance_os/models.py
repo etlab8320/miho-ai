@@ -62,6 +62,7 @@ class Playbook:
     review_gates: tuple[str, ...] = field(default_factory=tuple)
     retry_policy: str = ""
     delivery_format: str = ""
+    delivery_evidence_policy: str = ""
     ledger_policy: str = ""
     memory_policy: str = ""
     rollback_policy: str = ""
@@ -79,6 +80,7 @@ class Playbook:
             review_gates=_tuple_str(data.get("review_gates")),
             retry_policy=str(data.get("retry_policy") or "").strip(),
             delivery_format=str(data.get("delivery_format") or "").strip(),
+            delivery_evidence_policy=str(data.get("delivery_evidence_policy") or "").strip(),
             ledger_policy=str(data.get("ledger_policy") or "").strip(),
             memory_policy=str(data.get("memory_policy") or "").strip(),
             rollback_policy=str(data.get("rollback_policy") or "").strip(),

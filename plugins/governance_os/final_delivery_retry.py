@@ -41,11 +41,17 @@ def retry_blocked_final_delivery(
     dispatch_tool: Callable[..., str] | None = None,
     orchestrator_call_llm: Callable[..., Any] | None = None,
     orchestrator_extract_content: Callable[[Any], str] | None = None,
+    recovery_evidence: dict[str, Any] | None = None,
 ) -> FinalDeliveryRetryResult | None:
     """Run a retry tool when current-turn args are available and review passes."""
 
     if not playbook_key or not retry_tools:
         return None
+    evidence = _orchestrator_evidence(
+        playbook_key=playbook_key,
+        retry_tools=retry_tools,
+        recovery_evidence=recovery_evidence,
+    )
     retry_steps = _latest_retry_steps(conversation_history, retry_tools=retry_tools)
     used_orchestrator_plan = False
     if not retry_steps:
@@ -55,7 +61,7 @@ def retry_blocked_final_delivery(
             playbook_key=playbook_key,
             retry_tools=retry_tools,
             conversation_history=conversation_history,
-            evidence={"retry_tools": list(retry_tools), "playbook_key": playbook_key},
+            evidence=evidence,
             call_llm=orchestrator_call_llm,
             extract_content=orchestrator_extract_content,
         )
@@ -113,11 +119,7 @@ def retry_blocked_final_delivery(
             playbook_key=playbook_key,
             retry_tools=retry_tools,
             conversation_history=conversation_history,
-            evidence={
-                "retry_tools": list(retry_tools),
-                "playbook_key": playbook_key,
-                "verified_tool_results_count": len(verified_results),
-            },
+            evidence={**evidence, "verified_tool_results_count": len(verified_results)},
             verified_tool_results=tuple(verified_results),
             call_llm=orchestrator_call_llm,
             extract_content=orchestrator_extract_content,
@@ -137,6 +139,18 @@ def retry_blocked_final_delivery(
         review_reason=last_review_reason,
         answer_source=answer_source,
     )
+
+
+def _orchestrator_evidence(
+    *,
+    playbook_key: str,
+    retry_tools: tuple[str, ...],
+    recovery_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    evidence = dict(recovery_evidence or {})
+    evidence.setdefault("playbook_key", playbook_key)
+    evidence.setdefault("retry_tools", list(retry_tools))
+    return evidence
 
 
 def _dispatch_tool(

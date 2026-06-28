@@ -7,22 +7,32 @@ from typing import Any
 CRON_JOB_NAME = "governance_self_harness_autopilot"
 DEFAULT_CRON_SCHEDULE = "0 4 * * *"  # daily 04:00 server time
 _AUTOPILOT_SCRIPT_NAME = "governance_self_harness_autopilot.py"
+AUTOPILOT_SCRIPT_TIMEOUT_SECONDS = 900
 
 
 def register_self_harness_cron(
     *,
     schedule: str = DEFAULT_CRON_SCHEDULE,
     script_path: str = "",
+    script_timeout_seconds: int = AUTOPILOT_SCRIPT_TIMEOUT_SECONDS,
 ) -> dict[str, Any] | None:
     """Register the unattended Self-Harness autopilot cron job idempotently."""
 
-    from cron.jobs import create_job, list_jobs
+    from cron.jobs import create_job, list_jobs, update_job
+
+    script_arg = script_path or _install_autopilot_script()
 
     for job in list_jobs(include_disabled=True):
         if str(job.get("name") or "") == CRON_JOB_NAME:
-            return None
+            updates: dict[str, Any] = {}
+            if job.get("script") != script_arg:
+                updates["script"] = script_arg
+            if job.get("no_agent") is not True:
+                updates["no_agent"] = True
+            if job.get("script_timeout_seconds") != script_timeout_seconds:
+                updates["script_timeout_seconds"] = script_timeout_seconds
+            return update_job(str(job["id"]), updates) if updates else None
 
-    script_arg = script_path or _install_autopilot_script()
     return create_job(
         prompt=None,
         schedule=schedule,
@@ -30,6 +40,7 @@ def register_self_harness_cron(
         script=script_arg,
         no_agent=True,
         deliver="local",
+        script_timeout_seconds=script_timeout_seconds,
     )
 
 

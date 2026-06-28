@@ -161,14 +161,13 @@ tool 실행
 
 **치명 결함 (실행차단/사용자노출/범용성훼손/루프 미작동) 없음.** 검증: **2426 passed, 2 skipped.**
 
-## 보류 — 사장님 판단 필요 (트레이드오프)
+## 사장님 확정 원칙 — LLM 기반 에이전트 라우팅/검증
 
-원 리뷰의 🟡 P2 "dispatcher/risk 키워드 하드코딩 → LLM 의도분류"는 **의도적으로 보류**:
-- **risk 판정**: 배포/운영 등 위험 작업 승인 게이트. LLM 위임 시 false negative(위험 작업 놓침) = 보안 구멍. policy처럼 **결정적이 더 안전**(적대 리뷰도 "Policy는 deterministic이 맞다"고 인정).
-- **dispatcher**: 이미 키워드 후보 + 애매 시 LLM 보조. 완전 LLM화는 일반 요청을 governed로 끌어들여 **사장님이 강조한 범용성과 충돌** + 회귀 위험.
-- "위험 변경은 사람 승인 1회" 원칙상, 보안 게이트를 LLM에 위임하는 건 자율 진행하지 않고 사장님 결정을 받는 게 맞다.
-
-→ 사장님이 "risk도 LLM 보조로(키워드 1차 + LLM 해제)" 원하면 별도 작업으로 진행 가능.
+원 리뷰의 🟡 P2 "dispatcher/risk 키워드 하드코딩 → LLM 의도분류"는 더 이상 보류가 아니다. 사장님 확정 요구사항:
+- **모든 agent routing, verification, reviewer, Final QA, Self-Harness weakness mining/proposal은 LLM 기반이어야 한다.**
+- Python deterministic code는 파일 존재, schema, safe path, secret leak, 숫자 산식, rollback snapshot, 승인 필요 여부 같은 물리/보안 계약만 검증한다.
+- Python 문자열/키워드/정규식 가드가 사용자 의도, 도메인 의미, 최종 답변 적합성, routed playbook 선택을 막거나 통과시키면 100점 금지 결함이다.
+- 안전 승인은 deterministic으로 강제할 수 있지만, 그 앞의 agentic 판단과 설명 가능한 route/verification verdict는 LLM payload와 receipt를 남겨야 한다.
 
 ---
 
@@ -185,7 +184,7 @@ tool 실행
 | review gate(하드+LLM aux) | `plugins/governance_os/review.py:199-300` |
 | 하드 내부 차단 문구 | `plugins/governance_os/policy.py:40,56` |
 | 훅 등록 | `plugins/governance_os/__init__.py:62-63` |
-| transform_llm_output 발화 | `agent/conversation_loop.py:4083-4104` |
+| transform_llm_output 발화 | `agent/final_output_hooks.py:25-63` |
 | transform_tool_result 발화 | `model_tools.py:866-887` |
 | Self-Harness shadow candidate | `plugins/governance_os/self_harness.py:55,79-97` |
 | 활성화 게이트(test_receipts 필수) | `plugins/governance_os/promotion.py:142-150` |

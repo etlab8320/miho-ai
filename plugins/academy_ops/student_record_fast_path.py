@@ -42,6 +42,31 @@ CHART_INTENTS: dict[str, tuple[str, ...]] = {
     ),
     "none": RECORD_INTENTS["none"],
 }
+SPORTS_MOTION_REPORT_GROUP = "academy_sports_motion_report_exclusion"
+SPORTS_MOTION_REPORT_MIN_MARGIN = 0.015
+SPORTS_MOTION_REPORT_INTENTS: dict[str, tuple[str, ...]] = {
+    "sports_motion_report": (
+        "학생 운동퍼포먼스 분석 리포트 만들어줘",
+        "학생 운동분석 변인 리포트 만들어줘",
+        "MAX 분석 변인으로 운동처방 해줘",
+        "점프 분석 리포트 PDF 줘",
+        "학생 변인 보고 부족한 점과 운동처방 알려줘",
+    ),
+    "dual_source_review": (
+        "학생 기록과 운동분석을 같이 보고 리포트 만들어줘",
+        "최근 기록도 보고 변인도 같이 분석해줘",
+        "학생 상태를 기록과 분석 자료 둘 다 보고 판단해줘",
+        "Peak 기록과 MAX 운동분석을 비교해서 부족한 점 알려줘",
+    ),
+    "plain_peak_record": (
+        "학생 최근 종목 기록만 보여줘",
+        "학생 최근 측정 기록만 알려줘",
+        "학생 최근 실기 기록 조회해줘",
+        "학생 종목별 최근 기록만 보여줘",
+        "학생 최근 기록 목록만 보여줘",
+    ),
+    "none": RECORD_INTENTS["none"],
+}
 
 
 async def try_student_record_chart_fast_path(
@@ -56,6 +81,8 @@ async def try_student_record_chart_fast_path(
 
     handler = handlers.get("academy_student_record_chart_image")
     if handler is None:
+        return None
+    if _should_defer_record_request_to_body_agent(text):
         return None
     if not _is_record_chart_lookup(text):
         return None
@@ -90,6 +117,8 @@ async def try_student_record_fast_path(
 
     handler = handlers.get("academy_student_record_lookup")
     if handler is None:
+        return None
+    if _should_defer_record_request_to_body_agent(text):
         return None
     if not _is_plain_record_lookup(text):
         return None
@@ -153,3 +182,14 @@ def _is_record_chart_lookup(text: str) -> bool:
         min_margin=0.04,
     )
     return output_label == "image"
+
+
+def _should_defer_record_request_to_body_agent(text: str) -> bool:
+    label = semantic_intents.classify(
+        text,
+        SPORTS_MOTION_REPORT_GROUP,
+        SPORTS_MOTION_REPORT_INTENTS,
+        negative_label="plain_peak_record",
+        min_margin=SPORTS_MOTION_REPORT_MIN_MARGIN,
+    )
+    return label in {"sports_motion_report", "dual_source_review"}

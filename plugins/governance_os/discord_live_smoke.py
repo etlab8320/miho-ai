@@ -19,6 +19,9 @@ SenderFn = Callable[[str, str], dict[str, Any]]
 class DiscordDeliverySmoke:
     ready: bool
     mode: DiscordSmokeMode
+    gateway_process_ready: bool
+    artifact_preflight_ready: bool
+    actual_send_verified: bool
     preflight_receipt: dict[str, Any]
     live_gateway_receipt: dict[str, Any]
     attachment_receipt: dict[str, Any]
@@ -80,6 +83,9 @@ def build_discord_delivery_smoke(
     return DiscordDeliverySmoke(
         ready=ready,
         mode=mode,
+        gateway_process_ready=gateway_ok,
+        artifact_preflight_ready=gateway_ok and artifact_ok,
+        actual_send_verified=sent and send_attempted and mode == "live",
         failures=tuple(failures),
         preflight_receipt={
             "name": "discord_delivery",

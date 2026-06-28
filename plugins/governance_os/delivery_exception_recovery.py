@@ -59,6 +59,7 @@ def _semantic_exception_verdict(
         "runtime_signals_are_advisory": True,
         "candidate_gate_removed": True,
         "session_id": str(context.get("session_id") or ""),
+        "record_recovery_metrics": context.get("record_recovery_metrics", True) is not False,
     }
     return judge_delivery_semantics(
         question=question,
@@ -98,6 +99,7 @@ def _exception_evidence(
         "hook_exception_recovery": True,
         "semantic_delivery_verdict": verdict.action if verdict is not None else "unavailable",
         "session_id": str(context.get("session_id") or ""),
+        "record_recovery_metrics": context.get("record_recovery_metrics", True) is not False,
     }
 
 

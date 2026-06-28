@@ -67,6 +67,9 @@ def _prior_event(event_id: int = 1) -> dict[str, Any]:
 def test_runtime_feedback_loop_records_feedback_and_activates(tmp_path, monkeypatch) -> None:
     evolution = _reload_home(tmp_path, monkeypatch)
 
+    from miho_cli.owner_profile import list_profile_events
+    from miho_cli.owner_profile import DAILY_SUMMARY_JOB_NAME
+    from miho_cli.skill_curator import DAILY_SKILL_REVIEW_JOB_NAME, list_skill_candidates
     from plugins.governance_os.self_harness_runtime import run_feedback_improvement_loop
 
     result = run_feedback_improvement_loop(
@@ -95,6 +98,20 @@ def test_runtime_feedback_loop_records_feedback_and_activates(tmp_path, monkeypa
         if "governance_outcome" in item.get("metadata", {})
     ]
     assert any(item["user_feedback"] == "PDF 푸터가 페이지 밖으로 밀렸어" for item in outcomes)
+    profile_events = list_profile_events(limit=5, category="miho_self_harness")
+    assert profile_events
+    assert "PDF 푸터가 페이지 밖으로 밀렸어" in profile_events[0]["content"]
+    candidates = list_skill_candidates(status="pending", kind="failure_pattern", limit=5)
+    assert candidates
+    assert candidates[0]["source"] == "governance_os.self_harness_runtime"
+    assert candidates[0]["hits"] == 1
+    assert "designed_pdf_artifact" in candidates[0]["summary"]
+    assert "pdf_footer_overflow" in candidates[0]["evidence"]
+    from cron.jobs import load_jobs
+
+    job_names = {str(job.get("name") or "") for job in load_jobs()}
+    assert DAILY_SUMMARY_JOB_NAME in job_names
+    assert DAILY_SKILL_REVIEW_JOB_NAME in job_names
 
 
 def test_runtime_feedback_loop_rolls_back_on_regression(tmp_path, monkeypatch) -> None:

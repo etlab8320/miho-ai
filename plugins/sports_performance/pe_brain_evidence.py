@@ -12,6 +12,12 @@ from typing import Any, Iterable
 from miho_constants import get_miho_home
 
 from .catalog import normalize_exercise
+from .local_references import (
+    LOCAL_REF_PREFIX,
+    LOCAL_REFERENCE_SOURCE,
+    load_local_reference_papers,
+    manifest_path as local_reference_manifest_path,
+)
 from .pe_brain_terms import (
     ALLOWED_PE_BRAIN_CATEGORIES,
     EXERCISE_TERMS,
@@ -48,7 +54,7 @@ def build_pe_brain_evidence_response(args: dict[str, Any]) -> dict[str, Any]:
     return {
         "ok": True,
         "action": action,
-        "source": "pe_brain",
+        "source": "sports_performance_evidence",
         "endpoint": PE_BRAIN_PAPERS_ENDPOINT,
         "total_packs": len(packs),
         "quality_counts": _quality_counts(packs),
@@ -65,7 +71,14 @@ def build_pe_brain_evidence_response(args: dict[str, Any]) -> dict[str, Any]:
 
 def load_pe_brain_evidence_state(*, force_refresh: bool = False) -> dict[str, Any]:
     papers, source_info = _load_papers_with_cache(force_refresh=force_refresh)
-    return {"papers": papers, "packs": build_evidence_packs(papers), "source_info": source_info}
+    local_papers = load_local_reference_papers()
+    source_info = {
+        **source_info,
+        "local_reference_count": len(local_papers),
+        "local_reference_manifest": str(local_reference_manifest_path()),
+    }
+    all_papers = [*papers, *local_papers]
+    return {"papers": all_papers, "packs": build_evidence_packs(all_papers), "source_info": source_info}
 
 
 def load_pe_brain_evidence_packs(*, force_refresh: bool = False) -> list[dict[str, Any]]:
@@ -115,12 +128,12 @@ def resolve_pe_brain_evidence_refs(refs: Iterable[str], *, exercise_key: str) ->
     invalid_refs: list[dict[str, str]] = []
     unmanaged_refs: list[str] = []
     for ref in requested:
-        if not ref.startswith(PE_BRAIN_REF_PREFIX):
+        if not _is_managed_ref(ref):
             invalid_refs.append({"ref": ref, "reason": "구조화 검증되지 않은 외부 근거 ref는 코칭 근거로 쓰지 않는다."})
             continue
         pack = by_id.get(ref)
         if pack is None:
-            invalid_refs.append({"ref": ref, "reason": "PE-brain 근거팩을 찾을 수 없다."})
+            invalid_refs.append({"ref": ref, "reason": "운동분석 근거팩을 찾을 수 없다."})
             continue
         reason = _invalid_ref_reason(pack, exercise_key)
         if reason:
@@ -139,6 +152,7 @@ def resolve_pe_brain_evidence_refs(refs: Iterable[str], *, exercise_key: str) ->
 
 def _build_pack(raw: dict[str, Any]) -> dict[str, Any]:
     paper_id = _text(raw.get("id"))
+    source = _source_name(raw)
     title = _text(raw.get("title"))
     summary = _text(raw.get("summary"))
     category = _text(raw.get("category")).lower()
@@ -146,7 +160,7 @@ def _build_pack(raw: dict[str, Any]) -> dict[str, Any]:
     chunk_count = _safe_int(raw.get("chunk_count"))
     created_at = _text(raw.get("created_at"))
     corpus = f"{title} {summary}".lower()
-    exercise_keys = _exercise_tags(corpus)
+    exercise_keys = _pack_exercise_keys(raw, source, corpus)
     domain_tags = _domain_tags(corpus, category, exercise_keys)
     quality_status, quality_reasons = _quality_status(
         category=category,
@@ -157,9 +171,9 @@ def _build_pack(raw: dict[str, Any]) -> dict[str, Any]:
         exercise_keys=exercise_keys,
         corpus=corpus,
     )
-    return {
-        "id": f"{PE_BRAIN_REF_PREFIX}{paper_id}",
-        "source": "pe_brain",
+    pack = {
+        "id": _pack_id(paper_id, source),
+        "source": source,
         "paper_id": paper_id,
         "title": title,
         "category": category,
@@ -173,6 +187,10 @@ def _build_pack(raw: dict[str, Any]) -> dict[str, Any]:
         "quality_status": quality_status,
         "quality_reasons": quality_reasons,
     }
+    for key in ("local_pdf_path", "original_path", "sha256", "exercise_key"):
+        if raw.get(key):
+            pack[key] = raw[key]
+    return pack
 
 
 def _quality_status(
@@ -208,16 +226,38 @@ def _quality_status(
 
 def _invalid_ref_reason(pack: dict[str, Any] | None, exercise_key: str) -> str | None:
     if pack is None:
-        return "PE-brain 근거팩을 찾을 수 없다."
+        return "운동분석 근거팩을 찾을 수 없다."
     if pack.get("quality_status") != "accepted":
-        return "accepted 상태의 PE-brain 근거팩이 아니다."
+        return "accepted 상태의 운동분석 근거팩이 아니다."
     exercise_keys = set(pack.get("exercise_keys") or [])
     domain_tags = set(pack.get("domain_tags") or [])
     if exercise_key in exercise_keys:
         return None
     if pack.get("category") == "mental" and "mental_performance" in domain_tags:
         return None
-    return "요청 종목과 PE-brain 근거팩 태그가 맞지 않는다."
+    return "요청 종목과 운동분석 근거팩 태그가 맞지 않는다."
+
+
+def _is_managed_ref(ref: str) -> bool:
+    return ref.startswith(PE_BRAIN_REF_PREFIX) or ref.startswith(LOCAL_REF_PREFIX)
+
+
+def _source_name(raw: dict[str, Any]) -> str:
+    source = _text(raw.get("source"))
+    return source if source == LOCAL_REFERENCE_SOURCE else "pe_brain"
+
+
+def _pack_id(paper_id: str, source: str) -> str:
+    if source == LOCAL_REFERENCE_SOURCE:
+        return paper_id if paper_id.startswith(LOCAL_REF_PREFIX) else f"{LOCAL_REF_PREFIX}{paper_id}"
+    return paper_id if paper_id.startswith(PE_BRAIN_REF_PREFIX) else f"{PE_BRAIN_REF_PREFIX}{paper_id}"
+
+
+def _pack_exercise_keys(raw: dict[str, Any], source: str, corpus: str) -> list[str]:
+    declared = _text(raw.get("exercise_key"))
+    if source == LOCAL_REFERENCE_SOURCE and declared:
+        return [declared]
+    return _exercise_tags(corpus)
 
 
 def _domain_tags(corpus: str, category: str, exercise_keys: list[str]) -> list[str]:
@@ -349,18 +389,22 @@ def _public_pack(pack: dict[str, Any]) -> dict[str, Any]:
             "paper_id",
             "title",
             "category",
+            "summary",
             "evidence_depth",
             "domain_tags",
             "exercise_keys",
             "quality_status",
+            "local_pdf_path",
+            "original_path",
         )
         if key in pack
     }
 
 
-def _pack_sort_key(pack: dict[str, Any]) -> tuple[int, str]:
+def _pack_sort_key(pack: dict[str, Any]) -> tuple[int, int, str]:
     rank = {"accepted": 0, "review_required": 1, "rejected": 2}.get(str(pack.get("quality_status")), 3)
-    return (rank, str(pack.get("created_at") or ""))
+    source_rank = 0 if pack.get("source") == LOCAL_REFERENCE_SOURCE else 1
+    return (rank, source_rank, str(pack.get("created_at") or ""))
 
 
 def _exercise_key(value: Any) -> str:

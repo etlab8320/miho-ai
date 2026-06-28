@@ -19,9 +19,12 @@ import importlib
 import json
 import logging
 import threading
-import time
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set
+
+from tools.registry_entries import ToolEntry, _check_fn_cached, invalidate_check_fn_cache
+from tools.registry_result import tool_error, tool_result
+from tools.registry_schema import function_schema_from_entry
 
 logger = logging.getLogger(__name__)
 
@@ -72,80 +75,6 @@ def discover_builtin_tools(tools_dir: Optional[Path] = None) -> List[str]:
         except Exception as e:
             logger.warning("Could not import tool module %s: %s", mod_name, e)
     return imported
-
-
-class ToolEntry:
-    """Metadata for a single registered tool."""
-
-    __slots__ = (
-        "name", "toolset", "schema", "handler", "check_fn",
-        "requires_env", "is_async", "description", "emoji",
-        "max_result_size_chars", "dynamic_schema_overrides",
-    )
-
-    def __init__(self, name, toolset, schema, handler, check_fn,
-                 requires_env, is_async, description, emoji,
-                 max_result_size_chars=None, dynamic_schema_overrides=None):
-        self.name = name
-        self.toolset = toolset
-        self.schema = schema
-        self.handler = handler
-        self.check_fn = check_fn
-        self.requires_env = requires_env
-        self.is_async = is_async
-        self.description = description
-        self.emoji = emoji
-        self.max_result_size_chars = max_result_size_chars
-        # Optional zero-arg callable returning a dict of schema overrides
-        # applied at get_definitions() time. Use for fields that depend on
-        # runtime config (e.g. delegate_task's description must reflect the
-        # user's current delegation.max_concurrent_children / max_spawn_depth
-        # so the model isn't told the wrong limits). The callable is invoked
-        # on every get_definitions() call; results are merged shallow on top
-        # of the base schema before the {"type": "function", ...} wrap.
-        self.dynamic_schema_overrides = dynamic_schema_overrides
-
-
-# ---------------------------------------------------------------------------
-# check_fn TTL cache
-#
-# check_fn callables like tools/terminal_tool.check_terminal_requirements
-# probe external state (Docker daemon, Modal SDK install, playwright binary
-# availability). For a long-lived CLI or gateway process, calling them on
-# every get_definitions() is pure waste — external state changes on human
-# timescales. Cache results for ~30 s so env-var flips via ``miho tools``
-# or live credential file changes propagate within a turn or two without
-# requiring any explicit invalidation.
-# ---------------------------------------------------------------------------
-
-_CHECK_FN_TTL_SECONDS = 30.0
-_check_fn_cache: Dict[Callable, tuple[float, bool]] = {}
-_check_fn_cache_lock = threading.Lock()
-
-
-def _check_fn_cached(fn: Callable) -> bool:
-    """Return bool(fn()), TTL-cached across calls. Swallows exceptions as False."""
-    now = time.monotonic()
-    with _check_fn_cache_lock:
-        cached = _check_fn_cache.get(fn)
-        if cached is not None:
-            ts, value = cached
-            if now - ts < _CHECK_FN_TTL_SECONDS:
-                return value
-    try:
-        value = bool(fn())
-    except Exception:
-        value = False
-    with _check_fn_cache_lock:
-        _check_fn_cache[fn] = (now, value)
-    return value
-
-
-def invalidate_check_fn_cache() -> None:
-    """Drop all cached ``check_fn`` results. Call after config changes that
-    affect tool availability (e.g. ``miho tools enable``)."""
-    with _check_fn_cache_lock:
-        _check_fn_cache.clear()
 
 
 class ToolRegistry:
@@ -362,8 +291,7 @@ class ToolRegistry:
                     if not quiet:
                         logger.debug("Tool %s unavailable (check failed)", name)
                     continue
-            # Ensure schema always has a "name" field — use entry.name as fallback
-            schema_with_name = {**entry.schema, "name": entry.name}
+            overrides = None
             # Apply runtime-dynamic overrides (e.g. delegate_task description
             # depends on current delegation.max_concurrent_children /
             # max_spawn_depth). Caller side (model_tools.get_tool_definitions)
@@ -371,16 +299,26 @@ class ToolRegistry:
             # to delegation.* in config invalidate the cache automatically.
             if entry.dynamic_schema_overrides is not None:
                 try:
-                    overrides = entry.dynamic_schema_overrides()
-                    if isinstance(overrides, dict):
-                        schema_with_name.update(overrides)
+                    maybe_overrides = entry.dynamic_schema_overrides()
+                    if isinstance(maybe_overrides, dict):
+                        overrides = maybe_overrides
                 except Exception as exc:
                     logger.warning(
                         "dynamic_schema_overrides for tool %s raised %s; "
                         "using static schema",
                         name, exc,
                     )
-            result.append({"type": "function", "function": schema_with_name})
+            result.append(
+                {
+                    "type": "function",
+                    "function": function_schema_from_entry(
+                        name=entry.name,
+                        schema=entry.schema,
+                        description=entry.description,
+                        dynamic_overrides=overrides,
+                    ),
+                }
+            )
         return result
 
     # ------------------------------------------------------------------
@@ -542,48 +480,3 @@ class ToolRegistry:
 
 # Module-level singleton
 registry = ToolRegistry()
-
-
-# ---------------------------------------------------------------------------
-# Helpers for tool response serialization
-# ---------------------------------------------------------------------------
-# Every tool handler must return a JSON string.  These helpers eliminate the
-# boilerplate ``json.dumps({"error": msg}, ensure_ascii=False)`` that appears
-# hundreds of times across tool files.
-#
-# Usage:
-#   from tools.registry import registry, tool_error, tool_result
-#
-#   return tool_error("something went wrong")
-#   return tool_error("not found", code=404)
-#   return tool_result(success=True, data=payload)
-#   return tool_result(items)            # pass a dict directly
-
-
-def tool_error(message, **extra) -> str:
-    """Return a JSON error string for tool handlers.
-
-    >>> tool_error("file not found")
-    '{"error": "file not found"}'
-    >>> tool_error("bad input", success=False)
-    '{"error": "bad input", "success": false}'
-    """
-    result = {"error": str(message)}
-    if extra:
-        result.update(extra)
-    return json.dumps(result, ensure_ascii=False)
-
-
-def tool_result(data=None, **kwargs) -> str:
-    """Return a JSON result string for tool handlers.
-
-    Accepts a dict positional arg *or* keyword arguments (not both):
-
-    >>> tool_result(success=True, count=42)
-    '{"success": true, "count": 42}'
-    >>> tool_result({"key": "value"})
-    '{"key": "value"}'
-    """
-    if data is not None:
-        return json.dumps(data, ensure_ascii=False)
-    return json.dumps(kwargs, ensure_ascii=False)

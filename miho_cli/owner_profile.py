@@ -44,6 +44,19 @@ _BLOCKED_PATTERNS = (
 )
 
 
+def _cron_jobs_for_current_home():
+    """Return cron.jobs after aligning its cached paths to current MIHO_HOME."""
+    import cron.jobs as cron_jobs
+
+    miho_home = get_miho_home().resolve()
+    if getattr(cron_jobs, "MIHO_DIR", None) != miho_home:
+        cron_jobs.MIHO_DIR = miho_home
+        cron_jobs.CRON_DIR = miho_home / "cron"
+        cron_jobs.JOBS_FILE = cron_jobs.CRON_DIR / "jobs.json"
+        cron_jobs.OUTPUT_DIR = cron_jobs.CRON_DIR / "output"
+    return cron_jobs
+
+
 def get_owner_profile_dir() -> Path:
     """Return the profile-scoped owner profile directory."""
     return get_miho_home() / "memories" / OWNER_PROFILE_DIRNAME
@@ -302,12 +315,12 @@ def build_daily_summary_prompt() -> str:
 
 def ensure_daily_summary_job(schedule: str = "0 23 * * *") -> dict[str, Any]:
     """Ensure the profile has a recurring 23:00 owner profile summary cron job."""
-    from cron.jobs import compute_next_run, create_job, load_jobs, parse_schedule, save_jobs
+    cron_jobs = _cron_jobs_for_current_home()
 
     ensure_owner_profile_store()
     prompt = build_daily_summary_prompt()
     toolsets = ["memory", "session_search", "cronjob"]
-    jobs = load_jobs()
+    jobs = cron_jobs.load_jobs()
     for job in jobs:
         if job.get("name") == DAILY_SUMMARY_JOB_NAME:
             changed = False
@@ -322,16 +335,16 @@ def ensure_daily_summary_job(schedule: str = "0 23 * * *") -> dict[str, Any]:
                 changed = True
             current_schedule = job.get("schedule", {}).get("expr")
             if current_schedule != schedule:
-                parsed = parse_schedule(schedule)
+                parsed = cron_jobs.parse_schedule(schedule)
                 job["schedule"] = parsed
                 job["schedule_display"] = parsed.get("display", schedule)
-                job["next_run_at"] = compute_next_run(parsed)
+                job["next_run_at"] = cron_jobs.compute_next_run(parsed)
                 changed = True
             if changed:
-                save_jobs(jobs)
+                cron_jobs.save_jobs(jobs)
             return {"success": True, "created": False, "updated": changed, "job": job}
 
-    job = create_job(
+    job = cron_jobs.create_job(
         prompt=prompt,
         schedule=schedule,
         name=DAILY_SUMMARY_JOB_NAME,

@@ -9,7 +9,7 @@ from .cache import YouTubeCache
 from .card_renderer import YouTubeCardRenderError, font_license_note, render_summary_card_png
 from .ids import canonical_url, extract_video_id
 from .rag import save_summary_to_thread_rag
-from .summary import summarize_transcript
+from .summary import YouTubeSummaryLLMError, summarize_transcript
 from .transcript import YouTubeFetchError, fetch_transcript, fetch_video_metadata
 
 _LLM: Any = None
@@ -42,7 +42,17 @@ def _youtube_analyze_tool_handler(args: dict[str, Any] | None = None, **_: Any) 
     if not segments:
         return _json({"ok": False, "message": "이 영상에서 확인 가능한 자막을 찾지 못했어.", "video_id": video_id})
 
-    summary = summarize_transcript(metadata=metadata, segments=segments, llm=_LLM)
+    try:
+        summary = summarize_transcript(metadata=metadata, segments=segments, llm=_LLM)
+    except YouTubeSummaryLLMError as exc:
+        return _json(
+            {
+                "ok": False,
+                "message": "LLM 요약이 불가능해서 중단했어. 자막은 확보했지만, Python 추정 요약으로 대신 만들지는 않았어.",
+                "detail": str(exc),
+                "video_id": video_id,
+            }
+        )
     summary = cache.save_summary(summary)
     return _json(_final_payload(summary, cache=cache, cached=False, render_card=render_card))
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
 from typing import Any, cast
 
 from .dispatcher_models import DispatchDecision, RouteCandidate
@@ -19,7 +18,7 @@ async def call_auxiliary_dispatcher(
     *,
     task: str,
     user_text: str,
-    deterministic_decision: DispatchDecision,
+    candidate_decision: DispatchDecision,
     candidates: tuple[RouteCandidate, ...],
     registry: GovernanceRegistry | None = None,
     turn_context: dict[str, Any] | None = None,
@@ -42,8 +41,10 @@ async def call_auxiliary_dispatcher(
                 "role": "system",
                 "content": (
                     "Return JSON only. Select the best Governance OS playbook for the user request. "
-                    "Use route_map semantically; deterministic candidates are hints, not hard limits. "
-                    "Use action=allow only when no governed playbook applies."
+                    "Use route_map semantically; candidate-scorer hints are evidence, not hard limits. "
+                    "Use action=allow only when no governed playbook applies. "
+                    "운영 진단, 현재 서버/IP/SSH/크론/프로세스/로그 확인은 그 자체로 dev_code_update가 아니다. "
+                    "dev_code_update는 사용자가 저장소 코드, 설정, 배포, 패치를 실제로 바꾸라고 한 경우에만 선택한다."
                 ),
             },
             {
@@ -53,7 +54,7 @@ async def call_auxiliary_dispatcher(
                         "user_text": user_text,
                         "turn_context": turn_context or {},
                         "route_map": build_router_map(registry or load_runtime_registry()),
-                        "deterministic": _decision_metadata(deterministic_decision),
+                        "candidate_scorer": _decision_metadata(candidate_decision),
                         "candidates": [_candidate_metadata(item) for item in candidates],
                     },
                     ensure_ascii=False,
@@ -113,10 +114,6 @@ def decision_from_auxiliary_payload(
         reason=str(payload.get("reason") or "auxiliary_dispatcher"),
         routing_source=task_name,
     )
-
-
-def deterministic_fallback(decision: DispatchDecision) -> DispatchDecision:
-    return replace(decision, routing_source="deterministic_fallback")
 
 
 def _has_map_grade_evidence(payload: dict[str, object]) -> bool:

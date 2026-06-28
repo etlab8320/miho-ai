@@ -76,6 +76,8 @@ def _system_prompt() -> str:
         "미체크 날짜만 원할 때는 unchecked_dates를 써. "
         "특정 학생의 실기, 측정, 수행, 종목별 기록을 그래프/차트/이미지/PNG로 달라는 요청은 academy_student_record_chart_image를 써. "
         "특정 학생의 실기, 측정, 수행, 종목별 기록 조회는 academy_student_record_lookup을 써. "
+        "다만 운동분석 변인, 퍼포먼스 분석 리포트, 운동처방, PDF 분석 리포트 요청은 Peak 기록 조회로 끝내지 말고 action=allow로 둬. "
+        "본문 에이전트가 sports_max_analysis_variables를 우선 호출하고, 최근 기록도 같이 요구된 경우 academy_student_record_lookup도 함께 호출한다. "
         "현재 재원생 전체의 최신 기록, 남녀 평균, 기록 명단은 academy_student_record_cohort_latest를 써. "
         "월별 또는 정기 실기 평가의 남녀 평균, 참가자 집계, 순위, 학교 제외 계산은 academy_monthly_test_records를 써. "
         "사용자가 현재 Discord 스레드에 저장/반영해둔 반 편성표, 학교반 명단, 정시반 명단, 방금 추가한 명단을 묻는다면 "

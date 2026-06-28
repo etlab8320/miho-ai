@@ -32,6 +32,31 @@ class _Gateway:
         return bool(source)
 
 
+def _patch_auxiliary_route(
+    monkeypatch,
+    playbook_key: str,
+    *,
+    matched_triggers: tuple[str, ...] = (),
+) -> None:
+    import plugins.governance_os.dispatcher as dispatcher
+
+    async def fake_auxiliary_dispatcher(**_: object) -> dict[str, object]:
+        return {
+            "playbook_key": playbook_key,
+            "confidence": 0.95,
+            "reason": "test LLM route",
+            "matched_triggers": list(matched_triggers),
+            "evidence": ["test_llm_route"],
+        }
+
+    monkeypatch.setattr(
+        dispatcher,
+        "_call_auxiliary_dispatcher",
+        fake_auxiliary_dispatcher,
+        raising=False,
+    )
+
+
 def test_dispatch_request_selects_hakjong_playbook_with_missing_context() -> None:
     decision = dispatch_request(
         load_builtin_registry(),
@@ -110,7 +135,15 @@ def test_governance_rewrite_requires_missing_context_resolution() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pre_gateway_dispatch_rewrites_authorized_high_confidence_request() -> None:
+async def test_pre_gateway_dispatch_rewrites_authorized_high_confidence_request(
+    monkeypatch,
+) -> None:
+    _patch_auxiliary_route(
+        monkeypatch,
+        "academy_practical_recommendation",
+        matched_triggers=("실기 추천",),
+    )
+
     result = await governance_pre_gateway_dispatch(
         event=_Event("실기 추천 PDF 만들어줘"),
         gateway=_Gateway(),
@@ -124,7 +157,15 @@ async def test_pre_gateway_dispatch_rewrites_authorized_high_confidence_request(
 
 
 @pytest.mark.asyncio
-async def test_pre_gateway_dispatch_rewrites_susi_score_calculation_request() -> None:
+async def test_pre_gateway_dispatch_rewrites_susi_score_calculation_request(
+    monkeypatch,
+) -> None:
+    _patch_auxiliary_route(
+        monkeypatch,
+        "susi_score_calculation",
+        matched_triggers=("수시", "환산점수"),
+    )
+
     result = await governance_pre_gateway_dispatch(
         event=_Event("수시 환산점수 계산해줘"),
         gateway=_Gateway(),
@@ -138,7 +179,15 @@ async def test_pre_gateway_dispatch_rewrites_susi_score_calculation_request() ->
 
 
 @pytest.mark.asyncio
-async def test_pre_gateway_dispatch_holds_high_risk_request_for_approval() -> None:
+async def test_pre_gateway_dispatch_holds_high_risk_request_for_approval(
+    monkeypatch,
+) -> None:
+    _patch_auxiliary_route(
+        monkeypatch,
+        "dev_code_update",
+        matched_triggers=("프로덕션 배포",),
+    )
+
     result = await governance_pre_gateway_dispatch(
         event=_Event("프로덕션 배포하고 게이트웨이 재시작해줘"),
         gateway=_Gateway(),
@@ -159,6 +208,11 @@ async def test_pre_gateway_dispatch_records_approval_hold_in_ledger(
     tmp_path,
     monkeypatch,
 ) -> None:
+    _patch_auxiliary_route(
+        monkeypatch,
+        "dev_code_update",
+        matched_triggers=("프로덕션 배포",),
+    )
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
 
     import miho_constants
@@ -333,7 +387,7 @@ async def test_pre_gateway_dispatch_sends_thread_context_to_auxiliary_dispatcher
 
 
 @pytest.mark.asyncio
-async def test_pre_gateway_dispatch_falls_back_when_auxiliary_dispatcher_fails(
+async def test_pre_gateway_dispatch_allows_body_agent_when_auxiliary_dispatcher_fails(
     monkeypatch,
 ) -> None:
     import plugins.governance_os.dispatcher as dispatcher
@@ -353,10 +407,11 @@ async def test_pre_gateway_dispatch_falls_back_when_auxiliary_dispatcher_fails(
         gateway=_Gateway(),
     )
 
-    assert result["action"] == "rewrite"
+    assert result["action"] == "allow"
     assert result["route"] == "governance_os"
-    assert result["routing_source"] == "deterministic_fallback"
-    assert "provider offline" not in str(result["text"])
+    assert result["routing_source"] == "llm_route_unverified"
+    assert result["reason"] == "llm_route_unverified"
+    assert "text" not in result
 
 
 @pytest.mark.asyncio
@@ -385,9 +440,9 @@ async def test_pre_gateway_dispatch_rejects_auxiliary_playbook_outside_candidate
         gateway=_Gateway(),
     )
 
-    assert result["action"] == "rewrite"
+    assert result["action"] == "allow"
     assert result["intent"] != "dev_code_update"
-    assert result["routing_source"] == "deterministic_fallback"
+    assert result["routing_source"] == "llm_route_unverified"
 
 
 @pytest.mark.asyncio
@@ -422,7 +477,7 @@ async def test_auxiliary_dispatcher_uses_agent_auxiliary_client(monkeypatch) -> 
     payload = await dispatcher._call_auxiliary_dispatcher(
         task="miho_governance_dispatcher",
         user_text="수시 점수 계산 파일 첨부해서 보내줘",
-        deterministic_decision=decision,
+        candidate_decision=decision,
         candidates=candidates,
     )
 
@@ -431,5 +486,5 @@ async def test_auxiliary_dispatcher_uses_agent_auxiliary_client(monkeypatch) -> 
     assert calls[0]["task"] == "miho_governance_dispatcher"
     assert calls[0]["timeout"] == 8
     user_payload = json.loads(calls[0]["messages"][1]["content"])  # type: ignore[index]
-    assert user_payload["deterministic"]["playbook_key"]
+    assert user_payload["candidate_scorer"]["playbook_key"]
     assert user_payload["candidates"]

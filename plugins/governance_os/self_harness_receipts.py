@@ -5,11 +5,13 @@ from __future__ import annotations
 import subprocess
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from .self_harness_autonomy import _required_tests
 
 DEFAULT_TEST_TIMEOUT_SECONDS = 600
+REPO_ROOT = Path(__file__).resolve().parents[2]
 ReceiptRunner = Callable[[str], "tuple[int, str]"]
 
 
@@ -54,5 +56,6 @@ def _default_pytest_runner(test_path: str) -> tuple[int, str]:
         capture_output=True,
         text=True,
         timeout=DEFAULT_TEST_TIMEOUT_SECONDS,
+        cwd=str(REPO_ROOT),
     )
     return proc.returncode, (proc.stdout + proc.stderr)

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .semantic_delivery_judge import SemanticDeliveryVerdict, judge_delivery_semantics
+from .delivery_tool_evidence import current_turn_tool_evidence
 
 
 def delivery_evidence(decision: Any, *, context: dict[str, Any], outcomes: Any) -> dict[str, Any]:
@@ -19,8 +20,12 @@ def delivery_evidence(decision: Any, *, context: dict[str, Any], outcomes: Any) 
         "governance_outcomes": outcomes if isinstance(outcomes, list | tuple) else [],
         "platform": str(context.get("platform") or ""),
         "session_id": str(context.get("session_id") or ""),
+        "record_recovery_metrics": context.get("record_recovery_metrics", True) is not False,
         "final_delivery_agent_scope": "universal",
         "runtime_semantic_signal_is_advisory": True,
+        "current_turn_tool_evidence": current_turn_tool_evidence(
+            context.get("conversation_history")
+        ),
     }
 
 

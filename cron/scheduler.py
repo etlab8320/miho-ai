@@ -769,8 +769,19 @@ _DEFAULT_SCRIPT_TIMEOUT = 120  # seconds
 _SCRIPT_TIMEOUT = _DEFAULT_SCRIPT_TIMEOUT
 
 
-def _get_script_timeout() -> int:
+def _get_script_timeout(timeout_override: object = None) -> int:
     """Resolve cron pre-run script timeout from module/env/config with a safe default."""
+    if timeout_override is not None and timeout_override != "":
+        try:
+            timeout = int(float(timeout_override))
+            if timeout > 0:
+                return timeout
+        except Exception:
+            logger.warning(
+                "Invalid job script_timeout_seconds=%r; using env/config/default",
+                timeout_override,
+            )
+
     if _SCRIPT_TIMEOUT != _DEFAULT_SCRIPT_TIMEOUT:
         try:
             timeout = int(float(_SCRIPT_TIMEOUT))
@@ -812,7 +823,11 @@ def _split_script_command(script_path: str) -> tuple[str, list[str]]:
     return parts[0], parts[1:]
 
 
-def _run_job_script(script_path: str) -> tuple[bool, str]:
+def _run_job_script(
+    script_path: str,
+    *,
+    timeout_seconds: object = None,
+) -> tuple[bool, str]:
     """Execute a cron job's data-collection script and capture its output.
 
     Scripts must reside within MIHO_HOME/scripts/.  Both relative and
@@ -870,7 +885,7 @@ def _run_job_script(script_path: str) -> tuple[bool, str]:
     if not path.is_file():
         return False, f"Script path is not a file: {path}"
 
-    script_timeout = _get_script_timeout()
+    script_timeout = _get_script_timeout(timeout_seconds)
 
     # Pick an interpreter by extension.  Bash for .sh/.bash, Python for
     # everything else.  We deliberately do NOT honour the file's own
@@ -991,7 +1006,10 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
         if prerun_script is not None:
             success, script_output = prerun_script
         else:
-            success, script_output = _run_job_script(script_path)
+            success, script_output = _run_job_script(
+                script_path,
+                timeout_seconds=job.get("script_timeout_seconds"),
+            )
         if success:
             if script_output:
                 prompt = (
@@ -1206,7 +1224,10 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
                 _prior_cwd = None
 
         try:
-            ok, output = _run_job_script(script_path)
+            ok, output = _run_job_script(
+                script_path,
+                timeout_seconds=job.get("script_timeout_seconds"),
+            )
         finally:
             if _prior_cwd is not None:
                 try:
@@ -1295,7 +1316,10 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
     prerun_script = None
     script_path = job.get("script")
     if script_path:
-        prerun_script = _run_job_script(script_path)
+        prerun_script = _run_job_script(
+            script_path,
+            timeout_seconds=job.get("script_timeout_seconds"),
+        )
         _ran_ok, _script_output = prerun_script
         if _ran_ok and not _parse_wake_gate(_script_output):
             logger.info(
@@ -1522,6 +1546,12 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
                         fb_kwargs["explicit_base_url"] = entry["base_url"]
                     if entry.get("api_key"):
                         fb_kwargs["explicit_api_key"] = entry["api_key"]
+                    elif entry.get("key_env") or entry.get("api_key_env"):
+                        key_env = str(entry.get("key_env") or entry.get("api_key_env") or "").strip()
+                        if key_env:
+                            fb_api_key = os.getenv(key_env, "").strip()
+                            if fb_api_key:
+                                fb_kwargs["explicit_api_key"] = fb_api_key
                     runtime = resolve_runtime_provider(**fb_kwargs)
                     logger.info("Job '%s': fallback resolved to %s", job_id, runtime.get("provider"))
                     break

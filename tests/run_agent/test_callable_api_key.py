@@ -358,18 +358,19 @@ class TestInlinedDisplayMasks:
         )
 
     def test_anthropic_401_diagnostic_handles_callable(self):
-        """The Anthropic 401 diagnostic path lives in
-        ``agent/conversation_loop.py`` (the ``run_conversation`` body
-        was extracted after this feature was first written). It used
-        to do ``key[:12]`` on ``self._anthropic_api_key``. For Entra ID +
-        Anthropic-style mode that's a callable; slicing crashes."""
+        """The Anthropic 401 diagnostic path must not slice callable keys.
+
+        For Entra ID + Anthropic-style mode ``self._anthropic_api_key`` is a
+        callable; the diagnostic branch must detect it before any key prefix
+        slicing.
+        """
         from pathlib import Path
         src = (Path(__file__).resolve().parent.parent.parent
-               / "agent" / "conversation_loop.py").read_text()
+               / "agent" / "conversation_error_one_shot.py").read_text()
         # The Anthropic 401 block now branches on is_token_provider
         # before slicing the key.
         assert "Microsoft Entra ID (httpx event hook)" in src, (
-            "agent/conversation_loop.py Anthropic 401 diagnostic must "
+            "agent/conversation_error_one_shot.py Anthropic 401 diagnostic must "
             "surface a Microsoft Entra ID branch before slicing the "
             "key prefix."
         )

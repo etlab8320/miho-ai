@@ -84,6 +84,29 @@ def test_hakjong_contract_forbids_final_answer_on_repairable_rejection() -> None
     assert "다음 턴" not in purpose
 
 
+def test_optional_schema_args_are_not_all_marked_required() -> None:
+    contract = decision_tool_contracts()["sports_max_analysis_variables"]
+
+    assert contract["required_inputs"] == ["user request"]
+    assert "student_name" in contract["optional_inputs"]
+    assert "sport" in contract["optional_inputs"]
+    assert set(contract["optional_inputs"]) == set(contract["args"])
+
+
+def test_runtime_diagnostic_contracts_separate_live_state_from_memory() -> None:
+    contracts = decision_tool_contracts()
+    terminal_purpose = contracts["terminal"]["purpose"]
+    session_search_purpose = contracts["session_search"]["purpose"]
+
+    assert "현재" in terminal_purpose
+    assert "SSH" in terminal_purpose
+    assert "크론" in terminal_purpose
+    assert "직접 확인" in terminal_purpose
+    assert "과거 대화" in session_search_purpose
+    assert "현재" in session_search_purpose
+    assert "terminal" in session_search_purpose
+
+
 def test_domain_guard_module_absent() -> None:
     """domain_guard.py가 삭제됐으므로 import가 실패해야 한다."""
 
@@ -153,3 +176,42 @@ async def test_region_gate_passes_when_region_mentioned() -> None:
     )
 
     assert result["action"] == "rewrite"
+
+
+@pytest.mark.asyncio
+async def test_decision_twin_rewrite_preserves_llm_tool_args() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "route",
+            "required_tool": "academy_practical_reco_all_candidates",
+            "intent": "김서연 수도권·강원·충청권 수시 실기전형 전체 추천 PDF 생성",
+            "confidence": 0.98,
+            "needs_region_question": False,
+            "region_value": "수도권, 강원, 충청",
+            "tool_args": {
+                "student_name": "김서연",
+                "region": "수도권, 강원, 충청",
+            },
+        }
+
+    event = SimpleNamespace(
+        text="서연이 수시 실기전형으로 수도권,강원 충청권으로 학교 추천 다 해서 pdf로 줘",
+        source=object(),
+        media_urls=[],
+        reply_to_text="",
+        channel_context="",
+        channel_prompt="",
+    )
+    gateway = SimpleNamespace(_is_user_authorized=lambda _source: True)
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=event,
+        gateway=gateway,
+        resolver=resolver,
+        owner_context_builder=lambda _text: "",
+    )
+
+    assert result["action"] == "rewrite"
+    text = str(result["text"])
+    assert "도구 인자(JSON)" in text
+    assert '"student_name": "김서연"' in text
+    assert '"region": "수도권, 강원, 충청"' in text

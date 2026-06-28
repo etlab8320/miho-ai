@@ -69,6 +69,58 @@ def _supports_same_provider_pool_setup(provider: str) -> bool:
     return pconfig.auth_type in {"api_key", "oauth_device_code"}
 
 
+_SECONDARY_PROVIDER_KEY_ENVS = {
+    "minimax": "MINIMAX_API_KEY",
+    "minimax-cn": "MINIMAX_CN_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "zai": "ZAI_API_KEY",
+    "kimi-coding": "KIMI_API_KEY",
+    "stepfun": "STEPFUN_API_KEY",
+    "ai-gateway": "AI_GATEWAY_API_KEY",
+}
+
+
+def _current_secondary_fallback(config: Dict[str, Any]) -> list[Dict[str, Any]]:
+    chain = config.get("fallback_providers")
+    if not isinstance(chain, list):
+        return []
+    return [entry for entry in chain if isinstance(entry, dict)]
+
+
+def _secondary_entry(
+    provider: str,
+    model: str,
+    *,
+    base_url: str | None = None,
+    key_env: str | None = None,
+) -> Dict[str, Any]:
+    entry: Dict[str, Any] = {
+        "provider": provider.strip(),
+        "model": model.strip(),
+    }
+    if base_url:
+        entry["base_url"] = base_url.strip()
+    if key_env:
+        entry["key_env"] = key_env.strip()
+    return entry
+
+
+def _save_secondary_fallback(config: Dict[str, Any], entry: Dict[str, Any] | None) -> None:
+    """Persist the LLM-only secondary provider chain.
+
+    Miho intentionally does not create a Python/keyword semantic fallback here.
+    Runtime failure semantics stay simple: primary LLM → configured secondary LLM
+    → fail closed when no LLM backend can answer.
+    """
+    if entry is None:
+        config["fallback_providers"] = []
+        return
+    if not entry.get("provider") or not entry.get("model"):
+        raise ValueError("secondary fallback entry requires provider and model")
+    config["fallback_providers"] = [entry]
+
+
 # Default model lists per provider — used as fallback when the live
 # /models endpoint can't be reached.
 _DEFAULT_PROVIDER_MODELS = {
@@ -99,8 +151,8 @@ _DEFAULT_PROVIDER_MODELS = {
     "kimi-coding-cn": ["kimi-k2.6", "kimi-k2.5", "kimi-k2-thinking", "kimi-k2-turbo-preview"],
     "stepfun": ["step-3.5-flash", "step-3.5-flash-2603"],
     "arcee": ["trinity-large-thinking", "trinity-large-preview", "trinity-mini"],
-    "minimax": ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"],
-    "minimax-cn": ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"],
+    "minimax": ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"],
+    "minimax-cn": ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"],
     "ai-gateway": ["anthropic/claude-opus-4.6", "anthropic/claude-sonnet-4.6", "openai/gpt-5", "google/gemini-3-flash"],
     "kilocode": ["anthropic/claude-opus-4.6", "anthropic/claude-sonnet-4.6", "openai/gpt-5.4", "google/gemini-3-pro-preview", "google/gemini-3-flash-preview"],
     "opencode-zen": ["gpt-5.4", "gpt-5.3-codex", "claude-sonnet-4-6", "gemini-3-flash", "glm-5", "kimi-k2.5", "minimax-m2.7"],
@@ -187,6 +239,7 @@ def print_noninteractive_setup_guidance(reason: str | None = None) -> None:
     print_info("  miho config set model.provider custom")
     print_info("  miho config set model.base_url http://localhost:8080/v1")
     print_info("  miho config set model.default your-model-name")
+    print_info("  miho config set fallback_providers '[{\"provider\":\"minimax\",\"model\":\"MiniMax-M3\",\"key_env\":\"MINIMAX_API_KEY\"}]'")
     print()
     print_info("Or set OPENROUTER_API_KEY / OPENAI_API_KEY in your environment.")
     print_info("Run 'miho setup' in an interactive terminal to use the full wizard.")
@@ -785,6 +838,114 @@ def _read_nearest_vercel_project(start: Path | None = None) -> dict[str, str]:
 # =============================================================================
 
 
+def _setup_secondary_provider_fallback(config: dict, selected_provider: str | None = None) -> None:
+    """Configure a second LLM provider for primary-model failures.
+
+    This writes ``fallback_providers`` only. It never installs a local Python
+    semantic/keyword fallback: if the primary and secondary LLMs both fail,
+    Miho fails closed.
+    """
+    print()
+    print_header("Secondary LLM Provider (optional)")
+    print_info("Failure policy: primary LLM → secondary LLM → stop. No Python semantic fallback.")
+
+    current = _current_secondary_fallback(config)
+    if current:
+        labels = []
+        for entry in current:
+            provider = entry.get("provider") or "unknown"
+            model = entry.get("model") or "default"
+            labels.append(f"{provider}/{model}")
+        print_info("Current secondary chain: " + ", ".join(labels))
+    else:
+        print_info("Current secondary chain: none")
+    print()
+
+    choices = [
+        "Keep current secondary provider setting",
+        "MiniMax subscription/OAuth — run login if needed (recommended for MiniMax M-series)",
+        "MiniMax API key — save MINIMAX_API_KEY in ~/.miho/.env",
+        "Custom OpenAI-compatible provider — provider/base URL/key env/model",
+        "Clear secondary provider",
+    ]
+    idx = prompt_choice("Configure secondary provider:", choices, 0)
+    if idx == 0:
+        return
+
+    if idx == 4:
+        _save_secondary_fallback(config, None)
+        save_config(config)
+        print_success("Secondary provider cleared. Miho will stop if the primary LLM cannot answer.")
+        return
+
+    if idx == 1:
+        try:
+            from miho_cli.auth import get_minimax_oauth_auth_status
+            status = get_minimax_oauth_auth_status() or {}
+        except Exception:
+            status = {}
+        if not status.get("logged_in"):
+            print_info("MiniMax OAuth is not logged in yet.")
+            print_info("You can connect it now with: miho auth add minimax-oauth")
+            if prompt_yes_no("Run MiniMax OAuth login now?", False):
+                try:
+                    from types import SimpleNamespace
+                    from miho_cli.auth_commands import auth_add_command
+
+                    auth_add_command(
+                        SimpleNamespace(
+                            provider="minimax-oauth",
+                            auth_type="",
+                            label=None,
+                            api_key=None,
+                            portal_url=None,
+                            inference_url=None,
+                            client_id=None,
+                            scope=None,
+                            no_browser=False,
+                            timeout=15.0,
+                            insecure=False,
+                            ca_bundle=None,
+                            min_key_ttl_seconds=5 * 60,
+                        )
+                    )
+                except Exception as exc:
+                    print_warning(f"MiniMax OAuth login did not complete: {exc}")
+                    print_info("The secondary provider entry can still be saved; login later with: miho auth add minimax-oauth")
+        model = prompt("  MiniMax secondary model", "MiniMax-M3").strip()
+        entry = _secondary_entry("minimax-oauth", model)
+        _save_secondary_fallback(config, entry)
+        save_config(config)
+        print_success(f"Secondary provider set to MiniMax OAuth ({model})")
+        return
+
+    if idx == 2:
+        api_key = prompt("  MiniMax API key (blank = keep/use existing MINIMAX_API_KEY)", password=True).strip()
+        if api_key:
+            save_env_value("MINIMAX_API_KEY", api_key)
+        model = prompt("  MiniMax secondary model", "MiniMax-M3").strip()
+        base_url = prompt("  MiniMax base URL", "https://api.minimax.io/v1").strip()
+        entry = _secondary_entry("minimax", model, base_url=base_url, key_env="MINIMAX_API_KEY")
+        _save_secondary_fallback(config, entry)
+        save_config(config)
+        print_success(f"Secondary provider set to MiniMax API key ({model})")
+        return
+
+    provider = prompt("  Provider id", "minimax").strip()
+    model = prompt("  Model", "MiniMax-M3").strip()
+    base_url = prompt("  Base URL (blank = provider default)").strip() or None
+    default_key_env = _SECONDARY_PROVIDER_KEY_ENVS.get(provider.strip().lower(), "")
+    key_env = prompt("  API key env var (blank = provider default)", default_key_env).strip() or None
+    if key_env and not os.getenv(key_env):
+        key_value = prompt(f"  {key_env} value (blank = set later)", password=True).strip()
+        if key_value:
+            save_env_value(key_env, key_value)
+    entry = _secondary_entry(provider, model, base_url=base_url, key_env=key_env)
+    _save_secondary_fallback(config, entry)
+    save_config(config)
+    print_success(f"Secondary provider set to {provider} ({model})")
+
+
 
 def setup_model_provider(config: dict, *, quick: bool = False):
     """Configure the inference provider and default model.
@@ -1003,6 +1164,10 @@ def setup_model_provider(config: dict, *, quick: bool = False):
 
     if not quick and selected_provider != "nous":
         _setup_tts_provider(config)
+
+    # ── Cross-provider secondary LLM setup (full setup only; deliberately last) ──
+    if not quick:
+        _setup_secondary_provider_fallback(config, selected_provider)
 
 
 # =============================================================================

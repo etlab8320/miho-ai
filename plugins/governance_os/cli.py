@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from .operations import GovernanceReadinessReport, run_readiness_check
-from .self_harness_cron import CRON_JOB_NAME
-
 
 def register_cli(subparser: argparse.ArgumentParser) -> None:
     subparser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
@@ -20,12 +18,20 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
     _add_action(subcommands, "hooks", "Show registered governance hooks")
     _add_action(subcommands, "failures", "Show readiness failures")
     _add_action(subcommands, "autopilot", "Show Self-Harness autopilot cron status")
+    _add_action(subcommands, "quality", "Show Self-Harness long-horizon quality")
+    live_check = _add_action(subcommands, "live-check", "Run live-safe Discord and academy validation")
+    live_check.add_argument("--mode", choices=("live_safe", "live"), default="live_safe")
+    live_check.add_argument(
+        "--target",
+        default="",
+        help="Discord live-smoke target, e.g. discord:channel_id:thread_id",
+    )
     subparser.set_defaults(func=governance_command)
 
 
 def governance_command(args: argparse.Namespace) -> int:
     action = str(getattr(args, "governance_action", None) or "status")
-    payload = _governance_payload(action)
+    payload = _governance_payload(action, args=args)
     if getattr(args, "json", False):
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
@@ -33,7 +39,7 @@ def governance_command(args: argparse.Namespace) -> int:
     return 0
 
 
-def _governance_payload(action: str) -> dict[str, Any]:
+def _governance_payload(action: str, *, args: argparse.Namespace | None = None) -> dict[str, Any]:
     readiness = _readiness_payload(run_readiness_check())
     if action == "readiness":
         return {"readiness": readiness}
@@ -43,15 +49,29 @@ def _governance_payload(action: str) -> dict[str, Any]:
         return {"failures": readiness["failures"]}
     if action == "autopilot":
         return {"autopilot": _autopilot_payload()}
+    if action == "quality":
+        return {"self_harness_quality": _self_harness_quality_payload()}
+    if action == "live-check":
+        mode = str(getattr(args, "mode", "live_safe") or "live_safe")
+        target = str(getattr(args, "target", "") or "")
+        return {"operational_validation": _operational_validation_payload(mode=mode, target=target)}
+    autopilot = _autopilot_payload()
+    self_harness_quality = _self_harness_quality_payload()
     return {
         "plugin": _plugin_payload(),
         "readiness": readiness,
         "hooks": _hooks_payload(),
-        "autopilot": _autopilot_payload(),
+        "autopilot": autopilot,
+        "self_harness_quality": self_harness_quality,
+        "operational_summary": _operational_summary(
+            readiness,
+            self_harness_quality,
+            autopilot,
+        ),
     }
 
 
-def _add_action(subcommands: Any, name: str, help_text: str) -> None:
+def _add_action(subcommands: Any, name: str, help_text: str) -> Any:
     parser = subcommands.add_parser(name, help=help_text)
     parser.add_argument(
         "--json",
@@ -59,20 +79,75 @@ def _add_action(subcommands: Any, name: str, help_text: str) -> None:
         default=argparse.SUPPRESS,
         help="Print machine-readable JSON",
     )
+    return parser
 
 
 def _readiness_payload(report: GovernanceReadinessReport) -> dict[str, Any]:
     raw = asdict(report)
+    smoke_mode = str(raw["validation_loop_smoke_mode"] or "")
+    actual_send_verified = bool(raw["live_discord_verified"] and smoke_mode == "live")
+    artifact_preflight_ready = bool(raw["validation_loop_probe_passed"] and smoke_mode in {"live", "live_safe"})
     return {
         "ready": raw["ready"],
         "quality_score": raw["quality_score"],
         "full_system_ready": raw["full_system_ready"],
         "full_system_score": raw["full_system_score"],
         "live_discord_verified": raw["live_discord_verified"],
+        "actual_discord_send_verified": actual_send_verified,
+        "discord_artifact_preflight_ready": artifact_preflight_ready,
+        "readiness_scope": "actual_discord_send" if actual_send_verified else "live_safe_preflight",
         "validation_loop_smoke_mode": raw["validation_loop_smoke_mode"],
         "rollback_status": raw["rollback_status"],
         "active_snapshot_id": raw["active_snapshot_id"],
+        "self_harness_runtime_learning_ready": raw[
+            "self_harness_runtime_feedback_probe_passed"
+        ],
         "failures": list(raw["failures"]),
+    }
+
+
+def _operational_summary(
+    readiness: dict[str, Any],
+    self_harness_quality: dict[str, Any],
+    autopilot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    readiness_ready = bool(readiness.get("ready"))
+    quality_ready = bool(self_harness_quality.get("ready"))
+    autopilot_payload = autopilot or {}
+    autopilot_ready = bool(autopilot_payload.get("ready", autopilot_payload.get("registered", True)))
+    readiness_full_system_ready = bool(readiness.get("full_system_ready"))
+    full_system_ready = bool(
+        readiness_ready
+        and quality_ready
+        and autopilot_ready
+        and readiness_full_system_ready
+    )
+    runtime_learning_ready = bool(
+        readiness.get("self_harness_runtime_learning_ready", readiness_ready)
+    )
+    if not readiness_ready:
+        status = "readiness_failed"
+    elif not quality_ready:
+        status = "operational_ready_but_quality_debt"
+    elif not autopilot_ready:
+        status = "operational_ready_but_autopilot_debt"
+    elif full_system_ready:
+        status = "full_system_ready"
+    else:
+        status = "live_safe_ready"
+    return {
+        "status": status,
+        "readiness_ready": readiness_ready,
+        "readiness_quality_score": int(readiness.get("quality_score") or 0),
+        "self_harness_quality_ready": quality_ready,
+        "self_harness_quality_score": int(self_harness_quality.get("score") or 0),
+        "full_system_ready": full_system_ready,
+        "readiness_full_system_ready": readiness_full_system_ready,
+        "full_system_score": int(readiness.get("full_system_score") or 0),
+        "actual_discord_send_verified": bool(readiness.get("actual_discord_send_verified")),
+        "self_harness_runtime_learning_ready": runtime_learning_ready,
+        "autopilot_ready": autopilot_ready,
+        "autopilot_progress_state": str(autopilot_payload.get("progress_state") or ""),
     }
 
 
@@ -166,24 +241,22 @@ def _manifest_cli_commands() -> list[str]:
 
 
 def _autopilot_payload() -> dict[str, Any]:
-    try:
-        from cron.jobs import list_jobs
+    from .autopilot_status import build_autopilot_status
 
-        jobs = list_jobs(include_disabled=True)
-    except Exception as exc:
-        return {"registered": False, "error": str(exc)}
-    for job in jobs:
-        if str(job.get("name") or "") != CRON_JOB_NAME:
-            continue
-        return {
-            "registered": True,
-            "enabled": bool(job.get("enabled", True)),
-            "schedule": str(job.get("schedule") or ""),
-            "next_run_at": str(job.get("next_run_at") or ""),
-            "last_run_at": str(job.get("last_run_at") or ""),
-            "last_status": str(job.get("last_status") or ""),
-        }
-    return {"registered": False, "enabled": False}
+    return build_autopilot_status()
+
+
+def _self_harness_quality_payload() -> dict[str, Any]:
+    from .self_harness_quality import build_self_harness_quality_report
+
+    return build_self_harness_quality_report().to_payload()
+
+
+def _operational_validation_payload(*, mode: str, target: str = "") -> dict[str, Any]:
+    from .operational_validation import build_operational_validation_report
+
+    clean_mode = "live" if mode == "live" else "live_safe"
+    return build_operational_validation_report(mode=clean_mode, target=target).to_payload()
 
 
 def _print_payload(action: str, payload: dict[str, Any]) -> None:

@@ -158,6 +158,17 @@ class TestRunJobScript:
         assert success is False
         assert "timed out" in output.lower()
 
+    def test_script_timeout_accepts_per_job_override(self, cron_env):
+        from cron.scheduler import _run_job_script
+
+        script = cron_env / "scripts" / "slow_override.py"
+        script.write_text("import time; time.sleep(30)\n")
+
+        success, output = _run_job_script(str(script), timeout_seconds=1)
+
+        assert success is False
+        assert "timed out after 1s" in output
+
     def test_script_json_output(self, cron_env):
         """Scripts can output structured JSON for the LLM to parse."""
         from cron.scheduler import _run_job_script

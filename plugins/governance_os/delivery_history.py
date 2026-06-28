@@ -41,7 +41,7 @@ def outcomes_from_conversation_history(
             {
                 "playbook_key": playbook_key,
                 "review_status": review.status,
-                "tools_used": [tool_name],
+                "tools_used": _tools_used(tool_name, payload),
                 "failures": _review_failures(review),
             }
         )
@@ -90,3 +90,12 @@ def _review_failures(review: Any) -> list[str]:
         return []
     reason = str(getattr(review, "reason", "") or "").strip()
     return [reason] if reason else ["review_not_passed"]
+
+
+def _tools_used(tool_name: str, payload: dict[str, Any]) -> list[str]:
+    tools = [tool_name]
+    for item in payload.get("governance_tools_used") or []:
+        text = str(item or "").strip()
+        if text and text not in tools:
+            tools.append(text)
+    return tools

@@ -92,26 +92,17 @@ def test_summary_covers_every_transcript_chunk() -> None:
     assert result.miho_judgment == ""
 
 
-def test_heuristic_summary_groups_short_caption_fragments() -> None:
+def test_youtube_summary_refuses_no_llm_heuristic_fallback() -> None:
     from plugins.youtube_ops.models import TranscriptSegment, VideoMetadata
-    from plugins.youtube_ops.summary import summarize_transcript
+    from plugins.youtube_ops.summary import YouTubeSummaryLLMError, summarize_transcript
 
-    result = summarize_transcript(
-        metadata=VideoMetadata(video_id="Ghj69GLDiqI", title="AI 개발 구조", channel="채널"),
-        segments=[
-            TranscriptSegment(start=0, text="AI가 코드를"),
-            TranscriptSegment(start=2, text="만들어 줘도"),
-            TranscriptSegment(start=4, text="사용자는 개발 구조를"),
-            TranscriptSegment(start=6, text="이해해야 한다"),
-            TranscriptSegment(start=8, text="Git API DB 같은"),
-            TranscriptSegment(start=10, text="기본 개념이 필요하다"),
-        ],
-        llm=None,
-        chunk_chars=900,
-    )
-
-    assert "AI가 코드를 만들어 줘도" in result.one_line_summary
-    assert "개발 구조" in result.one_line_summary
+    with pytest.raises(YouTubeSummaryLLMError, match="requires an LLM"):
+        summarize_transcript(
+            metadata=VideoMetadata(video_id="Ghj69GLDiqI", title="AI 개발 구조", channel="채널"),
+            segments=[TranscriptSegment(start=0, text="AI가 코드를 만들어 줘도 사용자는 구조를 이해해야 한다")],
+            llm=None,
+            chunk_chars=900,
+        )
 
 
 def test_cache_reuses_same_video_id_and_uniquifies_titles(tmp_path: Path) -> None:

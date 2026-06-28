@@ -245,6 +245,36 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         ),
         "requires": ["file under Miho media cache or allowed media dir"],
     },
+    "terminal": {
+        "domain": "terminal",
+        "purpose": (
+            "현재 로컬/서버 운영 상태를 직접 확인하는 실행 진단 도구다. "
+            "SSH 접속, IP 변경, 프로세스, 포트, 네트워크, 크론 실행 여부, 로그, 파일 존재, "
+            "서비스 상태처럼 지금 머신이나 연결된 서버에서 확인해야 하는 요청은 과거 기억보다 이 도구를 우선한다. "
+            "파괴적 명령이나 배포/수정은 별도 승인·검증이 필요하며, 상담/PDF/입시 산출물 생성에는 쓰지 않는다."
+        ),
+        "requires": ["safe diagnostic command"],
+        "output": "current runtime evidence from the local shell or reachable host",
+        "reviewer": "dev_result_reviewer",
+        "retry": "run narrower read-only diagnostics when the first command is inconclusive",
+        "delivery": "Korean answer with the checked command result and remaining uncertainty",
+        "blocking_rules": ["do not use for artifact/PDF creation or destructive operations"],
+    },
+    "session_search": {
+        "domain": "session_search",
+        "purpose": (
+            "과거 대화와 이전 세션 기록을 찾는 회상 도구다. "
+            "사용자가 예전에 말한 값, 이전 결정, 과거 산출물 위치를 물을 때 사용한다. "
+            "현재 IP, 현재 SSH 접속 가능 여부, 지금 크론이 도는지, 현재 프로세스/로그처럼 "
+            "실시간 상태를 직접 확인해야 하는 요청은 이 도구만으로 확정하지 말고 terminal 진단을 우선한다."
+        ),
+        "requires": ["past-session query"],
+        "output": "past transcript snippets from the local session database",
+        "reviewer": "governance_result_reviewer",
+        "retry": "narrow the query or search around a known message when recall is weak",
+        "delivery": "Korean summary that clearly labels recalled past context",
+        "blocking_rules": ["do not present recalled stale state as current runtime evidence"],
+    },
     "apply_patch": {
         "domain": "dev_tools",
         "purpose": "승인된 코드 변경 범위에서 repository patch를 적용한다. 일반 상담/학원 산출물에는 사용하지 않는다.",

@@ -65,6 +65,7 @@ def final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
         governance_outcomes=[],
         final_delivery_call_llm=fake_call_llm,
         final_delivery_extract_content=extract,
+        record_recovery_metrics=False,
     )
     recovered = governance_transform_llm_output(
         response_text="서연이 수시 환산점수는 947.3점입니다.",
@@ -72,6 +73,7 @@ def final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
         governance_outcomes=[],
         final_delivery_call_llm=recovery_call_llm,
         final_delivery_extract_content=extract,
+        record_recovery_metrics=False,
     )
     original_loader = delivery_module.load_runtime_registry
 
@@ -86,6 +88,7 @@ def final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
             governance_outcomes=[],
             final_delivery_call_llm=recovery_call_llm,
             final_delivery_extract_content=extract,
+            record_recovery_metrics=False,
         )
     finally:
         delivery_module.load_runtime_registry = original_loader

@@ -529,8 +529,10 @@ class TeamsMeetingPipeline:
             content = extract_content_or_reasoning(response)
             parsed = _parse_summary_json(content)
         except Exception as exc:
-            logger.info("Teams pipeline LLM summary unavailable, using heuristic summary: %s", exc)
-            parsed = _heuristic_summary(transcript_text)
+            logger.warning("Teams pipeline LLM summary unavailable; refusing heuristic summary fallback: %s", exc)
+            raise TeamsPipelineRetryableError(
+                "Teams summary generation requires an LLM response; heuristic fallback is disabled."
+            ) from exc
 
         metrics = _collect_call_metrics(artifacts)
         return TeamsMeetingSummaryPayload(
@@ -634,12 +636,14 @@ def _build_summary_prompt(
 def _parse_summary_json(content: str) -> dict[str, Any]:
     text = (content or "").strip()
     if not text:
-        return _heuristic_summary("")
+        raise ValueError("LLM summary response was empty.")
     start = text.find("{")
     end = text.rfind("}")
     if start >= 0 and end > start:
         text = text[start : end + 1]
     payload = json.loads(text)
+    if not isinstance(payload, dict):
+        raise ValueError("LLM summary response must be a JSON object.")
     return {
         "summary": str(payload.get("summary") or "").strip(),
         "key_decisions": [str(item).strip() for item in payload.get("key_decisions", []) if str(item).strip()],
@@ -647,25 +651,6 @@ def _parse_summary_json(content: str) -> dict[str, Any]:
         "risks": [str(item).strip() for item in payload.get("risks", []) if str(item).strip()],
         "confidence": str(payload.get("confidence") or "medium").strip(),
         "confidence_notes": str(payload.get("confidence_notes") or "").strip(),
-    }
-
-
-def _heuristic_summary(transcript_text: str) -> dict[str, Any]:
-    lines = [line.strip(" -*\t") for line in transcript_text.splitlines() if line.strip()]
-    summary = " ".join(lines[:3])[:1200] or "Transcript unavailable or too sparse for a confident summary."
-    action_items = [
-        line for line in lines if line.lower().startswith(("action:", "todo:", "next step:", "follow up:"))
-    ][:8]
-    risks = [line for line in lines if "risk" in line.lower() or "blocker" in line.lower()][:6]
-    decisions = [line for line in lines if "decide" in line.lower() or "decision" in line.lower()][:6]
-    confidence = "low" if len(transcript_text.strip()) < 300 else "medium"
-    return {
-        "summary": summary,
-        "key_decisions": decisions,
-        "action_items": action_items,
-        "risks": risks,
-        "confidence": confidence,
-        "confidence_notes": "Generated with heuristic fallback because no LLM summary response was available.",
     }
 
 

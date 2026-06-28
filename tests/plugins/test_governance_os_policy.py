@@ -97,6 +97,56 @@ def test_governance_pre_tool_guard_ignores_unmatched_general_tool() -> None:
     assert result is None
 
 
+def test_governance_pre_tool_guard_never_blocks_skill_manage_housekeeping() -> None:
+    result = governance_pre_tool_call(
+        tool_name="skill_manage",
+        args={
+            "action": "patch",
+            "name": "miho-agent",
+            "old_string": "fallback",
+            "new_string": "LLM fail-closed path",
+        },
+        user_text="거버넌스 가드가 스킬매니지를 막으면 안 된다. 스킬을 보강해라.",
+    )
+
+    assert result is None
+
+
+def test_governance_pre_tool_guard_blocks_forbidden_tool_from_turn_context() -> None:
+    result = governance_pre_tool_call(
+        tool_name="execute_code",
+        args={"code": "print('fallback calculation')"},
+        user_text=(
+            "강지연 최근 기록으로 운동퍼포먼스 제멀 분석 리포트 줘\n\n"
+            "Governance OS routing:\n"
+            "- playbook: sports_motion_analysis\n"
+            "- required_tools: sports_max_analysis_variables, sports_motion_feedback\n"
+        ),
+    )
+
+    assert result is not None
+    assert result["action"] == "block"
+    assert "전용 도구" in result["message"]
+
+
+def test_governance_pre_tool_guard_reads_current_turn_context() -> None:
+    from agent.turn_context import set_current_user_message
+
+    set_current_user_message(
+        "강지연 최근 기록으로 운동퍼포먼스 제멀 분석 리포트 줘\n\n"
+        "Governance OS routing:\n"
+        "- playbook: sports_motion_analysis\n"
+    )
+
+    result = governance_pre_tool_call(
+        tool_name="execute_code",
+        args={"code": "print('manual sports fallback')"},
+    )
+
+    assert result is not None
+    assert result["action"] == "block"
+
+
 def test_governance_pre_tool_guard_does_not_block_docs_patch_mentions() -> None:
     result = governance_pre_tool_call(
         tool_name="apply_patch",

@@ -28,12 +28,14 @@ from .hakjong_grounding import apply_gap_plan_grounding
 from .hakjong_report_registration import register_hakjong_report_tool as _register_hakjong_report_tool
 from .hakjong_report_schema import validate_content_with_checks
 from .hakjong_stage_contract import normalize_student_stage
+from .artifact_latch import current_turn_reviewed_artifact
 from .report_fonts import report_font_css
 
 
 _CENTRAL_LIFE_DB = _record_context.CENTRAL_LIFE_DB
 _STAGE_KO = _record_context.STAGE_KO
 _TEMPLATE_PATH = _rendering._TEMPLATE_PATH
+_BASE_CHROMIUM_PRINT_TO_PDF = _rendering._chromium_print_to_pdf
 _RENDERING_PATCH_LOCK = threading.RLock()
 
 
@@ -56,7 +58,7 @@ def _render_html(content: dict[str, Any], body_class: str = "", student_stage: s
 
 
 def _chromium_print_to_pdf(html_path: Any, pdf_path: Any) -> None:
-    return _rendering._chromium_print_to_pdf(html_path, pdf_path)
+    return _BASE_CHROMIUM_PRINT_TO_PDF(html_path, pdf_path)
 
 
 def _render_pdf_fit(
@@ -146,6 +148,9 @@ def _student_record_brief(student_name: str) -> dict[str, list[str]]:
 
 def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     payload = args or {}
+    reviewed = current_turn_reviewed_artifact("academy_hakjong_report_package", payload)
+    if reviewed:
+        return reviewed
     student_name = str(payload.get("student_name") or "").strip()
     student_stage = str(payload.get("student_stage") or "").strip()
 
@@ -173,7 +178,11 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
 
     if not isinstance(content, dict):
         return json.dumps(
-            {"ok": False, "errors": ["content는 dict(또는 JSON 문자열)여야 한다. JSON 객체 형태로 다시 보내라."], "warnings": [], "checks": {}},
+            _repairable_rejection(
+                "학종 리포트 content가 비어 있거나 JSON 객체가 아니다. 같은 턴에서 content를 보강해 다시 호출하라.",
+                ["content는 dict(또는 JSON 문자열)여야 한다. JSON 객체 형태로 다시 보내라."],
+                {},
+            ),
             ensure_ascii=False,
         )
 
@@ -271,12 +280,20 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
         html = _render_html(content)
     except jinja2.UndefinedError as exc:
         return json.dumps(
-            {"ok": False, "errors": [f"템플릿 렌더링 실패 — 필드 누락: {exc}"], "warnings": [], "checks": {}},
+            _repairable_rejection(
+                "템플릿 필드가 누락됐다. content JSON을 보강해 같은 턴에서 다시 호출하라.",
+                [f"템플릿 렌더링 실패 — 필드 누락: {exc}"],
+                {},
+            ),
             ensure_ascii=False,
         )
     except Exception as exc:
         return json.dumps(
-            {"ok": False, "errors": [f"템플릿 렌더링 오류: {exc}"], "warnings": [], "checks": {}},
+            _repairable_rejection(
+                "템플릿 렌더링이 실패했다. content JSON을 점검해 같은 턴에서 다시 호출하라.",
+                [f"템플릿 렌더링 오류: {exc}"],
+                {},
+            ),
             ensure_ascii=False,
         )
 
@@ -299,7 +316,11 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
     except RuntimeError as exc:
         packaged_html.unlink(missing_ok=True)
         return json.dumps(
-            {"ok": False, "errors": [str(exc)], "warnings": [], "checks": {}},
+            _repairable_rejection(
+                "PDF 생성이 실패했다. 산출물을 전달하지 말고 같은 전용 도구를 다시 호출하라.",
+                [str(exc)],
+                {},
+            ),
             ensure_ascii=False,
         )
 
@@ -316,13 +337,11 @@ def _hakjong_report_package_tool_handler(args: dict[str, Any] | None = None, **_
         packaged_html.unlink(missing_ok=True)
         packaged_pdf.unlink(missing_ok=True)
         return json.dumps(
-            {
-                "ok": False,
-                "message": "PDF 물리 검증 실패.",
-                "errors": pdf_errors,
-                "warnings": [],
-                "checks": {},
-            },
+            _repairable_rejection(
+                "PDF 물리 검증 실패. 아래 항목을 수정한 뒤 같은 턴에서 이 도구를 다시 호출하라.",
+                pdf_errors,
+                {},
+            ),
             ensure_ascii=False,
         )
 

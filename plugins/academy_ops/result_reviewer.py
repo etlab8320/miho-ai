@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from plugins.governance_os.academy_bridge import record_academy_review_outcome
 
+from .artifact_latch import remember_reviewed_artifact
 from .hakjong_manifest import is_canonical_hakjong_manifest
 
 
@@ -101,9 +102,9 @@ def review_tool_result(*, tool_name: Any, args: Any, result: Any, llm: Any = Non
             "검수 상태가 needs_review이면 저장 완료/확정이라고 말하지 말고, "
             "확정 표현 금지와 원본 대조 필요를 한국어로 안내해라."
         )
-        return _record_and_dump(name, payload)
+        return _record_and_dump(name, payload, args=args)
 
-    if name in _PDF_TOOLS | {"susi27_recommend_candidates"}:
+    if name in _PDF_TOOLS:
         ai_review = _run_llm_reviewer(llm, tool_name=name, args=args, payload=payload)
         if ai_review["status"] == "fail":
             return _blocked_result(
@@ -125,7 +126,7 @@ def review_tool_result(*, tool_name: Any, args: Any, result: Any, llm: Any = Non
             payload.setdefault("warnings", [])
             if isinstance(payload["warnings"], list):
                 payload["warnings"].extend(ai_review["warnings"])
-        return _record_and_dump(name, payload)
+        return _record_and_dump(name, payload, args=args)
 
     payload["reviewer"] = {
         "name": REVIEWER_NAME,
@@ -133,7 +134,7 @@ def review_tool_result(*, tool_name: Any, args: Any, result: Any, llm: Any = Non
         "mode": "deterministic_gate",
         "checked": ["필수 산출 필드", "상태값"],
     }
-    return _record_and_dump(name, payload)
+    return _record_and_dump(name, payload, args=args)
 
 
 def _hard_gate(tool_name: str, payload: dict[str, Any]) -> tuple[list[str], str]:
@@ -469,6 +470,7 @@ def _dump(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-def _record_and_dump(tool_name: str, payload: dict[str, Any]) -> str:
+def _record_and_dump(tool_name: str, payload: dict[str, Any], *, args: Any = None) -> str:
     record_academy_review_outcome(tool_name, payload)
+    remember_reviewed_artifact(tool_name, args, payload)
     return _dump(payload)

@@ -83,6 +83,8 @@ FINAL_QA_REPAIR_INSTRUCTIONS = (
 FINAL_DELIVERY_INSTRUCTIONS = (
     "Final Delivery Agent로서 사용자 질문과 최종 답변 후보, 도구/reviewer evidence를 보고 "
     "실제 사용자에게 보낼 최종 본문을 결정한다. "
+    "핵심 원칙은 차단이 아니라 사용자 목표 달성이다. 안전한 도구 실행, 재조회, 재검증, "
+    "부분 결과 설명으로 해결 가능한 요청을 보모식 거절로 끝내지 않는다. "
     "deterministic guard가 사용자 문구를 생성하지 않도록 deliver/revise/block JSON을 반환한다. "
     "거버넌스/셀프하네스 적대적 리뷰 요청은 도메인 단어가 있어도 리뷰 결과로 취급하고, "
     "내부 guard/retry/fallback 문구는 노출하지 않는다."
@@ -93,6 +95,8 @@ FINAL_DELIVERY_ORCHESTRATOR_INSTRUCTIONS = (
     "사용자 질문, 대화 기록, allowed_tools, tool_contracts, reviewer evidence를 보고 "
     "허용된 도구만 steps JSON으로 반환하고, verified_tool_results가 있으면 사용자-facing answer JSON을 반환한다. "
     "없는 입력은 꾸며내지 말고 needs_input을 반환하되, 실행 가능한 정보가 있으면 run_tools를 반환한다. "
+    "사용자가 원하는 결과를 만들 수 있는 안전한 조회·진단·패키지 도구가 있으면 우선 실행 계획을 세우고, "
+    "사용자에게 대신 확인하라고 떠넘기거나 보모식 거절로 끝내지 않는다. "
     "내부 guard/retry/fallback/provider 문구는 사용자-facing 본문에 노출하지 않는다."
 )
 SEMANTIC_DELIVERY_JUDGE_INSTRUCTIONS = (
@@ -195,7 +199,7 @@ def register(ctx: Any) -> None:
         description="Mines repeated governance failures without changing active behavior",
         defaults={
             "provider": "auto",
-            "timeout": 60,
+            "timeout": 120,
             "extra_body": {"reasoning": {"effort": "medium"}},
             "instructions": SELF_HARNESS_WEAKNESS_MINER_INSTRUCTIONS,
         },
@@ -206,7 +210,7 @@ def register(ctx: Any) -> None:
         description="Proposes shadow-only harness candidates with validation and rollback gates",
         defaults={
             "provider": "auto",
-            "timeout": 60,
+            "timeout": 120,
             "extra_body": {"reasoning": {"effort": "medium"}},
             "instructions": SELF_HARNESS_PROPOSER_INSTRUCTIONS,
         },
@@ -289,6 +293,7 @@ def register(ctx: Any) -> None:
         },
     )
     _ensure_self_harness_autopilot_cron()
+    _ensure_runtime_learning_crons()
 
 
 def _register_domain_reviewer(
@@ -337,6 +342,21 @@ def _ensure_self_harness_autopilot_cron() -> None:
         import logging
 
         logging.getLogger(__name__).debug("self-harness autopilot cron not registered", exc_info=True)
+
+
+def _ensure_runtime_learning_crons() -> None:
+    """Idempotently schedule owner-profile and skill-review learning jobs."""
+
+    try:
+        from miho_cli.owner_profile import ensure_daily_summary_job
+        from miho_cli.skill_curator import ensure_daily_skill_review_job
+
+        ensure_daily_summary_job()
+        ensure_daily_skill_review_job()
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).debug("runtime learning crons not registered", exc_info=True)
 
 
 __all__ = [

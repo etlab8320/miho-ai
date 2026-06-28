@@ -140,12 +140,16 @@ def self_harness_runtime_feedback_probe_passed() -> bool:
                 smoke_runner=lambda _target: (0, "passed"),
                 call_llm=fake_call_llm,
                 extract_content=_extract_content,
+                record_failure=_probe_record_quality_failure,
             )
+            learning = result.get("runtime_learning")
             return (
                 result["status"] == "activated"
                 and result["self_harness_triggered"] is True
                 and result["user_visible_message_allowed"] is False
                 and bool(result["recorded_event_id"])
+                and isinstance(learning, dict)
+                and learning.get("ready") is True
                 and calls == [WEAKNESS_MINER_TASK, PROPOSER_TASK]
             )
         except Exception:
@@ -226,3 +230,20 @@ def _extract_content(response: object) -> str:
     if isinstance(response, dict):
         return str(response.get("content") or "")
     return str(response or "")
+
+
+def _probe_record_quality_failure(**kwargs: object) -> dict[str, object]:
+    from .feedback_events import build_quality_failure_entry
+
+    entry = build_quality_failure_entry(
+        request_id=str(kwargs.get("request_id") or "readiness-runtime-feedback"),
+        playbook_key=str(kwargs.get("playbook_key") or "designed_pdf_artifact"),
+        failure_signature=str(kwargs.get("failure_signature") or "readiness_probe"),
+        user_feedback=str(kwargs.get("user_feedback") or "readiness probe"),
+        artifact_paths=tuple(str(item) for item in kwargs.get("artifact_paths") or ()),
+        tools_used=tuple(str(item) for item in kwargs.get("tools_used") or ()),
+    )
+    return {
+        "id": 1,
+        "metadata": {"governance_outcome": entry.to_metadata()},
+    }

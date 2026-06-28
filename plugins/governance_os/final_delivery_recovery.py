@@ -11,6 +11,7 @@ from .delivery_safety import contains_internal_guard_leak, contains_non_result_d
 from .final_delivery_current_result import compose_current_result
 from .final_delivery_metrics import elapsed_ms, monotonic_ms, record_delivery_recovery_metric
 from .final_qa import repair_answer_until_pass
+from .transport_errors import is_timeout_error, transport_status
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +75,13 @@ def _request_blocked_recovery(
         record_delivery_recovery_metric(
             evidence=evidence,
             stage="blocked_recovery",
-            status=_transport_status(exc),
+            status=transport_status(exc),
             task=BLOCKED_DELIVERY_RECOVERY_TASK,
             duration_ms=elapsed_ms(start_ms),
             error=str(exc),
         )
+        if is_timeout_error(exc):
+            return ""
         if default_call_llm is None or default_extract is None:
             default_call_llm, default_extract = _default_llm_pair()
         if call_llm is default_call_llm:
@@ -97,7 +100,7 @@ def _request_blocked_recovery(
             record_delivery_recovery_metric(
                 evidence=evidence,
                 stage="blocked_recovery_default",
-                status=_transport_status(fallback_exc),
+                status=transport_status(fallback_exc),
                 task=BLOCKED_DELIVERY_RECOVERY_TASK,
                 duration_ms=elapsed_ms(fallback_start_ms),
                 error=str(fallback_exc),
@@ -182,6 +185,8 @@ def _emergency_fail_closed_result(*, evidence: dict[str, Any]) -> str:
 
 
 def _record_recovery_transport_failure(evidence: dict[str, Any]) -> None:
+    if isinstance(evidence, dict) and evidence.get("record_recovery_metrics") is False:
+        return
     try:
         from .feedback_events import record_quality_failure
 
@@ -199,10 +204,3 @@ def _record_recovery_transport_failure(evidence: dict[str, Any]) -> None:
         )
     except Exception as exc:
         logger.debug("failed to record final delivery recovery transport failure: %s", exc)
-
-
-def _transport_status(exc: Exception) -> str:
-    text = str(exc).casefold()
-    if "timeout" in text or "timed out" in text:
-        return "timeout"
-    return "error"

@@ -95,9 +95,12 @@ def test_governance_auxiliary_tasks_include_operational_instructions() -> None:
     assert "regression" in self_harness_proposer
     assert "Final Delivery Agent" in final_delivery
     assert "deterministic guard" in final_delivery
+    assert "사용자 목표 달성" in final_delivery
     assert "Final Delivery Orchestrator" in final_delivery_orchestrator
     assert "allowed_tools" in final_delivery_orchestrator
     assert "tool_contracts" in final_delivery_orchestrator
+    assert "실행 가능한 정보" in final_delivery_orchestrator
+    assert "보모식 거절" in final_delivery_orchestrator
     assert "runtime feature" in semantic_judge
     assert "참고 신호" in semantic_judge
     assert "최종 의미판단" in semantic_judge
@@ -166,3 +169,18 @@ def test_governance_plugin_loads_as_bundled_backend(tmp_path, monkeypatch) -> No
 
     raw = yaml.safe_load((Path(manifest_path) / "plugin.yaml").read_text(encoding="utf-8"))
     assert "governance" in set(raw["provides_cli_commands"])
+
+
+def test_governance_register_ensures_runtime_learning_crons(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+
+    ctx = _Ctx()
+    governance_os.register(ctx)
+
+    from cron.jobs import load_jobs
+    from miho_cli.owner_profile import DAILY_SUMMARY_JOB_NAME
+    from miho_cli.skill_curator import DAILY_SKILL_REVIEW_JOB_NAME
+
+    job_names = {str(job.get("name") or "") for job in load_jobs()}
+    assert DAILY_SUMMARY_JOB_NAME in job_names
+    assert DAILY_SKILL_REVIEW_JOB_NAME in job_names

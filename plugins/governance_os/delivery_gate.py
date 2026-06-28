@@ -139,6 +139,7 @@ def _governance_transform_llm_output(
         decision_factory=FinalDeliveryDecision,
     )
     if decision.action == "block":
+        retry_evidence = _delivery_evidence(decision, context=context, outcomes=outcomes)
         retry = retry_blocked_final_delivery(
             registry=registry,
             playbook_key=decision.playbook_key,
@@ -151,9 +152,9 @@ def _governance_transform_llm_output(
             orchestrator_extract_content=context.get(
                 "final_delivery_orchestrator_extract_content"
             ),
+            recovery_evidence=retry_evidence,
         )
         if retry is not None:
-            retry_evidence = _delivery_evidence(decision, context=context, outcomes=outcomes)
             retry_evidence["final_delivery_retry"] = {
                 "tool_name": retry.tool_name,
                 "review_reason": retry.review_reason,
@@ -224,12 +225,22 @@ def evaluate_final_delivery(
         outcomes if outcomes is not None else (),
         playbook_key=playbook_key,
         required_tools=playbook.required_tools,
+        evidence_policy=playbook.delivery_evidence_policy,
     ):
         return FinalDeliveryDecision(
             action="allow",
             reason="review_evidence_passed",
             playbook_key=playbook_key,
         )
+
+    if _has_partial_review_pass_evidence(outcomes, playbook_key=playbook_key):
+        if _contains_non_result_deferral(response_text) or _is_safe_non_delivery_response(response_text):
+            return FinalDeliveryDecision(
+                action="block",
+                reason="review_evidence_missing",
+                playbook_key=playbook_key,
+                retry_tools=playbook.required_tools,
+            )
 
     if _contains_non_result_deferral(response_text):
         return FinalDeliveryDecision(
@@ -388,8 +399,33 @@ def _has_review_pass_evidence(
     *,
     playbook_key: str,
     required_tools: tuple[str, ...],
+    evidence_policy: str = "",
 ) -> bool:
     required = set(required_tools)
+    if not isinstance(outcomes, (list, tuple)):
+        return False
+    passed_tools: set[str] = set()
+    for outcome in outcomes:
+        if not isinstance(outcome, dict):
+            continue
+        if str(outcome.get("playbook_key") or "") != playbook_key:
+            continue
+        if str(outcome.get("review_status") or "") != "pass":
+            continue
+        if outcome.get("failures"):
+            continue
+        tools = {str(tool).strip() for tool in outcome.get("tools_used") or []}
+        passed_tools.update(tools & required)
+    if evidence_policy == "all_required_tools":
+        return bool(required) and required <= passed_tools
+    return bool(passed_tools)
+
+
+def _has_partial_review_pass_evidence(
+    outcomes: Any,
+    *,
+    playbook_key: str,
+) -> bool:
     if not isinstance(outcomes, (list, tuple)):
         return False
     for outcome in outcomes:
@@ -401,7 +437,7 @@ def _has_review_pass_evidence(
             continue
         if outcome.get("failures"):
             continue
-        tools = {str(tool).strip() for tool in outcome.get("tools_used") or []}
-        if tools & required:
+        tools = [str(tool).strip() for tool in outcome.get("tools_used") or []]
+        if any(tools):
             return True
     return False

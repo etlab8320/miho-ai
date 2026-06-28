@@ -130,7 +130,30 @@ def _normalize_job_record(job: Dict[str, Any]) -> Dict[str, Any]:
 
     profile = _coerce_job_text(normalized.get("profile")).strip()
     normalized["profile"] = profile or None
+    try:
+        normalized["script_timeout_seconds"] = _normalize_positive_int(
+            normalized.get("script_timeout_seconds"),
+            "script_timeout_seconds",
+        )
+    except ValueError:
+        normalized["script_timeout_seconds"] = None
 
+    return normalized
+
+
+def _normalize_positive_int(value: Any, field_name: str) -> Optional[int]:
+    """Normalize optional positive integer job fields."""
+
+    if value is None or value == "" or value is False:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a positive integer")
+    try:
+        normalized = int(float(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a positive integer") from exc
+    if normalized <= 0:
+        raise ValueError(f"{field_name} must be a positive integer")
     return normalized
 
 
@@ -524,6 +547,7 @@ def create_job(
     workdir: Optional[str] = None,
     profile: Optional[str] = None,
     no_agent: bool = False,
+    script_timeout_seconds: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Create a new cron job.
@@ -573,6 +597,8 @@ def create_job(
                 and deliver its stdout directly. Empty stdout = silent (no
                 delivery). Requires ``script`` to be set. Ideal for classic
                 watchdogs and periodic alerts that don't need LLM reasoning.
+        script_timeout_seconds: Optional per-job timeout for script execution.
+                When unset, scheduler env/config/default timeout is used.
 
     Returns:
         The created job dict
@@ -608,6 +634,10 @@ def create_job(
     normalized_workdir = _normalize_workdir(workdir)
     normalized_profile = _normalize_profile(profile)
     normalized_no_agent = bool(no_agent)
+    normalized_script_timeout = _normalize_positive_int(
+        script_timeout_seconds,
+        "script_timeout_seconds",
+    )
 
     # no_agent jobs are meaningless without a script — the script IS the job.
     # Surface this as a clear ValueError at create time so bad configs never
@@ -662,6 +692,7 @@ def create_job(
         "enabled_toolsets": normalized_toolsets,
         "workdir": normalized_workdir,
         "profile": normalized_profile,
+        "script_timeout_seconds": normalized_script_timeout,
     }
 
     jobs = load_jobs()
@@ -750,6 +781,12 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]
                 updates["profile"] = None
             else:
                 updates["profile"] = _normalize_profile(_profile)
+
+        if "script_timeout_seconds" in updates:
+            updates["script_timeout_seconds"] = _normalize_positive_int(
+                updates["script_timeout_seconds"],
+                "script_timeout_seconds",
+            )
 
         updated = _apply_skill_fields({**job, **updates})
         schedule_changed = "schedule" in updates

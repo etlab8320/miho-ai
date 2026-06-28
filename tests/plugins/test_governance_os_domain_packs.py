@@ -11,7 +11,15 @@ def test_domain_packs_cover_general_and_academy_domains() -> None:
 
     by_domain = {pack.domain: pack for pack in packs}
 
-    assert set(by_domain) == {"academy", "artifact", "dev", "research", "discord_ops", "memory"}
+    assert set(by_domain) == {
+        "academy",
+        "artifact",
+        "dev",
+        "discord_ops",
+        "memory",
+        "research",
+        "sports_performance",
+    }
     assert by_domain["academy"].domain_agent_key == "academy_domain_agent"
     assert by_domain["academy"].playbook_keys == (
         "academy_hakjong_report",
@@ -26,6 +34,8 @@ def test_domain_packs_cover_general_and_academy_domains() -> None:
         "media_delivery_contract",
     )
     assert by_domain["discord_ops"].required_tools == ("media_delivery_contract",)
+    assert by_domain["sports_performance"].domain_agent_key == "sports_performance_domain_agent"
+    assert by_domain["sports_performance"].required_tools == ("sports_motion_report_package",)
     assert all(pack.coverage_passed for pack in packs)
 
 

@@ -51,9 +51,9 @@
 | 학원 도구 정확도 | 100 | 100 |
 | 하드코딩 의미판단 제거 | 100 | 100 |
 | 테스트 + 적대적 리뷰 루프 | 100 | 100 |
-| 유지보수 구조 | 74 | 100 |
+| 유지보수 구조 | 80 | 100 |
 
-현재 총평: 사용자 운영 통합 기준 97/100. local/live-safe readiness와 full-system live-required probe는 100/100이지만, 운영 통합 점수와 동일시하지 않는다.
+현재 총평: 사용자 운영 통합 기준 98/100. local/live-safe readiness와 full-system live-required probe는 100/100이지만, 운영 통합 점수와 동일시하지 않는다.
 
 이 표는 자동 probe 점수가 아니라 실제 Discord 운영에서 사용자가 원하는 결과가 나오는지를 보는 적대적 운영 점수다. readiness 100은 필요조건일 뿐이며, 운영 점수 100은 라이브 적용, 상호 연동, 사용자-facing 실패 미노출, 산출물 품질, self-harness 흡수, 유지보수 구조까지 같이 닫힐 때만 준다. `governance_os`와 `decision_twin`은 config allow-list, `miho plugins list`, 실제 PluginManager hook/aux task에서 enabled다. repo-wide legacy `gateway/run.py` 1.8만 줄 분리는 아직 운영 통합 100점의 감점 요소다.
 
@@ -112,7 +112,7 @@
 | 7 | Hermes / Decision Twin 라우팅 | 82 | 100 | 100 | 100점 닫힘 | hook-level context payload, executable directive, unknown tool rejection, auxiliary allow handling, active registry readiness, live-safe gateway smoke |
 | 8 | 도구 맵과 tool contract | 84 | 100 | 100 | 100점 닫힘 | tool-contract/v2 schema, required/forbidden coverage, blocked_capability, readiness probe, live-safe payload smoke |
 | 9 | 테스트 + 적대적 리뷰 루프 | 82 | 100 | 100 | 100점 닫힘 | focused, wider Governance OS 257개, runtime readiness, full-system score, operational CLI smoke 통과 |
-| 10 | 유지보수 구조 | 65 | 74 | 100 | 적대적 재점수, 미완료 | CLI/metrics/current-result 분리 완료. 남은 gateway/400줄 경고선 runtime 파일 분리 |
+| 10 | 유지보수 구조 | 65 | 80 | 100 | 적대적 재점수, 미완료 | conversation loop/compression 분리 완료. 남은 gateway/agent legacy 대형 파일 분리 |
 
 ## 공통 100점 기준
 
@@ -120,6 +120,7 @@
 
 - 사용자의 원래 요청을 잃지 않는다.
 - 전용 도구가 필요한 작업은 첫 경로에서 올바른 도구를 탄다.
+- 에이전트 라우팅, reviewer, Final QA, Self-Harness miner/proposer는 LLM 기반이어야 하고 Python은 실행/측정/schema/path/security/산식만 검증한다.
 - 도구 실패는 사용자 문구가 아니라 내부 재실행으로 처리한다.
 - reviewer가 실패를 발견하면 builder agent에게 다시 만들게 한다.
 - Final QA가 사용자 질문과 최종 답변을 대조한다.
@@ -153,11 +154,11 @@ Builder
 점수가 95 이상이어도 다음 조건이 남으면 100점이 아니다.
 
 - 사용자에게 대기 문구가 보일 수 있음
-- LLM reviewer 없이 Python 문자열 규칙이 의미 판단함
+- LLM reviewer/router/QA 없이 Python 문자열 규칙이 의미 판단함
 - PDF나 첨부가 실제 파일 검수 없이 pass 됨
 - Self-Harness가 후보만 만들고 활성화/rollback을 못 함
 - 실패를 ledger에 남기지 않음
-- 테스트가 나쁜 UX를 정상으로 고정함
+- 하드코딩 phrase 또는 py guard가 agentic 판단을 대체함
 
 ## 1. Hermes / Decision Twin 라우팅
 
@@ -392,7 +393,7 @@ Builder
 100점 기준:
 
 - Runtime은 실행, 측정, schema, safe path, 산식, 보안만 담당한다.
-- 사용자 의도, 도메인 의미, 디자인 품질, 최종 답변 적합성은 LLM agent가 판단한다.
+- 사용자 의도, 도메인 의미, 디자인 품질, 최종 답변 적합성, agent routing/verification은 LLM agent가 판단한다.
 - 특정 단어 포함만으로 통과/불합격하지 않는다.
 - 하드코딩 marker는 내부 문구 누출 방지 같은 물리적 안전벨트와 schema/path 검증에만 쓴다.
 
@@ -406,7 +407,7 @@ Builder
 - Semantic Delivery Judge는 주입 LLM뿐 아니라 production 기본 auxiliary client 경로도 테스트한다.
 - 비결과 답변은 단어/문구 skip 없이 LLM judge가 현재 턴의 최종 결과인지 판단한다.
 - Runtime allow 후보인 review-context/meta-answer도 LLM judge가 block으로 뒤집을 수 있다.
-- 하드코딩 phrase 추가로 문제를 덮는 변경이 없다.
+- 하드코딩 phrase 또는 Python 의미 가드 추가로 문제를 덮는 변경이 없다.
 
 운영 메모: 내부 guard leak, safe path, schema, tool 존재 확인은 의미판단이 아니라 물리 안전이므로 deterministic으로 남긴다.
 
@@ -441,7 +442,7 @@ Builder
 
 ## 10. 유지보수 구조
 
-현재: 74/100
+현재: 80/100
 
 100점 기준:
 
@@ -458,13 +459,15 @@ Builder
 - `self_harness_loop.py`는 receipt runner와 cron 등록을 분리해 500줄에서 394줄로 낮췄다.
 - `promotion.py`는 모델과 테스트 요구사항 매핑을 분리해 470줄에서 363줄로 낮췄다.
 - `dispatcher.py`는 모델과 auxiliary LLM dispatcher를 분리해 460줄에서 299줄로 낮췄다.
+- 2026-06-27 conversation loop 루프에서 `agent/conversation_loop.py`를 477줄 thin orchestrator로 닫았다. 정상 응답 후처리, tool response, text/empty recovery, iteration support, runtime context, Nous preflight, image shrink를 분리했고 `agent/conversation_compression.py`도 494줄로 낮췄다. 관련 검증은 run_agent/CLI 1454개, Governance OS 280개, compression focused 478개가 모두 통과했다.
 
 남은 리스크:
 
 - `gateway/run.py`가 18k줄대라 gateway 책임 분리가 아직 부족하다.
+- `agent/` 패키지에는 이번 범위 밖의 500줄 초과 파일이 31개 남아 있다.
 - `plugins/academy_ops/hakjong_report_tool.py`는 393줄로 낮아졌지만 학종 주변 파일 다수가 400줄 경고선에 있다.
 - `tools/governance_os_tool.py`, `plugins/governance_os/delivery_gate.py`, `review.py`, `result_transform.py`, readiness probe 일부는 400줄 경고선을 넘었다.
-- 유지보수 구조는 아직 100점과 거리가 멀다.
+- 유지보수 구조는 conversation loop 범위는 100점 후보지만, 저장소 전체 기준은 아직 100점이 아니다.
 
 ## 100점 완료 선언 형식
 
@@ -493,8 +496,7 @@ Builder
 - focused tests와 관련 wider gate가 통과해야 한다.
 - 실제 산출물 또는 live smoke가 사용자 관점에서 통과해야 한다.
 - Codex 자체 적대적 리뷰에서 치명 결함이 0개여야 한다.
-- 필요하면 별도 LLM/미호 적대적 리뷰에서도 95점 이상이어야 한다.
+- 필요하면 별도 LLM/미호 적대적 리뷰에서도 95점 이상이어야 하고, agent routing/검증/QA/Self-Harness 판단이 LLM 기반이라는 증거가 있어야 한다.
 - 남은 리스크가 있으면 100점이 아니라 `미완료`로 둔다.
-
 
 이 순서를 지키는 이유는 사용자에게 실패가 보이는 문제를 먼저 막아야 하기 때문이다.

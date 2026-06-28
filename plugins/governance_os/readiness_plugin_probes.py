@@ -229,7 +229,7 @@ def auxiliary_dispatcher_dataplane_probe_passed(registry: GovernanceRegistry) ->
             _call_auxiliary_dispatcher(
                 task="miho_governance_dispatcher",
                 user_text=text,
-                deterministic_decision=decision,
+                candidate_decision=decision,
                 candidates=candidates,
                 call_llm=fake_async_call_llm,
                 extract_content=lambda value: value,

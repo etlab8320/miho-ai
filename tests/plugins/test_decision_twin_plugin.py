@@ -189,6 +189,8 @@ def test_decision_prompt_contains_context_and_tool_contracts() -> None:
     assert "academy_hakjong_report_package" in joined
     assert "life_record_summary" in joined
     assert "키워드 하나" in joined
+    assert "현재 상태" in joined
+    assert "session_search" in joined
 
 
 def test_annotate_result_text_preserves_user_text() -> None:

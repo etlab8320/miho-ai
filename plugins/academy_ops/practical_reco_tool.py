@@ -22,6 +22,7 @@ from miho_constants import get_miho_home
 
 from .brand_assets import academy_brand_logo_src
 from . import hakjong_report_contract as _contract
+from .artifact_latch import current_turn_reviewed_artifact
 from .pdf_autocorrect import autocorrect as _autocorrect
 from .hakjong_report_contract import BRAND_TEXT
 from .practical_reco_recalc import validate_recalculated_scores
@@ -35,6 +36,7 @@ _TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "practical_reco
 _BRAND_TEXT = BRAND_TEXT
 
 _RECOMMENDATION_EVIDENCE_TOOL = "susi27_recommend_candidates"
+_NON_VISIBLE_VALIDATION_KEYS = frozenset({"accuracy_receipt"})
 
 
 def _kst_today() -> str:
@@ -130,7 +132,7 @@ def _validate_pdf_physical(
         return
     body = str(text_result.get("text") or "")
     if content is not None:
-        _contract.truncation_errors(content, body, errors)
+        _contract.truncation_errors(_visible_pdf_content(content), body, errors)
     if _BRAND_TEXT not in body:
         errors.append(f"PDF 본문에 브랜드 텍스트가 없다: {_BRAND_TEXT}")
     if student_name and student_name not in body:
@@ -148,8 +150,23 @@ def _check_evidence_warnings(evidence_tools: list[str]) -> list[str]:
     return warnings
 
 
+def _visible_pdf_content(content: Any) -> Any:
+    if isinstance(content, dict):
+        return {
+            key: _visible_pdf_content(value)
+            for key, value in content.items()
+            if key not in _NON_VISIBLE_VALIDATION_KEYS
+        }
+    if isinstance(content, list):
+        return [_visible_pdf_content(item) for item in content]
+    return content
+
+
 def _practical_reco_package_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     payload = args or {}
+    reviewed = current_turn_reviewed_artifact("academy_practical_reco_package", payload)
+    if reviewed:
+        return reviewed
     student_name = str(payload.get("student_name") or "").strip()
     content = payload.get("content")
     if isinstance(content, str):

@@ -111,6 +111,85 @@ def test_retry_executor_fail_closes_when_retry_dispatch_raises(monkeypatch) -> N
     assert attempts[0]["reason"] == "retry_dispatch_error:RuntimeError"
 
 
+def test_retry_executor_replays_practical_tool_through_reviewer_hooks(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pdf = tmp_path / "kim-seoyeon.pdf"
+    manifest = tmp_path / "kim-seoyeon.practical_reco_validation.json"
+    pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    manifest.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "pdf_path": str(pdf),
+                "student_name": "김서연",
+                "school_names": ["테스트대학교"],
+                "evidence_tools": ["susi27_recommend_candidates"],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    calls: list[tuple[str, dict[str, object]]] = []
+    hook_calls: list[dict[str, object]] = []
+
+    def fake_dispatch(name: str, args: dict[str, object], **_kwargs: object) -> str:
+        calls.append((name, args))
+        return json.dumps(
+            {
+                "ok": True,
+                "file_path": str(pdf),
+                "manifest_path": str(manifest),
+                "media_tag": f"MEDIA:{pdf}",
+                "row_count": 1,
+            },
+            ensure_ascii=False,
+        )
+
+    def fake_invoke_hook(hook_name: str, **kwargs: object) -> list[str]:
+        if hook_name != "transform_tool_result":
+            return []
+        hook_calls.append(kwargs)
+        assert kwargs["governance_skip_result_transform"] is True
+        payload = json.loads(str(kwargs["result"]))
+        payload["reviewer"] = {
+            "name": "academy_result_reviewer",
+            "status": "pass",
+            "mode": "llm_subagent",
+            "checked": ["내용", "근거", "요청 의도"],
+        }
+        return [json.dumps(payload, ensure_ascii=False)]
+
+    monkeypatch.setattr("tools.registry.registry.dispatch", fake_dispatch)
+    monkeypatch.setattr("miho_cli.plugins.invoke_hook", fake_invoke_hook)
+    monkeypatch.setattr(
+        "plugins.governance_os.review._call_auxiliary_reviewer",
+        lambda **kwargs: {
+            "status": "pass",
+            "checked": list(kwargs.get("checked") or []),
+        },
+    )
+
+    transformed = governance_transform_tool_result(
+        tool_name="academy_practical_reco_all_candidates",
+        args={"student_name": "김서연", "region": "수도권, 강원, 충청"},
+        result=json.dumps({"ok": False, "errors": ["도구 인자가 불완전해 생성 전 실패"]}, ensure_ascii=False),
+        governance_skip_ledger=True,
+    )
+
+    assert transformed is not None
+    payload = json.loads(transformed)
+    assert payload["reviewer"]["status"] == "pass"
+    assert calls == [
+        (
+            "academy_practical_reco_all_candidates",
+            {"student_name": "김서연", "region": "수도권, 강원, 충청"},
+        )
+    ]
+    assert hook_calls
+
+
 def test_retry_executor_feeds_vision_review_into_pdf_gate(monkeypatch) -> None:
     calls: list[tuple[str, dict[str, object]]] = []
 

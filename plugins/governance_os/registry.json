@@ -120,6 +120,29 @@
       "forbidden_tools": ["reportlab", "pymupdf", "fitz", "fpdf"],
       "timeout_seconds": 180
     },
+    "sports_performance_domain_agent": {
+      "kind": "domain",
+      "description": "Owns MAX sports-performance variables, motion feedback, and student-facing training analysis.",
+      "responsibilities": [
+        "Use dedicated sports_performance tools for motion-analysis variables and exercise prescriptions.",
+        "Compare Peak-style records only as supporting context when the user asks for recent records."
+      ],
+      "allowed_tools": [
+        "sports_motion_report_package",
+        "sports_max_analysis_variables",
+        "sports_motion_feedback",
+        "sports_report_template",
+        "sports_report_html_template",
+        "academy_student_record_lookup"
+      ],
+      "forbidden_tools": [
+        "execute_code",
+        "terminal",
+        "shell",
+        "write_file"
+      ],
+      "timeout_seconds": 180
+    },
     "memory_domain_agent": {
       "kind": "domain",
       "description": "Owns durable user corrections, profile facts, and memory promotion.",
@@ -385,6 +408,52 @@
       "ledger_policy": "record html source, pdf gate payload, contact sheet, reviewer status, and failures",
       "memory_policy": "store reusable artifact-design correction only after repeated confirmed failures",
       "rollback_policy": "regenerate HTML/PDF; do not mutate domain source data"
+    },
+    "sports_motion_analysis": {
+      "domain": "sports_performance",
+      "triggers": [
+        "운동퍼포먼스",
+        "운동분석",
+        "제멀 분석",
+        "제자리멀리뛰기 분석",
+        "운동처방",
+        "부족한점",
+        "분석 변인",
+        "변인 기반",
+        "MAX 분석"
+      ],
+      "required_context": [
+        "student_identity_or_scope",
+        "exercise_or_sport",
+        "motion_variables_or_recent_record_context"
+      ],
+      "required_tools": [
+        "sports_motion_report_package"
+      ],
+      "forbidden_tools": [
+        "execute_code",
+        "terminal",
+        "shell",
+        "write_file"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "sports_performance_domain_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "sports_max_api_reviewer",
+        "sports_performance_reviewer"
+      ],
+      "retry_policy": "use sports_motion_report_package until MAX API variables, sports_motion_feedback reviewer, HTML report, and PDF quality gate pass",
+      "delivery_format": "Korean sports-performance PDF report package from reviewed MAX variables, feedback payload, and html_pdf_quality_gate",
+      "delivery_evidence_policy": "all_required_tools",
+      "ledger_policy": "record API source, variables, reviewer status, and retry failures",
+      "memory_policy": "store recurring sports-analysis correction only after confirmed repeated failure",
+      "rollback_policy": "do not mutate source data; rerun API query or regenerate feedback"
     },
     "discord_attachment_delivery": {
       "domain": "discord_ops",

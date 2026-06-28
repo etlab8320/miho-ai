@@ -1,12 +1,12 @@
 """Regression guard for #14782: json.JSONDecodeError must not be classified
-as a local validation error by the main agent loop.
+as a local validation error by API-error retry handling.
 
-`json.JSONDecodeError` inherits from `ValueError`. The agent loop's
-non-retryable classifier at run_agent.py treats `ValueError` / `TypeError`
-as local programming bugs and skips retry. Without an explicit carve-out,
-a transient provider hiccup (malformed response body, truncated stream,
-routing-layer corruption) that surfaces as a JSONDecodeError would bypass
-the retry path and fail the turn immediately.
+`json.JSONDecodeError` inherits from `ValueError`. The API-error retry
+classifier treats bare `ValueError` / `TypeError` as local programming bugs
+and skips retry. Without an explicit carve-out, a transient provider hiccup
+(malformed response body, truncated stream, routing-layer corruption) that
+surfaces as a JSONDecodeError would bypass the retry path and fail the turn
+immediately.
 
 This test mirrors the exact predicate shape used in run_agent.py so that
 any future refactor of that predicate must preserve the invariant:
@@ -22,7 +22,7 @@ import json
 
 
 def _mirror_agent_predicate(err: BaseException) -> bool:
-    """Exact shape of run_agent.py's is_local_validation_error check.
+    """Exact shape of the API retry is_local_validation_error check.
 
     Kept in lock-step with the source. If you change one, change both —
     or, better, refactor the check into a shared helper and have both
@@ -74,19 +74,15 @@ class TestAgentLoopSourceStillHasCarveOut:
 
     def test_run_agent_excludes_jsondecodeerror_from_local_validation(self):
         import inspect
-        from agent import conversation_loop
-        # The agent loop body lives in agent/conversation_loop.py after
-        # the run_agent.py refactor.  Assert the carve-out is present in
-        # the extracted module specifically — if it ever moves back or
-        # disappears, this fails loudly rather than silently passing
-        # against a non-existent inline replica.
-        src = inspect.getsource(conversation_loop)
+        from agent import conversation_error_retry
+
+        src = inspect.getsource(conversation_error_retry)
         # The predicate we care about must reference json.JSONDecodeError
         # in its exclusion tuple. We check for the specific co-occurrence
         # rather than the literal string so harmless reformatting doesn't
         # break us.
         assert "is_local_validation_error" in src
         assert "JSONDecodeError" in src, (
-            "agent/conversation_loop.py must carve out json.JSONDecodeError "
+            "agent/conversation_error_retry.py must carve out json.JSONDecodeError "
             "from the is_local_validation_error classification — see #14782."
         )

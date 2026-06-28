@@ -262,6 +262,29 @@ def test_run_job_no_agent_script_failure_delivers_error(miho_env):
     assert "Cron watchdog" in final_response  # alert header
 
 
+def test_run_job_no_agent_uses_job_script_timeout(miho_env):
+    from cron.jobs import create_job
+    from cron.scheduler import run_job
+
+    script_path = miho_env / "scripts" / "slow.sh"
+    script_path.write_text("#!/bin/bash\nsleep 30\n")
+
+    job = create_job(
+        prompt=None,
+        schedule="every 5m",
+        script="slow.sh",
+        no_agent=True,
+        deliver="local",
+        script_timeout_seconds=1,
+    )
+
+    success, _doc, final_response, error = run_job(job)
+
+    assert success is False
+    assert error is not None
+    assert "timed out after 1s" in final_response
+
+
 def test_run_job_no_agent_never_invokes_aiagent(miho_env):
     """no_agent jobs must NOT import/construct the AIAgent."""
     from cron.jobs import create_job

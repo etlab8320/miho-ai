@@ -305,6 +305,48 @@ def test_susi_review_blocks_unreachable_candidate() -> None:
     assert "만점 합산" in " ".join(reviewed["errors"])
 
 
+def test_susi_recommend_candidates_uses_fast_contract_gate_without_llm() -> None:
+    llm = _FakeReviewerLlm(
+        {
+            "status": "fail",
+            "errors": ["candidate lookup should not call the LLM reviewer"],
+            "warnings": [],
+            "checked": [],
+            "retry_instructions": "do not retry",
+        }
+    )
+    raw = json.dumps(
+        {
+            "ok": True,
+            "candidates": [
+                {
+                    "university": "테스트대학교",
+                    "department": "체육교육과",
+                    "admission_track": "수시 실기",
+                    "max_possible_total": 1000,
+                    "prev_final_total": 860,
+                    "suggested_verdict": "적정",
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    reviewed = json.loads(
+        review_tool_result(
+            tool_name="susi27_recommend_candidates",
+            args={"student_query": "수민", "region": "수도권 우선, 충청, 강원"},
+            result=raw,
+            llm=llm,
+        )
+    )
+
+    assert llm.calls == []
+    assert reviewed["ok"] is True
+    assert reviewed["reviewer"]["status"] == "pass"
+    assert reviewed["reviewer"]["mode"] == "deterministic_gate"
+
+
 def test_life_record_review_marks_human_review_without_blocking() -> None:
     raw = json.dumps(
         {

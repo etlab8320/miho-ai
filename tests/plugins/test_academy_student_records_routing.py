@@ -211,6 +211,121 @@ async def test_student_record_fast_path_handles_router_model_failure(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_student_record_fast_path_abstains_for_sports_motion_report_requests(monkeypatch) -> None:
+    def classify(text: str, group_key: str, intents: dict, **kwargs: object) -> str | None:
+        if group_key == "academy_student_record_fast_path":
+            return "record"
+        if group_key == "academy_sports_motion_report_exclusion":
+            return "sports_motion_report"
+        if group_key == "academy_output_format":
+            return "none"
+        return None
+
+    monkeypatch.setattr("plugins.academy_ops.student_record_fast_path.semantic_intents.classify", classify)
+
+    async def failing_resolver(_: list[dict[str, str]]) -> object:
+        raise RuntimeError("body agent should get this sports_performance request")
+
+    def record_handler(args: dict, **_: object) -> str:
+        raise AssertionError(f"sports motion report should not use Peak record lookup: {args!r}")
+
+    route = await resolve_and_execute_academy_request(
+        "강지연 최근 기록으로 운동퍼포먼스 제멀 분석 리포트 줘",
+        resolver=failing_resolver,
+        handlers={"academy_student_record_lookup": record_handler},
+        today="2026-06-28",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.ALLOW
+    assert route.reason == "resolver_error"
+
+
+@pytest.mark.asyncio
+async def test_student_record_fast_path_abstains_for_dual_source_review_requests(monkeypatch) -> None:
+    def classify(text: str, group_key: str, intents: dict, **kwargs: object) -> str | None:
+        if group_key == "academy_student_record_fast_path":
+            return "record"
+        if group_key == "academy_sports_motion_report_exclusion":
+            return "dual_source_review"
+        if group_key == "academy_output_format":
+            return "none"
+        return None
+
+    monkeypatch.setattr("plugins.academy_ops.student_record_fast_path.semantic_intents.classify", classify)
+
+    async def failing_resolver(_: list[dict[str, str]]) -> object:
+        raise RuntimeError("body agent should compare Peak records and MAX motion-analysis variables")
+
+    def record_handler(args: dict, **_: object) -> str:
+        raise AssertionError(f"dual-source review should not be consumed by Peak fast path: {args!r}")
+
+    route = await resolve_and_execute_academy_request(
+        "강지연 제멀 최근 기록이랑 운동분석 같이 보고 부족한 점 알려줘",
+        resolver=failing_resolver,
+        handlers={"academy_student_record_lookup": record_handler},
+        today="2026-06-28",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.ALLOW
+    assert route.reason == "resolver_error"
+
+
+@pytest.mark.asyncio
+async def test_student_record_fast_path_keeps_plain_peak_recent_record_requests(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    def classify(text: str, group_key: str, intents: dict, **kwargs: object) -> str | None:
+        if group_key == "academy_student_record_fast_path":
+            return "record"
+        if group_key == "academy_sports_motion_report_exclusion":
+            return "plain_peak_record"
+        if group_key == "academy_output_format":
+            return "none"
+        return None
+
+    monkeypatch.setattr("plugins.academy_ops.student_record_fast_path.semantic_intents.classify", classify)
+
+    async def failing_resolver(_: list[dict[str, str]]) -> object:
+        raise RuntimeError("fast path should handle plain Peak record requests")
+
+    def record_handler(args: dict, **_: object) -> str:
+        calls.append(args)
+        return json.dumps(
+            {
+                "ok": True,
+                "operation": "student.record_lookup",
+                "student": {"name": "강지연"},
+                "records": [{"event_name": "제자리멀리뛰기", "measured_at": "2026-06-20", "value": 221, "unit": "cm"}],
+                "message": "강지연 최근 제멀 기록\n- 2026-06-20: 제자리멀리뛰기 221cm",
+            },
+            ensure_ascii=False,
+        )
+
+    route = await resolve_and_execute_academy_request(
+        "강지연 최근 제멀 기록좀 보여줘",
+        resolver=failing_resolver,
+        handlers={"academy_student_record_lookup": record_handler},
+        today="2026-06-28",
+        synthesize=False,
+    )
+
+    assert route == AcademyNaturalRoute.HANDLED
+    assert route.reason == "student_record_fast_path"
+    assert calls == [
+        {
+            "student_query": "강지연 최근 제멀 기록좀 보여줘",
+            "event_query": "",
+            "date": "",
+            "today": "2026-06-28",
+            "period_days": 30,
+        }
+    ]
+    assert "제자리멀리뛰기 221cm" in route.response_text
+
+
+@pytest.mark.asyncio
 async def test_student_record_fast_path_abstains_for_image_requests(monkeypatch) -> None:
     def classify(text: str, group_key: str, *_: object, **__: object) -> str | None:
         if group_key == "academy_student_record_fast_path":

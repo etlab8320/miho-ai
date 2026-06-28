@@ -69,7 +69,7 @@ async def test_auxiliary_dispatcher_receives_full_router_map() -> None:
     await _call_auxiliary_dispatcher(
         task="miho_governance_dispatcher",
         user_text="방금 답변을 PDF로 줘",
-        deterministic_decision=decision,
+        candidate_decision=decision,
         candidates=(),
         turn_context={"reply_to_text": "직전 답변 본문"},
         call_llm=fake_call_llm,
@@ -77,7 +77,10 @@ async def test_auxiliary_dispatcher_receives_full_router_map() -> None:
     )
 
     payload = json.loads(calls[0]["messages"][1]["content"])  # type: ignore[index]
+    system_prompt = calls[0]["messages"][0]["content"]  # type: ignore[index]
     assert "route_map" in payload
+    assert "운영 진단" in str(system_prompt)
+    assert "dev_code_update" in str(system_prompt)
     assert payload["turn_context"]["reply_to_text"] == "직전 답변 본문"
     assert "designed_pdf_artifact" in payload["route_map"]["playbooks"]
     assert "html_pdf_quality_gate" in payload["route_map"]["tool_contracts"]

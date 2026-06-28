@@ -75,7 +75,7 @@ def _governance_dispatcher_context_probe_passed(registry: GovernanceRegistry | N
             _call_auxiliary_dispatcher(
                 task="miho_governance_dispatcher",
                 user_text="이거 정리해줘",
-                deterministic_decision=decision,
+                candidate_decision=decision,
                 candidates=(),
                 registry=registry,
                 turn_context={"reply_to_text": "4개월 시즌 운동 프로그램 초안"},

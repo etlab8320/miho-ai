@@ -21,7 +21,7 @@ class DispatchDecision:
     agent_chain: tuple[str, ...] = field(default_factory=tuple)
     review_gates: tuple[str, ...] = field(default_factory=tuple)
     reason: str = ""
-    routing_source: str = "deterministic"
+    routing_source: str = "candidate_scorer"
 
 
 @dataclass(frozen=True)

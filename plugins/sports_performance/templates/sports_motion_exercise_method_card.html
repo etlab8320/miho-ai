@@ -1,0 +1,31 @@
+<article class="training-block library-block">
+  <h3>{{ block.title }}</h3>
+  <div class="block-grid">
+    <div>
+      <p class="method-label">왜 이 운동인가</p>
+      <p>{{ block.how_to }}</p>
+      <p class="group-desc">{{ block.selection_reason|truncate(118, true, '...') }}</p>
+      <div class="chip-row">
+        <span class="chip">{{ block.kind_label }}</span>
+        {% for variable in block.linked_variables[:3] %}
+        <span class="chip">{{ variable.label }}</span>
+        {% endfor %}
+      </div>
+      <p class="group-desc">영상 · <a href="{{ block.video.url }}">{{ block.video.title }}</a> / {{ block.video.channel }}</p>
+    </div>
+    <div>
+      <p class="method-label">운동 방법</p>
+      <div class="method-list">
+        {% for step in block.method_steps[:3] %}
+        <div class="method-step"><span class="step-index">{{ loop.index }}</span><span>{{ step }}</span></div>
+        {% endfor %}
+      </div>
+      <div class="dosage">
+        <div class="dose-cell"><strong>세트</strong>{{ block.dosage.sets }}</div>
+        <div class="dose-cell"><strong>반복</strong>{{ block.dosage.reps_or_time }}</div>
+        <div class="dose-cell"><strong>부하</strong>{{ block.dosage.load }}</div>
+      </div>
+      <p class="group-desc">{{ block.expected_variable_changes[0]|default(block.common_mistake) }}</p>
+    </div>
+  </div>
+</article>

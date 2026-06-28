@@ -5466,10 +5466,11 @@ class TestMemoryNudgeCounterPersistence:
         assert a._iters_since_skill == 0
 
     def test_counters_not_reset_in_preamble(self):
-        """The run_conversation preamble must not zero the nudge counters."""
+        """The turn setup preamble must not zero the nudge counters."""
         import inspect
-        from agent.conversation_loop import run_conversation as _rc
-        src = inspect.getsource(_rc)
+        from agent.conversation_turn_setup import _reset_turn_counters, prepare_conversation_turn
+        src = inspect.getsource(prepare_conversation_turn)
+        reset_src = inspect.getsource(_reset_turn_counters)
         # The preamble resets many fields (retry counts, budget, etc.)
         # before the main loop. Find that reset block and verify our
         # counters aren't in it. The reset block ends at iteration_budget.
@@ -5482,6 +5483,8 @@ class TestMemoryNudgeCounterPersistence:
         preamble = src[:preamble_end]
         assert "agent._turns_since_memory = 0" not in preamble
         assert "agent._iters_since_skill = 0" not in preamble
+        assert "agent._turns_since_memory = 0" not in reset_src
+        assert "agent._iters_since_skill = 0" not in reset_src
 
 
 class TestDeadRetryCode:
@@ -5489,8 +5492,14 @@ class TestDeadRetryCode:
 
     def test_no_unreachable_max_retries_after_backoff(self):
         import inspect
+        from agent.conversation_error_retry import handle_api_error_retry
+        from agent.conversation_response_validation import handle_response_validation
         from agent.conversation_loop import run_conversation as _rc
-        source = inspect.getsource(_rc)
+        source = (
+            inspect.getsource(_rc)
+            + inspect.getsource(handle_response_validation)
+            + inspect.getsource(handle_api_error_retry)
+        )
         occurrences = source.count("if retry_count >= max_retries:")
         assert occurrences == 2, (
             f"Expected 2 occurrences of 'if retry_count >= max_retries:' "
@@ -5555,7 +5564,7 @@ class TestMemoryContextSanitization:
 
 
 class TestMemoryProviderTurnStart:
-    """run_conversation() must call memory_manager.on_turn_start() before prefetch_all().
+    """Turn setup must call memory_manager.on_turn_start() before prefetch_all().
 
     Without this call, providers like Honcho never update _turn_count, so cadence
     checks (contextCadence, dialecticCadence) are always satisfied — every turn
@@ -5563,23 +5572,23 @@ class TestMemoryProviderTurnStart:
     """
 
     def test_on_turn_start_called_before_prefetch(self):
-        """Source-level check: on_turn_start appears before prefetch_all in run_conversation."""
+        """Source-level check: turn-start notification appears before prefetch."""
         import inspect
-        from agent.conversation_loop import run_conversation as _rc
-        src = inspect.getsource(_rc)
+        from agent.conversation_turn_setup import prepare_conversation_turn
+        src = inspect.getsource(prepare_conversation_turn)
         # Find the actual method calls, not comments
-        idx_turn_start = src.index(".on_turn_start(")
-        idx_prefetch = src.index(".prefetch_all(")
+        idx_turn_start = src.index("_notify_memory_turn_start(")
+        idx_prefetch = src.index("_prefetch_external_memory(")
         assert idx_turn_start < idx_prefetch, (
-            "on_turn_start() must be called before prefetch_all() in run_conversation "
+            "on_turn_start() must be called before prefetch_all() in turn setup "
             "so that memory providers have the correct turn count for cadence checks"
         )
 
     def test_on_turn_start_uses_user_turn_count(self):
         """Source-level check: on_turn_start receives the user_turn_count."""
         import inspect
-        from agent.conversation_loop import run_conversation as _rc
-        src = inspect.getsource(_rc)
+        from agent.conversation_turn_setup import _notify_memory_turn_start
+        src = inspect.getsource(_notify_memory_turn_start)
         # The extracted body uses ``agent.X`` rather than ``self.X``;
         # assert the extracted-form spelling directly.
         assert "on_turn_start(agent._user_turn_count" in src

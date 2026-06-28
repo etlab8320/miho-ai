@@ -11,6 +11,8 @@ from typing import Any
 from plugins.decision_twin.contracts import decision_tool_contracts
 
 from .delivery_safety import contains_internal_guard_leak, contains_non_result_deferral
+from .final_delivery_metrics import elapsed_ms, monotonic_ms, record_delivery_recovery_metric
+from .transport_errors import is_timeout_error, transport_status
 
 logger = logging.getLogger(__name__)
 
@@ -126,13 +128,36 @@ def _request_orchestrator_payload(
         verified_tool_results=verified_tool_results,
     )
     try:
+        start_ms = monotonic_ms()
         response = _call_orchestrator(call_llm, messages)
-    except Exception:
+    except Exception as exc:
+        record_delivery_recovery_metric(
+            evidence=evidence,
+            stage=f"orchestrator_{mode}",
+            status=transport_status(exc),
+            task=FINAL_DELIVERY_ORCHESTRATOR_TASK,
+            duration_ms=elapsed_ms(start_ms),
+            error=str(exc),
+        )
         if injected_call_llm is None and injected_extract is None:
             raise
+        if is_timeout_error(exc):
+            raise
         default_call_llm, default_extract = _default_llm_pair()
-        response = _call_orchestrator(default_call_llm, messages)
-        extract_content = default_extract
+        try:
+            fallback_start_ms = monotonic_ms()
+            response = _call_orchestrator(default_call_llm, messages)
+            extract_content = default_extract
+        except Exception as fallback_exc:
+            record_delivery_recovery_metric(
+                evidence=evidence,
+                stage=f"orchestrator_{mode}_default",
+                status=transport_status(fallback_exc),
+                task=FINAL_DELIVERY_ORCHESTRATOR_TASK,
+                duration_ms=elapsed_ms(fallback_start_ms),
+                error=str(fallback_exc),
+            )
+            raise
     parsed = _parse_json_payload(str(extract_content(response) or ""))
     return parsed if isinstance(parsed, dict) else None
 
@@ -174,6 +199,7 @@ def final_delivery_orchestrator_messages(
             "content": (
                 "너는 미호의 Final Delivery Orchestrator다. fallback 문구가 아니라 "
                 "LLM agent로 최종 전달을 완성한다. "
+                "목표는 사용자 요청을 안전하게 끝까지 수행하는 것이다. "
                 "mode=plan_tools이면 현재 턴 안에서 실행할 도구 계획만 JSON으로 반환한다. "
                 "mode=compose_answer이면 verified_tool_results와 evidence만 근거로 "
                 "사용자에게 보낼 최종 답변을 JSON으로 반환한다. "
@@ -183,6 +209,9 @@ def final_delivery_orchestrator_messages(
                 "plan_tools 반환 형식: {\"action\":\"run_tools|needs_input\",\"steps\":[{\"tool_name\":\"...\",\"args\":{...}}],\"reason\":\"...\"}. "
                 "compose_answer 반환 형식: {\"action\":\"deliver|revise|needs_input\",\"answer\":\"...\",\"reason\":\"...\"}. "
                 "실행 가능한 계획이면 action=run_tools, 필요한 입력이 실제로 없으면 needs_input이다. "
+                "사용자가 직접 확인하라고 할 수 있는 현재 상태·파일·로그·크론·서버 정보는 "
+                "allowed_tools 안의 안전한 도구로 먼저 확인한다. "
+                "보모식 거절이나 다음 턴 요청은 실제 필수 입력이 없을 때만 쓴다. "
                 "retry/fallback/guard/provider/후검증 같은 내부 용어를 사용자 답변으로 만들지 않는다."
             ),
         },

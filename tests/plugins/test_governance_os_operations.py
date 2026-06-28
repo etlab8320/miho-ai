@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from plugins.governance_os.operations import run_readiness_check
 from plugins.governance_os.registry import load_builtin_registry, registry_from_mapping
+from plugins.governance_os.cli import _readiness_payload
 
 
 def _reload_home(tmp_path, monkeypatch):
@@ -61,6 +62,10 @@ def test_readiness_passes_with_builtin_registry(tmp_path, monkeypatch) -> None:
     assert report.quality_score == 100
     assert report.rollback_status == "builtin"
     assert report.failures == ()
+    payload = _readiness_payload(report)
+    assert payload["readiness_scope"] == "live_safe_preflight"
+    assert payload["discord_artifact_preflight_ready"] is True
+    assert payload["actual_discord_send_verified"] is False
 
 
 def test_readiness_check_does_not_write_outcome_ledger(tmp_path, monkeypatch) -> None:

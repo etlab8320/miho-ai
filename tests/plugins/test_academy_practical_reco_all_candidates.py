@@ -11,6 +11,7 @@ from plugins.academy_ops.practical_reco_all_candidates import (
     _candidate_row,
     build_all_candidates_content,
 )
+from plugins.academy_ops import practical_reco_tool
 
 
 def _candidate(index: int, *, region: str = "충남") -> dict[str, Any]:
@@ -197,3 +198,41 @@ def test_all_candidates_tool_writes_standard_template_pdf(monkeypatch, tmp_path)
     assert manifest["evidence_tools"] == ["susi27_recommend_candidates"]
     assert manifest["row_count"] == 2
     assert manifest["school_names"] == ["테스트대1", "테스트대2"]
+
+
+def test_practical_physical_validation_ignores_accuracy_receipt_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    pdf = tmp_path / "report.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    content = {
+        "title_lines": ["김서연 학생", "수도권 수시 실기전형 전체 추천"],
+        "accuracy_receipt": {
+            "schema_version": "academy-accuracy/v1",
+            "canonical_tool": "academy_practical_reco_all_candidates",
+            "blocking_rules": ["do not hand-assemble candidates from rule lookup"],
+        },
+    }
+    monkeypatch.setattr(
+        practical_reco_tool._contract,
+        "_pdf_info",
+        lambda _path: {"pages": 1, "width": 595.0, "height": 842.0},
+    )
+    monkeypatch.setattr(
+        practical_reco_tool._contract,
+        "_pdf_text",
+        lambda _path: {
+            "text": "김서연 학생 수도권 수시 실기전형 전체 추천 맥스체대입시 일산교육원"
+        },
+    )
+    errors: list[str] = []
+
+    practical_reco_tool._validate_pdf_physical(
+        pdf,
+        content=content,
+        student_name="김서연",
+        errors=errors,
+    )
+
+    assert errors == []

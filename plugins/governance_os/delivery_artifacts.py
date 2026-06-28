@@ -37,9 +37,15 @@ _ARTIFACT_REQUEST_TERMS = (
     "리포트",
 )
 _ARTIFACT_DEFERRAL_TERMS = (
+    "확인 가능한 정보로는",
     "확인할 근거",
     "전달하긴 어려",
+    "전달할 수 없어",
     "첨부됐는지",
+    "검증 완료본",
+    "검증 통과본",
+    "검증된 완료본",
+    "첨부 대신 상태",
     "최종 확정본",
     "확정 첨부본",
     "확정해서 전달",
@@ -53,6 +59,30 @@ _ARTIFACT_DEFERRAL_TERMS = (
     "최종 pdf 형태",
     "자료 보내주",
     "원본 파일이나 내용을 보내주",
+)
+_ARTIFACT_CONFIRMATION_NOUNS = (
+    "pdf",
+    "파일",
+    "첨부",
+    "리포트",
+    "산출물",
+    "완료본",
+    "확정본",
+    "검증본",
+)
+_ARTIFACT_NON_DELIVERY_MARKERS = (
+    "확인되지",
+    "확정할 수 없",
+    "전달할 수 없",
+    "제공할 수 없",
+    "줄 수 없",
+    "어려",
+    "대기",
+    "필요",
+    "보내주",
+    "확보되면",
+    "추측",
+    "불가",
 )
 
 
@@ -88,9 +118,20 @@ def _should_complete_artifact_delivery(response_text: str) -> bool:
         return True
     if any(term in response_blob for term in _ARTIFACT_DEFERRAL_TERMS):
         return True
+    if _has_artifact_non_delivery_conflict(response_blob):
+        return True
     if "media:" in response_blob:
         return False
     return False
+
+
+def _has_artifact_non_delivery_conflict(response_blob: str) -> bool:
+    if not response_blob:
+        return False
+    has_artifact = any(noun in response_blob for noun in _ARTIFACT_CONFIRMATION_NOUNS)
+    if not has_artifact:
+        return False
+    return any(marker in response_blob for marker in _ARTIFACT_NON_DELIVERY_MARKERS)
 
 
 def _latest_artifact_path(conversation_history: Any) -> str:

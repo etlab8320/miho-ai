@@ -2974,6 +2974,10 @@ def _try_configured_fallback_chain(
         fb_model = str(entry.get("model", "")).strip() or None
         fb_base_url = str(entry.get("base_url", "")).strip() or None
         fb_api_key = str(entry.get("api_key", "")).strip() or None
+        if not fb_api_key:
+            key_env = str(entry.get("key_env") or entry.get("api_key_env") or "").strip()
+            if key_env:
+                fb_api_key = os.getenv(key_env, "").strip() or None
 
         label = f"fallback_chain[{i}]({fb_provider})"
 

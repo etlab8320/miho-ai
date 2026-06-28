@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from .ledger import OutcomeLedgerEntry, record_outcome
-from .review import auxiliary_review_policy_for_playbook, evaluate_review_gate
+from .review import auxiliary_review_policy_for_tool, evaluate_review_gate
 from .versioning import load_runtime_registry
 
 
@@ -27,8 +27,11 @@ _SELF_REVIEWED_TOOL_PLAYBOOKS: dict[str, tuple[str, ...]] = {
     "life_record_verify": ("life_record_ingest",),
     "html_pdf_quality_gate": ("designed_pdf_artifact",),
     "media_delivery_contract": ("discord_attachment_delivery",),
+    "sports_motion_report_package": ("sports_motion_analysis",),
+    "sports_max_analysis_variables": ("sports_motion_analysis",),
+    "sports_motion_feedback": ("sports_motion_analysis",),
 }
-_SUPPORT_RETRY_TOOLS = frozenset({"html_pdf_autocorrect", "vision_analyze"})
+_SUPPORT_RETRY_TOOLS = frozenset({"html_pdf_autocorrect", "vision_analyze", "sports_pe_brain_evidence"})
 
 
 def governance_transform_tool_result(
@@ -37,6 +40,8 @@ def governance_transform_tool_result(
     result: Any = None,
     **context: Any,
 ) -> str | None:
+    if context.get("governance_skip_result_transform"):
+        return None
     playbook_keys = _SELF_REVIEWED_TOOL_PLAYBOOKS.get(str(tool_name or ""))
     if not playbook_keys:
         return None
@@ -51,7 +56,7 @@ def governance_transform_tool_result(
             playbook_key=playbook_key,
             tool_name=str(tool_name),
             result=result,
-            auxiliary_review_policy=auxiliary_review_policy_for_playbook(playbook_key),
+            auxiliary_review_policy=auxiliary_review_policy_for_tool(playbook_key, str(tool_name)),
         )
         if outcome.status == "pass":
             _record_transform_outcome(
@@ -264,7 +269,8 @@ def _auto_retry_executor(
     retry_tools = _retry_tools(failures)
     retry_args = _retry_args(failures)
     original_args = context.get("args") if isinstance(context.get("args"), dict) else None
-    if not retry_args and original_args and retry_tools == [tool_name]:
+    if not retry_args and original_args and tool_name in retry_tools:
+        retry_tools = [tool_name]
         retry_args = [original_args]
     return {
         "status": "required" if retry_tools else "not_available",
@@ -298,9 +304,12 @@ def _run_auto_retry_executor(
     prior_results: dict[str, dict[str, Any]] = {}
     for attempt in range(1, max_attempts + 1):
         for index, retry_tool in enumerate(retry_tools):
+            raw_args = retry_args[min(index, len(retry_args) - 1)]
+            if raw_args.get("tool") == retry_tool and isinstance(raw_args.get("args"), dict):
+                raw_args = raw_args["args"]
             args = _retry_args_with_prior_result(
                 retry_tool=retry_tool,
-                args=retry_args[min(index, len(retry_args) - 1)],
+                args=raw_args,
                 prior_results=prior_results,
             )
             try:
@@ -381,6 +390,15 @@ def _retry_args_with_prior_result(
         ).strip()
         if artifact_path:
             next_args["artifact_path"] = artifact_path
+    if retry_tool == "sports_motion_feedback" and not next_args.get("evidence_refs"):
+        evidence = prior_results.get("sports_pe_brain_evidence") or {}
+        refs = [
+            str(pack.get("id") or "").strip()
+            for pack in evidence.get("packs") or []
+            if isinstance(pack, dict) and str(pack.get("id") or "").strip()
+        ]
+        if refs:
+            next_args["evidence_refs"] = refs[:5]
     return next_args
 
 
@@ -397,7 +415,39 @@ def _dispatch_retry_tool(
         args,
         task_id=str(context.get("task_id") or "") or None,
     )
-    return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+    raw = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+    return _apply_retry_transform_hooks(retry_tool, args, raw, context=context)
+
+
+def _apply_retry_transform_hooks(
+    retry_tool: str,
+    args: dict[str, Any],
+    result: str,
+    *,
+    context: dict[str, Any],
+) -> str:
+    try:
+        from miho_cli.plugins import invoke_hook
+
+        hook_results = invoke_hook(
+            "transform_tool_result",
+            tool_name=retry_tool,
+            args=args,
+            result=result,
+            task_id=str(context.get("task_id") or ""),
+            session_id=str(context.get("session_id") or ""),
+            tool_call_id=str(context.get("tool_call_id") or ""),
+            duration_ms=_duration_ms(context.get("duration_ms")),
+            governance_skip_result_transform=True,
+            governance_skip_ledger=True,
+        )
+    except Exception as exc:
+        logger.warning("retry transform hooks failed: %s", exc, exc_info=True)
+        return result
+    for hook_result in hook_results:
+        if isinstance(hook_result, str):
+            return hook_result
+    return result
 
 
 def _review_retry_result(
@@ -422,7 +472,7 @@ def _review_retry_result(
             playbook_key=playbook_key,
             tool_name=retry_tool,
             result=retry_result,
-            auxiliary_review_policy=auxiliary_review_policy_for_playbook(playbook_key),
+            auxiliary_review_policy=auxiliary_review_policy_for_tool(playbook_key, retry_tool),
         )
         if outcome.status != "pass":
             reasons.append(outcome.reason)

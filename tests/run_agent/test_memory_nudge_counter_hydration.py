@@ -118,18 +118,17 @@ def test_assistant_only_history_does_not_advance_user_turn_count():
 
 def test_production_code_contains_hydration_block():
     """Smoke test: confirm the hydration code is actually wired into
-    run_conversation(). If someone deletes it, tests above still pass
+    turn setup. If someone deletes it, tests above still pass
     against the inline replica — this fails them awake.
 
-    After the run_agent.py refactor the agent-loop body lives in
-    ``agent/conversation_loop.py`` and uses ``agent.X`` rather than
-    ``self.X``.  Assert the block is present in the extracted module
-    specifically — if it ever drifts back into run_agent.py or
-    disappears entirely, this guard fails loudly.
+    The thin conversation loop delegates per-turn state hydration to
+    ``agent/conversation_turn_setup.py``. Assert the block is present in
+    that extracted module specifically so future refactors cannot silently
+    drop it while the inline replica still passes.
     """
     from pathlib import Path
     repo = Path(__file__).resolve().parents[2]
-    cl_path = repo / "agent" / "conversation_loop.py"
+    cl_path = repo / "agent" / "conversation_turn_setup.py"
     src_cl = cl_path.read_text(encoding="utf-8")
     # Anchor on the unique comment + the modulo line.
     assert "Hydrate per-session nudge counters from persisted history" in src_cl, (

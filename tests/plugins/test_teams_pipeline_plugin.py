@@ -50,6 +50,32 @@ def test_register_adds_cli_only():
     assert callable(entry["handler_fn"])
 
 
+def test_teams_summary_parse_refuses_empty_llm_response() -> None:
+    from plugins.teams_pipeline.pipeline import _parse_summary_json
+
+    with pytest.raises(ValueError, match="empty"):
+        _parse_summary_json("")
+
+
+@pytest.mark.asyncio
+async def test_teams_summary_generation_refuses_heuristic_fallback(monkeypatch, tmp_path: Path) -> None:
+    from plugins.teams_pipeline import pipeline as pipeline_module
+    from plugins.teams_pipeline.models import TeamsMeetingRef
+
+    async def _broken_llm(**kwargs):
+        raise RuntimeError("primary and secondary providers unavailable")
+
+    monkeypatch.setattr(pipeline_module, "async_call_llm", _broken_llm)
+    pipeline = TeamsMeetingPipeline(graph_client=object(), store=TeamsPipelineStore(tmp_path / "teams.db"))
+
+    with pytest.raises(pipeline_module.TeamsPipelineRetryableError, match="heuristic fallback is disabled"):
+        await pipeline._generate_summary_payload(
+            resolved_meeting=TeamsMeetingRef(meeting_id="meeting-123", metadata={"subject": "Weekly Sync"}),
+            transcript_text="Action: send draft by Friday.",
+            artifacts=[],
+        )
+
+
 def test_runtime_config_uses_existing_teams_platform_settings():
     from plugins.teams_pipeline.runtime import build_pipeline_runtime_config
 

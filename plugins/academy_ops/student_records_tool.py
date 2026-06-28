@@ -32,7 +32,10 @@ def register_student_records_tool(ctx: Any) -> None:
         handler=_student_record_lookup_tool_handler,
         description=(
             "Return read-only Peak practical-test records for ONE student over time (개인 학생의 실기 기록). "
-            "Use for a single student's measurement / practical-test / event / performance history. "
+            "Use only for a single student's Peak measurement / practical-test / event / performance history. "
+            "Do not use this as the primary tool for MAX motion-analysis variables, sports-performance reports, "
+            "exercise prescriptions, or PDF analysis reports; use sports_max_analysis_variables first for those. "
+            "When the request asks for both recent records and motion analysis, call this alongside sports_max_analysis_variables. "
             "For a whole 월말테스트 cohort (all participants, 남녀 평균, rankings, school filters), "
             "use academy_monthly_test_records instead — NOT this tool. "
             "Do not use attendance, staff attendance, or workout-plan tools for student performance records."

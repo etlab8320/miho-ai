@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, cast
 
 import plugins.governance_os.self_harness_loop as loop
@@ -73,6 +74,20 @@ def test_generate_test_receipts_marks_pass_and_fail() -> None:
 
     failed = loop.generate_test_receipts(candidate, runner=_all_fail)
     assert failed and all(receipt["status"] == "failed" for receipt in failed)
+
+
+def test_default_receipt_runner_uses_repo_root_cwd(tmp_path) -> None:
+    from plugins.governance_os.self_harness_receipts import _default_pytest_runner
+
+    prior = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        code, output = _default_pytest_runner("tests/plugins/test_governance_os_versioning.py")
+    finally:
+        os.chdir(prior)
+
+    assert code == 0
+    assert "passed" in output
 
 
 def test_autopilot_activates_when_receipts_and_smoke_pass(monkeypatch) -> None:
@@ -233,6 +248,67 @@ def test_autopilot_uses_llm_miner_and_proposer(monkeypatch) -> None:
     assert len(result["activated"]) == 1
 
 
+def test_self_harness_llm_uses_compact_events_and_schema_prompt() -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        captured["task"] = kwargs.get("task")
+        captured["timeout"] = kwargs.get("timeout")
+        messages = kwargs.get("messages")
+        assert isinstance(messages, list)
+        captured["system"] = messages[0]["content"]
+        user_payload = json.loads(str(messages[1]["content"]))
+        captured["events"] = user_payload["events"]
+        return {"content": json.dumps(user_payload["deterministic_bundle"])}
+
+    many_events = _events("reviewer_missing", n=loop.LLM_EVENT_SAMPLE_LIMIT + 5)
+
+    result = loop._mine_evidence_bundle(
+        many_events,
+        min_recurrence=2,
+        call_llm=fake_call_llm,
+        extract_content=_extract,
+    )
+
+    assert result["schema_version"] == "miho-self-harness/evidence-bundle/v1"
+    assert captured["task"] == loop.WEAKNESS_MINER_TASK
+    assert captured["timeout"] is None
+    assert "miho-self-harness/evidence-bundle/v1" in captured["system"]
+    assert len(captured["events"]) == loop.LLM_EVENT_SAMPLE_LIMIT
+    assert set(captured["events"][0]) == {
+        "id",
+        "playbook_key",
+        "failures",
+        "review_status",
+        "request_id",
+    }
+
+
+def test_self_harness_proposer_prompt_requires_candidates_object() -> None:
+    captured: dict[str, Any] = {}
+    candidate = _candidate("reviewer_missing")
+
+    def fake_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        messages = kwargs.get("messages")
+        assert isinstance(messages, list)
+        captured["system"] = messages[0]["content"]
+        return {"content": json.dumps({"candidates": [candidate]})}
+
+    proposed = loop._propose_shadow_candidates(
+        {
+            "schema_version": "miho-self-harness/evidence-bundle/v1",
+            "patterns": [candidate["source_pattern"]],
+        },
+        call_llm=fake_call_llm,
+        extract_content=_extract,
+    )
+
+    assert proposed
+    assert "candidates" in captured["system"]
+    assert "auto_promote_allowed=false" in captured["system"]
+    assert proposed[0]["agentic_proposer_task"] == loop.PROPOSER_TASK
+
+
 def test_register_self_harness_cron_is_idempotent(monkeypatch) -> None:
     created: list[dict[str, Any]] = []
 
@@ -250,13 +326,57 @@ def test_register_self_harness_cron_is_idempotent(monkeypatch) -> None:
     assert created[0]["name"] == loop.CRON_JOB_NAME
     assert created[0]["no_agent"] is True
     assert created[0]["script"] == loop._AUTOPILOT_SCRIPT_NAME
+    assert created[0]["script_timeout_seconds"] == loop.AUTOPILOT_SCRIPT_TIMEOUT_SECONDS
 
     monkeypatch.setattr(
         cron_jobs,
         "list_jobs",
-        lambda include_disabled=False: [{"name": loop.CRON_JOB_NAME}],
+        lambda include_disabled=False: [
+            {
+                "id": "job-1",
+                "name": loop.CRON_JOB_NAME,
+                "script": loop._AUTOPILOT_SCRIPT_NAME,
+                "no_agent": True,
+                "script_timeout_seconds": loop.AUTOPILOT_SCRIPT_TIMEOUT_SECONDS,
+            }
+        ],
     )
     assert loop.register_self_harness_cron(script_path=loop._AUTOPILOT_SCRIPT_NAME) is None
+
+
+def test_register_self_harness_cron_repairs_existing_timeout(monkeypatch) -> None:
+    updates: list[tuple[str, dict[str, Any]]] = []
+
+    import cron.jobs as cron_jobs
+
+    monkeypatch.setattr(
+        cron_jobs,
+        "list_jobs",
+        lambda include_disabled=False: [
+            {
+                "id": "job-1",
+                "name": loop.CRON_JOB_NAME,
+                "script": loop._AUTOPILOT_SCRIPT_NAME,
+                "no_agent": True,
+                "script_timeout_seconds": None,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        cron_jobs,
+        "update_job",
+        lambda job_id, update: updates.append((job_id, update)) or {"id": job_id, **update},
+    )
+
+    job = loop.register_self_harness_cron(script_path=loop._AUTOPILOT_SCRIPT_NAME)
+
+    assert job is not None
+    assert updates == [
+        (
+            "job-1",
+            {"script_timeout_seconds": loop.AUTOPILOT_SCRIPT_TIMEOUT_SECONDS},
+        )
+    ]
 
 
 def test_install_autopilot_script_lands_in_miho_scripts_dir(tmp_path, monkeypatch) -> None:

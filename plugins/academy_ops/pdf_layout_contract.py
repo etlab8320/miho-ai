@@ -8,6 +8,8 @@ from pathlib import Path
 
 _FOOTER_BOTTOM_BAND_PT = 55.0
 _FOOTER_TOP_ORPHAN_PT = 80.0
+_TRAILING_PAGE_NUMBER_RE = re.compile(r"\b[0-9]\s*$")
+_REPORT_PAGE_RE = re.compile(r"(리포트|report)\s+[0-9]\s*$", re.IGNORECASE)
 
 
 def footer_layout_errors(pdf_path: Path, *, expected_pages: int | None = None) -> list[str]:
@@ -77,12 +79,12 @@ def _looks_like_footer(text: str) -> bool:
     normalized = re.sub(r"\s+", " ", text).strip()
     if not normalized:
         return False
-    if len(normalized) > 150:
-        return False
     if "맥스체대입시" in normalized:
         return True
     if "확인용" in normalized:
         return True
-    if "기반" in normalized and re.search(r"\b[0-9]\s*$", normalized):
+    if _REPORT_PAGE_RE.search(normalized):
         return True
-    return bool(re.search(r"(리포트|report)\s+[0-9]\s*$", normalized, re.IGNORECASE))
+    if _TRAILING_PAGE_NUMBER_RE.search(normalized) and len(normalized) <= 280:
+        return True
+    return False

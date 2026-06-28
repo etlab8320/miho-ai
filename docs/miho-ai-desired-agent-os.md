@@ -51,6 +51,13 @@ Self-Harness가 실시간 결과 전달을 대신하면 안 된다.
 
 문제는 Python 코드가 의미 판단을 하드코딩 문자열로 대신하는 것이다.
 
+영구 원칙:
+
+- 모든 에이전트 라우팅, 검증, reviewer 판정, Final QA, Self-Harness weakness mining/proposal은 LLM 기반이어야 한다.
+- Python 코드는 실행, 측정, schema/path/security, 산식 일치, rollback 같은 물리 계약만 검증한다.
+- Python 코드가 문자열/키워드/정규식으로 사용자 의도, 도메인 의미, 최종 답변 적합성을 막거나 통과시키면 실패다.
+- deterministic check 결과는 LLM agent에게 넘기는 evidence여야 하며, agentic 판단 자체를 대체하면 안 된다.
+
 금지되는 방식:
 
 ```text
@@ -242,6 +249,7 @@ LLM Dispatcher는 도구 맵을 받아야 한다.
 - “전체 후보” 요청인데 상향이라는 이유로 누락하지 않았는가
 - 운동 프로그램 PDF가 현장 코칭 자료처럼 자연스러운가
 - 답변이 사용자가 실제로 물은 것에 답하고 있는가
+- deterministic reviewer의 측정값을 근거로 삼되, 그 측정값이 의미판단을 대신하게 하지 않았는가
 
 ### Final QA Agent
 

@@ -35,7 +35,8 @@ def normalize_tool_contract(
     """Return a complete contract while preserving legacy keys."""
     args = _list(raw.get("args"))
     required = _list(raw.get("required_inputs")) or _list(raw.get("requires"))
-    required = required or _list(raw.get("schema_required")) or args
+    required = required or _list(raw.get("schema_required"))
+    required = required or _default_required_inputs(raw)
     optional = _list(raw.get("optional_inputs")) or [arg for arg in args if arg not in required]
     contract = dict(raw)
     contract.update(
@@ -112,6 +113,12 @@ def _list(value: Any) -> list[str]:
     if isinstance(value, (list, tuple, set)):
         return [str(item).strip() for item in value if str(item or "").strip()]
     return [str(value).strip()] if str(value or "").strip() else []
+
+
+def _default_required_inputs(raw: dict[str, Any]) -> list[str]:
+    if str(raw.get("kind") or "") == "blocked_capability":
+        return ["governance playbook decision"]
+    return ["user request"]
 
 
 def _default_output(name: str, raw: dict[str, Any]) -> str:

@@ -300,6 +300,36 @@ def test_blocked_answer_uses_default_recovery_when_injected_agent_fails(monkeypa
     ]
 
 
+def test_blocked_answer_absorbs_recovery_timeout_without_default_retry(monkeypatch) -> None:
+    default_calls: list[str] = []
+
+    def timeout_llm(*_args: object, **_kwargs: object) -> object:
+        raise TimeoutError("Responses stream exceeded 30.0s total timeout")
+
+    def default_call_llm(*_args: object, **kwargs: object) -> dict[str, object]:
+        default_calls.append(str(kwargs.get("task") or ""))
+        return {"content": "{}"}
+
+    monkeypatch.setattr("agent.auxiliary_client.call_llm", default_call_llm)
+    monkeypatch.setattr("agent.auxiliary_client.extract_content_or_reasoning", _extract)
+
+    original = "서연이 수시 환산점수는 947.3점입니다."
+    transformed = governance_transform_llm_output(
+        response_text=original,
+        user_message="서연이 수시 환산점수 계산해줘",
+        platform="discord",
+        governance_outcomes=[],
+        final_delivery_call_llm=timeout_llm,
+        final_delivery_extract_content=_extract,
+    )
+
+    assert transformed is not None
+    assert "947.3" not in transformed
+    assert "현재 결론: 확정 환산점수 없음" in transformed
+    assert "필요한 입력: 학생 교과 성적, 지원 대학/학과, 전형." in transformed
+    assert "miho_governance_blocked_delivery_recovery" not in default_calls
+
+
 def test_blocked_answer_returns_current_result_when_all_recovery_agents_fail() -> None:
     def broken_llm(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("provider down")

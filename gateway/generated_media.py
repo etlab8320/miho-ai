@@ -12,6 +12,10 @@ from typing import Any, Iterable
 from miho_constants import get_miho_dir
 from gateway.attachment_extensions import ATTACHMENT_EXTENSION_PATTERN
 from gateway.media_cache_manager import managed_media_dir
+from gateway.media_directive_dedupe import (
+    dedupe_existing_media_directives,
+    dedupe_media_directives,
+)
 
 
 _TOOL_MEDIA_RE = re.compile(
@@ -58,6 +62,7 @@ def append_missing_generated_media_directives(
     if not final_response:
         return final_response
 
+    final_response = dedupe_existing_media_directives(final_response, media_re=_TOOL_MEDIA_RE)
     directives = _collect_missing_media_directives(
         messages,
         final_response=final_response,
@@ -66,7 +71,8 @@ def append_missing_generated_media_directives(
     if not directives:
         return final_response
     clean_response = _strip_dangling_attachment_label(final_response)
-    return clean_response + "\n" + "\n".join(directives)
+    combined_response = clean_response + "\n" + "\n".join(directives)
+    return dedupe_existing_media_directives(combined_response, media_re=_TOOL_MEDIA_RE)
 
 
 def _collect_missing_media_directives(
@@ -111,7 +117,11 @@ def _collect_missing_media_directives(
             if directive:
                 directives.append(directive)
 
-    unique = _dedupe_media_directives(directives, known_media_paths=known_media_paths)
+    unique = dedupe_media_directives(
+        directives,
+        known_media_paths=known_media_paths,
+        path_matches_any=_path_matches_any,
+    )
     if has_voice_directive and any(item.startswith("MEDIA:") for item in unique):
         unique.insert(0, "[[audio_as_voice]]")
     return unique
@@ -354,20 +364,3 @@ def _image_ref_to_directive(image_ref: str, final_response: str) -> str:
     if image_ref.startswith(("/", "~/")):
         return f"MEDIA:{image_ref}"
     return ""
-
-
-def _dedupe_media_directives(items: Iterable[str], *, known_media_paths: set[str]) -> list[str]:
-    seen: set[str] = set()
-    seen_media_paths = set(known_media_paths)
-    unique: list[str] = []
-    for item in items:
-        if item in seen:
-            continue
-        media_path = _media_path_from_directive(item)
-        if media_path:
-            if _path_matches_any(media_path, seen_media_paths):
-                continue
-            seen_media_paths.add(media_path)
-        seen.add(item)
-        unique.append(item)
-    return unique

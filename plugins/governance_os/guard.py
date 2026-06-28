@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .policy import evaluate_tool_call
+from .policy import _forbidden_tool_message, evaluate_tool_call
 from .versioning import load_runtime_registry
 
 
@@ -56,28 +56,34 @@ _ARTIFACT_GENERATION_MARKERS = (
 )
 
 
-def governance_pre_tool_call(tool_name: Any = None, args: Any = None, **_: Any) -> dict[str, str] | None:
+def governance_pre_tool_call(tool_name: Any = None, args: Any = None, **context: Any) -> dict[str, str] | None:
     name = str(tool_name or "").strip()
     if not name:
         return None
     registry = load_runtime_registry()
-    payload = _search_blob(args)
+    turn_text = _turn_text(context)
+    payload = _search_blob({"args": args, "turn_text": turn_text})
     if _is_governance_dev_verification_call(name, args, registry=registry, payload=payload):
         return None
+    if name == "terminal" and any(marker in payload for marker in _DESTRUCTIVE_COMMAND_MARKERS):
+        return {"action": "block", "message": _forbidden_tool_message(())}
+    matching_playbooks = [
+        playbook for playbook in registry.playbooks.values() if _matches_playbook_contract(payload, playbook)
+    ]
+    specific_playbook_allows_tool = any(
+        playbook.key != "designed_pdf_artifact" and name not in playbook.forbidden_tools
+        for playbook in matching_playbooks
+    )
+    if specific_playbook_allows_tool:
+        return None
     for playbook in registry.playbooks.values():
-        arg_decision = evaluate_tool_call(
-            registry,
-            playbook_key=playbook.key,
-            tool_name=name,
-            args=args if isinstance(args, dict) else {},
-        )
-        if arg_decision.action == "block" and _blocked_by_arg_contract(arg_decision.evidence):
-            return {"action": "block", "message": arg_decision.message_ko}
+        if specific_playbook_allows_tool and playbook.key == "designed_pdf_artifact":
+            continue
         if name not in playbook.forbidden_tools:
             continue
-        if not _matches_playbook(payload, playbook.triggers):
+        if not _matches_playbook_contract(payload, playbook):
             continue
-        if not _looks_like_artifact_bypass(payload):
+        if not (_matches_playbook_contract(turn_text, playbook) or _looks_like_artifact_bypass(payload)):
             continue
         decision = evaluate_tool_call(
             registry,
@@ -118,13 +124,10 @@ def _matches_non_dev_artifact_generation(registry: Any, blob: str) -> bool:
     for playbook in registry.playbooks.values():
         if getattr(playbook, "domain", "") == "dev":
             continue
-        if _matches_playbook(blob, playbook.triggers) and _looks_like_artifact_bypass(blob):
+        if _matches_playbook_contract(blob, playbook) and _looks_like_artifact_bypass(blob):
             return True
     return False
 
-
-def _blocked_by_arg_contract(evidence: tuple[str, ...]) -> bool:
-    return any(item.startswith("matched_forbidden_arg=") for item in evidence)
 
 
 def _looks_like_artifact_bypass(blob: str) -> bool:
@@ -159,6 +162,23 @@ def _matches_playbook(blob: str, triggers: tuple[str, ...]) -> bool:
         if len(words) >= 2 and all(word in blob for word in words):
             return True
     return False
+
+
+def _matches_playbook_contract(blob: str, playbook: Any) -> bool:
+    return _matches_playbook(blob, playbook.triggers) or str(playbook.key or "").casefold() in blob
+
+
+def _turn_text(context: dict[str, Any]) -> str:
+    for key in ("user_text", "user_message", "original_user_message"):
+        text = str(context.get(key) or "").casefold().strip()
+        if text:
+            return text
+    try:
+        from agent.turn_context import current_user_message
+
+        return str(current_user_message() or "").casefold().strip()
+    except Exception:
+        return ""
 
 
 def _search_blob(value: Any) -> str:

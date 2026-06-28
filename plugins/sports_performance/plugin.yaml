@@ -4,14 +4,22 @@ description: "Sports motion-analysis coaching and reviewer agents for PE entranc
 author: "ET Lab"
 kind: backend
 tools:
+  - sports_motion_report_package
   - sports_motion_schema
   - sports_pe_brain_evidence
   - sports_motion_feedback
+  - sports_max_analysis_variables
+  - sports_report_template
+  - sports_report_html_template
   - sports_video_analyze
 provides_tools:
+  - sports_motion_report_package
   - sports_motion_schema
   - sports_pe_brain_evidence
   - sports_motion_feedback
+  - sports_max_analysis_variables
+  - sports_report_template
+  - sports_report_html_template
   - sports_video_analyze
 provides_hooks:
   - transform_tool_result

@@ -50,16 +50,27 @@ def render_html(content: dict[str, Any], body_class: str = "", student_stage: st
 def render_pdf_fit(
     content: dict[str, Any], packaged_html: Path, packaged_pdf: Path, student_stage: str = ""
 ) -> str:
-    html = render_html(content, student_stage=student_stage)
+    html = ""
     page_target = expected_page_count(content)
     for body_class in _COMPACT_STEPS:
         html = render_html(content, body_class=body_class, student_stage=student_stage)
         packaged_html.write_text(html, encoding="utf-8")
         _chromium_print_to_pdf(packaged_html, packaged_pdf)
         pages = _contract._pdf_info(packaged_pdf).get("pages")
-        if not pages or int(pages) <= page_target:
+        page_count = _page_count_or_none(pages)
+        if (page_count is None or page_count <= page_target) and not footer_layout_errors(
+            packaged_pdf,
+            expected_pages=page_target,
+        ):
             break
     return html
+
+
+def _page_count_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def expected_page_count(content: dict[str, Any] | None) -> int:
@@ -108,7 +119,7 @@ def validate_pdf_physical(
         return
     body = str(text_result.get("text") or "")
     if content is not None:
-        _contract.truncation_errors(content, body, errors)
+        _contract.truncation_errors(_visible_pdf_content(content), body, errors)
     if _BRAND_TEXT not in body:
         errors.append(f"PDF 본문에 브랜드 텍스트가 없다: {_BRAND_TEXT}")
     if student_name and student_name not in body:
@@ -126,6 +137,18 @@ def university_names_from_content(content: dict[str, Any]) -> list[str]:
         if name:
             return [name]
     return []
+
+
+def _visible_pdf_content(content: Any) -> Any:
+    if isinstance(content, dict):
+        visible = {key: _visible_pdf_content(value) for key, value in content.items()}
+        strategy = visible.get("strategy_section")
+        if isinstance(strategy, dict) and isinstance(strategy.get("gap_plan"), dict):
+            strategy.pop("checklist", None)
+        return visible
+    if isinstance(content, list):
+        return [_visible_pdf_content(item) for item in content]
+    return content
 
 
 def safe_stem(*parts: str) -> str:

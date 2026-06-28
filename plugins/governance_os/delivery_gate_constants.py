@@ -14,6 +14,9 @@ PLAYBOOK_BY_TOOL = {
     "life_record_verify": "life_record_ingest",
     "html_pdf_quality_gate": "designed_pdf_artifact",
     "media_delivery_contract": "discord_attachment_delivery",
+    "sports_motion_report_package": "sports_motion_analysis",
+    "sports_max_analysis_variables": "sports_motion_analysis",
+    "sports_motion_feedback": "sports_motion_analysis",
 }
 # 미호는 범용 거버넌스 OS다. leak 마커는 *거버넌스 내부에서만* 쓰는 고유 구절로만
 # 한정해, 일반 질문·코딩·대화 답변을 절대 오탐 차단하지 않는다.
@@ -118,6 +121,11 @@ DOMAIN_VERDICT_MARKERS = (
     "적정입니다",
     "안정입니다",
     "상향입니다",
+    "분석 결과",
+    "개선 포인트",
+    "우선 개선",
+    "부족합니다",
+    "운동처방",
 )
 DOMAIN_DELIVERY_TERMS = (
     "학생",
@@ -140,6 +148,12 @@ DOMAIN_DELIVERY_TERMS = (
     "내신",
     "등급",
     "지원 가능",
+    "운동분석",
+    "운동퍼포먼스",
+    "제멀",
+    "제자리멀리뛰기",
+    "변인",
+    "운동처방",
 )
 META_EXPLANATION_TERMS = (
     "도구",

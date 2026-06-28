@@ -1,4 +1,4 @@
-"""Deterministic playbook dispatcher for Governance OS."""
+"""Advisory playbook scorer and LLM-verified gateway dispatcher."""
 
 from __future__ import annotations
 
@@ -7,12 +7,10 @@ from typing import Any
 
 from .dispatch_context import build_dispatch_turn_context
 from .dispatcher_auxiliary import (
-    AUXILIARY_CONFIDENCE_THRESHOLD as _AUXILIARY_CONFIDENCE_THRESHOLD,
     call_auxiliary_dispatcher as _call_auxiliary_dispatcher,
     decision_from_auxiliary_payload as _aux_decision_from_auxiliary_payload,
-    deterministic_fallback as _deterministic_fallback,
 )
-from .dispatcher_models import DispatchAction, DispatchDecision, RouteCandidate
+from .dispatcher_models import DispatchDecision, RouteCandidate
 from .models import PolicyDecision
 from .registry import GovernanceRegistry
 from .risk import evaluate_request_risk
@@ -100,14 +98,16 @@ async def governance_pre_gateway_dispatch(
     decision = dispatch_request(registry, text)
     candidates = _score_candidates(registry, " ".join(text.casefold().split()))
     turn_context = build_dispatch_turn_context(event)
-    if _needs_auxiliary_dispatch(decision, candidates):
-        decision = await _with_auxiliary_dispatcher(
-            registry=registry,
-            text=text,
-            decision=decision,
-            candidates=candidates,
-            turn_context=turn_context,
-        )
+    verified_decision = await _with_auxiliary_dispatcher(
+        registry=registry,
+        text=text,
+        decision=decision,
+        candidates=candidates,
+        turn_context=turn_context,
+    )
+    if verified_decision is None:
+        return _route_unverified_allow(decision)
+    decision = verified_decision
     if decision.action != "rewrite":
         return {"action": "allow"}
     risk = evaluate_request_risk(
@@ -164,13 +164,7 @@ def _needs_auxiliary_dispatch(
     decision: DispatchDecision,
     candidates: tuple[RouteCandidate, ...],
 ) -> bool:
-    if decision.action == "allow" and not candidates:
-        return True
-    if decision.action != "rewrite":
-        return False
-    if len(candidates) >= 2 and candidates[0].score - candidates[1].score <= 0.75:
-        return True
-    return _AUXILIARY_CONFIDENCE_THRESHOLD <= decision.confidence < 0.9
+    return True
 
 
 async def _with_auxiliary_dispatcher(
@@ -180,26 +174,44 @@ async def _with_auxiliary_dispatcher(
     decision: DispatchDecision,
     candidates: tuple[RouteCandidate, ...],
     turn_context: dict[str, Any] | None = None,
-) -> DispatchDecision:
+) -> DispatchDecision | None:
     try:
         payload = await _call_auxiliary_dispatcher(
             task=_DISPATCHER_TASK,
             user_text=text,
             registry=registry,
-            deterministic_decision=decision,
+            candidate_decision=decision,
             candidates=candidates,
             turn_context=turn_context,
         )
     except Exception as exc:
         logger.warning("Governance auxiliary dispatcher unavailable: %s", exc)
-        return _deterministic_fallback(decision)
+        return None
     refined = _decision_from_auxiliary_payload(
         registry,
         payload,
         fallback=decision,
         candidates=candidates,
     )
-    return refined if refined is not None else _deterministic_fallback(decision)
+    if refined is None:
+        logger.warning("Governance auxiliary dispatcher returned unverifiable route")
+    return refined
+
+
+def _route_unverified_allow(decision: DispatchDecision) -> dict[str, object]:
+    return {
+        "action": "allow",
+        "route": "governance_os",
+        "reason": "llm_route_unverified",
+        "intent": decision.playbook_key,
+        "confidence": decision.confidence,
+        "evidence": list(decision.matched_triggers),
+        "missing_context": list(decision.missing_context),
+        "required_tool": "",
+        "priority": _ROUTE_PRIORITY,
+        "approval_required": False,
+        "routing_source": "llm_route_unverified",
+    }
 
 
 def _decision_from_auxiliary_payload(

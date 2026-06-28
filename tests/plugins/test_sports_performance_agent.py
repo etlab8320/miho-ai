@@ -67,9 +67,13 @@ def test_sports_performance_plugin_registers_tools_review_hook_and_agents() -> N
 
     assert _plugin_yaml_tools() == ctx.tools
     assert ctx.tools == [
+        "sports_motion_report_package",
         "sports_motion_schema",
         "sports_pe_brain_evidence",
         "sports_motion_feedback",
+        "sports_max_analysis_variables",
+        "sports_report_template",
+        "sports_report_html_template",
         "sports_video_analyze",
     ]
     assert "transform_tool_result" in ctx.hooks
@@ -90,6 +94,45 @@ def test_sports_performance_plugin_loads_as_bundled_backend(tmp_path, monkeypatc
     assert loaded.enabled
     assert loaded.error is None
     assert {"sports_performance_coach", "sports_performance_reviewer"} <= keys
+
+
+def test_sports_performance_can_be_enabled_for_discord_tools(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+
+    from miho_cli.plugins import PluginManager
+    from miho_cli.tools_config import _get_platform_tools
+    from model_tools import get_tool_definitions
+
+    PluginManager().discover_and_load()
+    known = {"discord": ["sports_performance"]}
+    disabled_cfg = {
+        "platform_toolsets": {"discord": ["miho-cli"]},
+        "known_plugin_toolsets": known,
+    }
+    enabled_cfg = {
+        "platform_toolsets": {"discord": ["miho-cli", "sports_performance"]},
+        "known_plugin_toolsets": known,
+    }
+
+    disabled_toolsets = _get_platform_tools(disabled_cfg, "discord", include_default_mcp_servers=False)
+    enabled_toolsets = _get_platform_tools(enabled_cfg, "discord", include_default_mcp_servers=False)
+
+    assert "sports_performance" not in disabled_toolsets
+    assert "sports_performance" in enabled_toolsets
+
+    tool_names = {
+        tool["function"]["name"]
+        for tool in get_tool_definitions(enabled_toolsets=sorted(enabled_toolsets), quiet_mode=True)
+    }
+    assert {
+        "sports_motion_schema",
+        "sports_pe_brain_evidence",
+        "sports_motion_feedback",
+        "sports_max_analysis_variables",
+        "sports_report_template",
+        "sports_report_html_template",
+        "sports_video_analyze",
+    } <= tool_names
 
 
 def test_motion_feedback_accepts_five_core_exercises() -> None:
@@ -339,7 +382,24 @@ def test_motion_feedback_maps_korean_alias_and_safety_flags() -> None:
     assert "launch_angle" in result["normalized_metrics"]
 
 
-def test_motion_feedback_uses_coach_agent_when_llm_is_available() -> None:
+def test_motion_feedback_uses_coach_agent_when_llm_is_available(monkeypatch) -> None:
+    monkeypatch.setenv("MIHO_SPORTS_PERFORMANCE_REVIEWER_LLM", "0")
+    monkeypatch.setattr(
+        "plugins.sports_performance.pe_brain_evidence.load_pe_brain_evidence_packs",
+        lambda: [
+            {
+                "id": "pe_brain:21",
+                "source": "pe_brain",
+                "paper_id": "21",
+                "title": "Standing long jump performance",
+                "category": "physical",
+                "summary": "SLJ arm swing and takeoff mechanics.",
+                "exercise_keys": ["standing_long_jump"],
+                "domain_tags": ["standing_long_jump"],
+                "quality_status": "accepted",
+            }
+        ],
+    )
     fake = _FakeLlm(
         {
             "summary": "발사각과 착지 안정성을 우선 교정한다.",
@@ -356,12 +416,13 @@ def test_motion_feedback_uses_coach_agent_when_llm_is_available() -> None:
         handler(
             {
                 "student_name": "홍예지",
-                "exercise": "제멀",
-                "metrics": {"발사각": 22, "무릎각도": 126},
-                "pain_flags": ["무릎 통증"],
-            }
+                    "exercise": "제멀",
+                    "metrics": {"발사각": 22, "무릎각도": 126},
+                    "pain_flags": ["무릎 통증"],
+                    "evidence_refs": ["pe_brain:21"],
+                }
+            )
         )
-    )
 
     assert result["coach_agent"]["mode"] == "llm_subagent"
     assert result["coach_output"]["summary"] == "발사각과 착지 안정성을 우선 교정한다."

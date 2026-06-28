@@ -31,8 +31,19 @@ def schema_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
 
 def make_feedback_tool_handler(llm: Any = None):
     def _handler(args: dict[str, Any] | None = None, **_: Any) -> str:
-        payload = build_feedback(args or {}, llm=llm)
-        return json.dumps(payload, ensure_ascii=False)
+        clean_args = args or {}
+        payload = build_feedback(clean_args, llm=llm)
+        raw = json.dumps(payload, ensure_ascii=False)
+        if payload.get("ok") is not True:
+            return raw
+        from .result_reviewer import review_tool_result
+
+        return review_tool_result(
+            tool_name="sports_motion_feedback",
+            args=clean_args,
+            result=raw,
+            llm=llm,
+        ) or raw
 
     return _handler
 
@@ -56,17 +67,25 @@ def build_feedback(args: dict[str, Any], *, llm: Any = None) -> dict[str, Any]:
     evidence_validation = resolve_pe_brain_evidence_refs(evidence_refs, exercise_key=exercise["key"])
     usable_evidence_refs = evidence_validation["accepted_refs"]
     safety = _safety(pain_flags)
-    coach_output, coach_agent = _coach_output_with_agent(
-        llm=llm,
-        exercise_key=exercise["key"],
-        exercise=exercise,
-        metrics=metrics,
-        records=args.get("records") or {},
-        pain_flags=pain_flags,
-        evidence_refs=usable_evidence_refs,
-        safety=safety,
-    )
     evidence_status = _evidence_status(evidence_refs, evidence_validation)
+    if evidence_status == "source_pack_linked":
+        coach_output, coach_agent = _coach_output_with_agent(
+            llm=llm,
+            exercise_key=exercise["key"],
+            exercise=exercise,
+            metrics=metrics,
+            records=args.get("records") or {},
+            pain_flags=pain_flags,
+            evidence_refs=usable_evidence_refs,
+            safety=safety,
+        )
+    else:
+        coach_output = _coach_output(exercise["key"], metrics, pain_flags)
+        coach_agent = {
+            "name": "sports_performance_coach",
+            "status": "skipped",
+            "mode": "deterministic_pending_evidence",
+        }
     return {
         "ok": True,
         "schema_version": 1,
@@ -157,8 +176,16 @@ def _coach_output(exercise_key: str, metrics: dict[str, Any], pain_flags: list[s
 
 def _bottlenecks(exercise_key: str, metrics: dict[str, Any]) -> list[str]:
     items: list[str] = []
-    if exercise_key == "standing_long_jump" and _num(metrics.get("launch_angle"), 99) < 25:
-        items.append("발사각이 낮아 수평 속도 대비 체공 성분이 부족할 수 있다.")
+    if exercise_key == "standing_long_jump":
+        takeoff_angle = _metric_num(metrics, "takeoff_angle", "launch_angle", default=99)
+        horizontal_velocity = _metric_num(metrics, "horizontal_velocity", default=99)
+        transition_time = _metric_num(metrics, "takeoff_transition_time", default=0)
+        if takeoff_angle < 23:
+            items.append("이륙각이 낮아 수평속도 대비 체공 성분이 부족할 수 있다.")
+        if horizontal_velocity < 4.0:
+            items.append("수평속도가 낮아 앞으로 미는 힘이 기록으로 충분히 연결되지 않는다.")
+        if transition_time > 0.35:
+            items.append("전환시간이 길어 앉은 뒤 바로 밀고 나오는 반동 활용이 늦다.")
     if exercise_key == "medicine_ball_throw" and _num(metrics.get("trunk_rotation"), 99) < 35:
         items.append("몸통 회전 기여가 낮아 팔 위주 투척으로 흐를 수 있다.")
     if exercise_key == "shuttle_run" and _num(metrics.get("contact_time"), 0) > 0.35:
@@ -201,6 +228,13 @@ def _num(value: Any, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _metric_num(metrics: dict[str, Any], *keys: str, default: float) -> float:
+    for key in keys:
+        if key in metrics:
+            return _num(metrics.get(key), default)
+    return default
 
 
 def _valid_coach_output(output: dict[str, Any]) -> bool:

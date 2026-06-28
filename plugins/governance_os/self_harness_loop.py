@@ -35,6 +35,7 @@ from .self_harness_autonomy import (
     rollback_on_regression,
 )
 from .self_harness_cron import (
+    AUTOPILOT_SCRIPT_TIMEOUT_SECONDS,
     CRON_JOB_NAME,
     DEFAULT_CRON_SCHEDULE,
     _AUTOPILOT_SCRIPT_NAME,
@@ -53,6 +54,7 @@ logger = logging.getLogger(__name__)
 WEAKNESS_MINER_TASK = "miho_self_harness_weakness_miner"
 PROPOSER_TASK = "miho_self_harness_proposer"
 DEFAULT_EVENT_LIMIT = 200
+LLM_EVENT_SAMPLE_LIMIT = 40
 
 # Defense-in-depth: never activate a candidate whose mined text smells like a
 # prompt-injection or secret-exfiltration payload, even if its tests pass.
@@ -164,7 +166,7 @@ def _mine_evidence_bundle(
     refined = _call_self_harness_json(
         WEAKNESS_MINER_TASK,
         payload={
-            "events": events[-DEFAULT_EVENT_LIMIT:],
+            "events": _compact_events_for_llm(events, limit=LLM_EVENT_SAMPLE_LIMIT),
             "deterministic_bundle": deterministic,
             "contract": "Return a miho-self-harness/evidence-bundle/v1 JSON object only.",
         },
@@ -226,16 +228,13 @@ def _call_self_harness_json(
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "너는 미호 Self-Harness 에이전트다. 입력 JSON만 근거로 삼고, "
-                        "기존 런타임을 직접 바꾸지 않는 검증 가능한 JSON만 출력한다."
-                    ),
+                    "content": _self_harness_system_prompt(task),
                 },
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
             ],
             temperature=0.0,
             max_tokens=1800,
-            timeout=60,
+            timeout=None,
         )
         parsed = _parse_json_payload(str(extract_content(response) or ""))
     except Exception as exc:
@@ -264,6 +263,47 @@ def _parse_json_payload(text: str) -> Any:
         if end <= start:
             raise
         return json.loads(body[start : end + 1])
+
+
+def _compact_events_for_llm(events: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+    compact: list[dict[str, Any]] = []
+    for event in events[-limit:]:
+        metadata = event.get("metadata") if isinstance(event, dict) else {}
+        outcome = metadata.get("governance_outcome") if isinstance(metadata, dict) else {}
+        outcome = outcome if isinstance(outcome, dict) else {}
+        compact.append(
+            {
+                "id": event.get("id"),
+                "playbook_key": outcome.get("playbook_key"),
+                "failures": outcome.get("failures") or [],
+                "review_status": outcome.get("review_status"),
+                "request_id": outcome.get("request_id"),
+            }
+        )
+    return compact
+
+
+def _self_harness_system_prompt(task: str) -> str:
+    base = (
+        "너는 미호 Self-Harness 에이전트다. 입력 JSON만 근거로 삼고, "
+        "기존 런타임을 직접 바꾸지 않는 검증 가능한 JSON만 출력한다. "
+        "마크다운, 설명문, 코드블록 없이 JSON만 출력한다. "
+    )
+    if task == WEAKNESS_MINER_TASK:
+        return base + (
+            "반드시 schema_version='miho-self-harness/evidence-bundle/v1'인 단일 JSON 객체를 반환한다. "
+            "patterns 배열의 각 항목은 playbook_key, failure_signature, recurrence_count, "
+            "evidence, target_surface_hint를 포함한다. deterministic_bundle이 유효하면 그것을 기준으로 보존한다."
+        )
+    if task == PROPOSER_TASK:
+        return base + (
+            "반드시 {'candidates': [...]} JSON 객체를 반환한다. "
+            "각 candidate는 schema_version='miho-self-harness/shadow-candidate/v1', "
+            "status='shadow_candidate', auto_promote_allowed=false, target_surface, "
+            "validation.required_tests 배열, rollback, source_pattern을 유지해야 한다. "
+            "deterministic_candidates가 유효하면 값을 임의로 바꾸지 말고 그대로 candidates에 넣는다."
+        )
+    return base
 
 
 def _valid_evidence_bundle(value: Any) -> bool:

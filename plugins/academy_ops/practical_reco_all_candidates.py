@@ -8,6 +8,7 @@ from typing import Any
 
 from miho_constants import get_miho_home
 
+from .artifact_latch import current_turn_reviewed_artifact
 from .practical_reco_tool import (
     _chromium_print_to_pdf,
     _render_html,
@@ -215,6 +216,9 @@ def _region_label(region_filter: Any, fallback: str) -> str:
 
 def _all_candidates_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     args = args or {}
+    reviewed = current_turn_reviewed_artifact("academy_practical_reco_all_candidates", args)
+    if reviewed:
+        return reviewed
     student_name = str(args.get("student_name") or "").strip()
     region = str(args.get("region") or "").strip()
     try:

@@ -7,6 +7,7 @@ from typing import Any
 
 from plugins.sports_performance import pe_brain_evidence
 from plugins.sports_performance.feedback_tool import feedback_tool_handler
+from plugins.sports_performance.local_references import ingest_reference_directory, load_local_reference_papers
 from plugins.sports_performance.pe_brain_evidence import build_evidence_packs
 from plugins.sports_performance.result_reviewer import review_tool_result
 
@@ -94,6 +95,56 @@ def test_motion_feedback_links_only_accepted_pe_brain_evidence(monkeypatch) -> N
     assert result["evidence_status"] == "source_pack_linked"
     assert result["evidence_validation"]["accepted_refs"] == ["pe_brain:21"]
     assert result["evidence_packs"][0]["id"] == "pe_brain:21"
+
+
+def test_local_reference_pdfs_are_isolated_and_searchable(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+    source = tmp_path / "각 종목 래퍼런스" / "제멀"
+    source.mkdir(parents=True)
+    (source / "Role of Arm Motion in the Standing Long Jump.pdf").write_bytes(b"%PDF-1.4 local")
+    monkeypatch.setattr(pe_brain_evidence, "_fetch_pe_brain_papers", lambda *_args, **_kwargs: [])
+
+    ingest = ingest_reference_directory(source.parent)
+    result = json.loads(pe_brain_evidence.pe_brain_evidence_tool_handler({"exercise": "제멀"}))
+
+    assert ingest["stored_count"] == 1
+    assert "/sports_performance/reference_papers/" in ingest["papers"][0]["local_pdf_path"]
+    assert result["source_info"]["local_reference_count"] == 1
+    assert result["packs"][0]["id"].startswith("sports_ref:")
+    assert result["packs"][0]["source"] == "sports_local_reference"
+    assert result["packs"][0]["quality_status"] == "accepted"
+
+
+def test_motion_feedback_links_local_sports_reference(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho_home"))
+    source = tmp_path / "각 종목 래퍼런스" / "왕복 달리기"
+    source.mkdir(parents=True)
+    (source / "Mechanical Determinants of Faster Change of Direction Speed Performance.pdf").write_bytes(
+        b"%PDF-1.4 local"
+    )
+    ingest_reference_directory(source.parent)
+    packs = build_evidence_packs(load_local_reference_papers())
+    ref = packs[0]["id"]
+    monkeypatch.setattr(
+        "plugins.sports_performance.pe_brain_evidence.load_pe_brain_evidence_packs",
+        lambda: packs,
+    )
+
+    result = json.loads(
+        feedback_tool_handler(
+            {
+                "student_name": "홍예지",
+                "exercise": "왕복달리기",
+                "metrics": {"turn_angle": 68, "contact_time": 0.42},
+                "evidence_refs": [ref],
+            }
+        )
+    )
+
+    assert ref.startswith("sports_ref:")
+    assert result["evidence_status"] == "source_pack_linked"
+    assert result["evidence_validation"]["accepted_refs"] == [ref]
+    assert result["evidence_packs"][0]["local_pdf_path"]
 
 
 def test_reviewer_keeps_result_when_pe_brain_ref_is_rejected(monkeypatch) -> None:

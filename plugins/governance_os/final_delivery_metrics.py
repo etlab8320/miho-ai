@@ -30,6 +30,8 @@ def record_delivery_recovery_metric(
 ) -> None:
     """Record agent transport failures for Self-Harness mining."""
 
+    if isinstance(evidence, dict) and evidence.get("record_recovery_metrics") is False:
+        return
     clean_status = str(status or "").strip()
     if clean_status not in {"timeout", "error", "unavailable", "invalid"}:
         return

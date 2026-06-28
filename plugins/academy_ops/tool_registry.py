@@ -128,7 +128,7 @@ TOOL_CONTRACTS: dict[str, dict[str, Any]] = {
         "args": ["event_query", "limit"],
     },
     "academy_student_record_lookup": {
-        "purpose": "특정 학생의 Peak 실기, 측정, 종목별 기록 조회. 출석 기록, 강사 출근, 운동계획서가 아니라 학생 수행 기록일 때 사용",
+        "purpose": "특정 학생의 Peak 실기, 측정, 종목별 기록 조회. MAX 운동분석 변인, 퍼포먼스 분석 리포트, 운동처방 요청은 sports_max_analysis_variables가 우선이며 최근 기록도 함께 필요할 때만 같이 사용",
         "args": ["student_query", "event_query", "date", "today", "period_days"],
     },
     "academy_student_record_chart_image": {

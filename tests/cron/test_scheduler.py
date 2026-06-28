@@ -1529,6 +1529,48 @@ class TestRunJobConfigEnvVarExpansion:
             "config.yaml ${VAR} in fallback_providers was not expanded."
         )
 
+    def test_auth_fallback_provider_uses_key_env(self, tmp_path, monkeypatch):
+        """Cron auth failover must honor key_env so secrets stay in .env."""
+        from miho_cli.auth import AuthError
+
+        (tmp_path / "config.yaml").write_text(
+            "fallback_providers:\n"
+            "  - provider: minimax\n"
+            "    model: MiniMax-M3\n"
+            "    base_url: https://api.minimax.io/v1\n"
+            "    key_env: _MIHO_TEST_CRON_MINIMAX_KEY\n"
+        )
+        monkeypatch.setenv("_MIHO_TEST_CRON_MINIMAX_KEY", "cron-secret")
+
+        job = {"id": "fb-key-env-job", "name": "fallback key env test", "prompt": "hi"}
+        fake_db = MagicMock()
+        fallback_runtime = dict(self._RUNTIME)
+        fallback_runtime["provider"] = "minimax"
+        calls = []
+
+        def fake_resolve_runtime_provider(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise AuthError("primary auth failed", provider="openai-codex")
+            return fallback_runtime
+
+        with patch("cron.scheduler._miho_home", tmp_path), \
+             patch("cron.scheduler._resolve_origin", return_value=None), \
+             patch("dotenv.load_dotenv"), \
+             patch("miho_state.SessionDB", return_value=fake_db), \
+             patch("miho_cli.runtime_provider.resolve_runtime_provider", side_effect=fake_resolve_runtime_provider), \
+             patch("run_agent.AIAgent") as mock_agent_cls:
+            mock_agent = MagicMock()
+            mock_agent.run_conversation.return_value = {"final_response": "ok"}
+            mock_agent_cls.return_value = mock_agent
+            success, _, _, error = run_job(job)
+
+        assert success is True
+        assert error is None
+        assert calls[1]["requested"] == "minimax"
+        assert calls[1]["explicit_base_url"] == "https://api.minimax.io/v1"
+        assert calls[1]["explicit_api_key"] == "cron-secret"
+
     def test_unexpanded_ref_passthrough_when_var_unset(self, tmp_path, monkeypatch):
         """When the env var is not set, the literal ${VAR} is kept verbatim (not crashed)."""
         (tmp_path / "config.yaml").write_text("model: ${_MIHO_TEST_CRON_UNSET_VAR}\n")
@@ -2036,7 +2078,7 @@ class TestRunJobWakeGate:
         import cron.scheduler as scheduler
 
         call_count = 0
-        def _script_stub(path):
+        def _script_stub(path, **_kwargs):
             nonlocal call_count
             call_count += 1
             return (True, "regular output")

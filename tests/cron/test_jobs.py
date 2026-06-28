@@ -254,6 +254,18 @@ class TestJobCRUD:
         job = create_job(prompt="Test", schedule="30m")
         assert job["deliver"] == "local"
 
+    def test_create_job_stores_script_timeout(self, tmp_cron_dir):
+        job = create_job(
+            prompt=None,
+            schedule="every 1h",
+            script="watch.py",
+            no_agent=True,
+            script_timeout_seconds=900,
+        )
+
+        assert job["script_timeout_seconds"] == 900
+        assert get_job(job["id"])["script_timeout_seconds"] == 900
+
 
 class TestUpdateJob:
     def test_update_name(self, tmp_cron_dir):
@@ -295,6 +307,20 @@ class TestUpdateJob:
         assert updated["enabled"] is False
         fetched = get_job(job["id"])
         assert fetched["enabled"] is False
+
+    def test_update_script_timeout(self, tmp_cron_dir):
+        job = create_job(prompt="Report", schedule="every 1h")
+
+        updated = update_job(job["id"], {"script_timeout_seconds": "600"})
+
+        assert updated["script_timeout_seconds"] == 600
+        assert get_job(job["id"])["script_timeout_seconds"] == 600
+
+    def test_update_script_timeout_rejects_invalid_value(self, tmp_cron_dir):
+        job = create_job(prompt="Report", schedule="every 1h")
+
+        with pytest.raises(ValueError):
+            update_job(job["id"], {"script_timeout_seconds": 0})
 
     def test_update_nonexistent_returns_none(self, tmp_cron_dir):
         result = update_job("nonexistent_id", {"name": "X"})
