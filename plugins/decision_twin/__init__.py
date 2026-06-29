@@ -43,10 +43,11 @@ async def _decision_twin_pre_gateway_dispatch(
         logger.info("decision twin resolver skipped: %s", exc)
         return {"action": "allow"}
     decision = parse_decision_payload(raw)
-    if decision.needs_region_question is True:
+    if decision.needs_region_question is True and not _is_recommendation_followup(text, event):
         # 사장님 설계: 추천은 지역을 먼저 묻는다. 에이전트 단 지시는 4회 우회됐으므로
         # (자가 region 채움 2회, 캐시 파일 재탕 2회) 현관에서 질문을 직접 보낸다.
         # "추천 요청+지역 미언급" 판단은 라우터 LLM — 도구 선택과 무관하게 발동한다.
+        # 단, 기존 추천/PDF의 수정·누락·성별·조건전형 후속 지시는 지역 질문으로 삼키지 않는다.
         return {
             "action": "respond",
             "text": (
@@ -129,6 +130,28 @@ def _compact(value: Any, *, limit: int = 420) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
+
+
+def _is_recommendation_followup(text: str, event: Any = None) -> bool:
+    """Let correction turns reach the body agent instead of repeating region gate."""
+
+    blob = " ".join(
+        str(value or "")
+        for value in (
+            text,
+            getattr(event, "reply_to_text", "") if event is not None else "",
+            getattr(event, "channel_context", "") if event is not None else "",
+        )
+    )
+    if not any(marker in blob for marker in ("추천", "명단", "PDF", "pdf", "후보", "전형")):
+        return False
+    return any(
+        marker in blob
+        for marker in (
+            "빠졌", "빠졋", "누락", "수정", "고쳐", "다시", "예외", "포함", "빼", "제외",
+            "나오잖", "나왔", "여자", "남자", "성별", "지역균형", "교과전형",
+        )
+    )
 
 
 def register(ctx: Any) -> None:

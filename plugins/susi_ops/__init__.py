@@ -38,6 +38,7 @@ def _recommend_handler(args: dict[str, Any], **_: Any) -> dict[str, Any]:
         admission_track=args.get("admission_track"),
         region=region,
         max_candidates=int(args.get("max_candidates") or 30),
+        student_gender=args.get("student_gender"),
     )
 
 
@@ -153,6 +154,7 @@ def register(ctx: Any) -> None:
                 "university": {"type": "string", "description": "선택: 대학명 필터."},
                 "department": {"type": "string", "description": "선택: 학과명 필터."},
                 "admission_track": {"type": "string", "description": "선택: 전형명 필터. 예: 실기."},
+                "student_gender": {"type": "string", "description": "선택: 학생 성별. 사용자가 남자/여자를 명시한 경우만 전달."},
                 "region": {
                     "type": "string",
                     "description": "광역 지역 (쉼표 구분, 예: '강원, 경기, 서울, 인천') 또는 '전국'. 없이 호출하면 결과 대신 '사용자에게 지역을 물어라' 지시가 돌아온다.",
@@ -169,6 +171,7 @@ def register(ctx: Any) -> None:
             "(만점으로도 전년도 최종합 미달인 학교는 자동 제외) → 여유점수 순 정렬. "
             "반환 후보마다 내신환산·실기만점·만점합산·전년도 최초/최종·여유·suggested_verdict(적정/상향)· "
             "실기 종목·정원·지역(region)이 들어있다. 추천 요청이 오면 룰/계산 도구를 따로 조립하지 말고 이걸 먼저 호출해라. "
+            "사용자가 남자/여자를 명시하면 student_gender에 넣어 성별 제한 대학(예: 여대)을 필터링하라. "
             "지역 플로우: 사용자가 지역을 말하지 않았으면 먼저 '지역은 어디로 볼까요? (예: 강원·경기·서울·인천, 또는 전국)'라고 묻고, "
             "받은 답을 region 인자로 넣는다 (전국이면 '전국'). 임의로 지역을 정하지 마라. "
             "지역 내 후보가 0건이면 그 사실을 알리고 전국으로 다시 볼지 물어라. "

@@ -36,6 +36,7 @@ def test_recommend_handler_uses_single_recommendation_pipeline(monkeypatch) -> N
             "admission_track": "실기",
             "region": "경기",
             "max_candidates": 7,
+            "student_gender": None,
         }
     ]
 
@@ -356,6 +357,16 @@ def test_recommend_candidates_excludes_record_only_rows_for_practical_category(m
 
     assert [candidate["university"] for candidate in result["candidates"]] == ["실기대"]
     assert result["skipped"]["non_practical"] == 1
+
+
+def test_gender_filter_blocks_women_only_school_for_male_student() -> None:
+    from plugins.susi_ops import recommendation
+
+    assert recommendation._gender_key("남자") == "male"
+    assert recommendation._gender_key("여자") == "female"
+    assert recommendation._is_gender_ineligible("서울여자대학교", "sports", "male")
+    assert not recommendation._is_gender_ineligible("서울여자대학교", "sports", "female")
+    assert not recommendation._is_gender_ineligible("열린대학교", "sports", "male")
 
 
 def test_practical_verdict_uses_needed_practical_rate() -> None:

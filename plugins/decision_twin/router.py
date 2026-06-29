@@ -142,6 +142,8 @@ def _system_prompt() -> str:
         "과거 대화 회상이 아니라 terminal 계약을 우선한다. session_search는 과거에 사용자가 말한 값이나 "
         "이전 세션 기록을 찾을 때만 선택하고, 회상 결과를 현재 상태 증거로 확정하지 마라. "
         "확신이 낮거나 필수 인자가 없으면 action=allow로 둔다. "
+        "기존 추천/PDF에 대한 수정·누락·성별 오류·조건전형 예외 후속 지시는 새 추천의 지역 누락으로 보지 말고, "
+        "직전 context를 확인하도록 관련 추천 도구/terminal로 route하거나 action=allow로 본문 에이전트에 넘겨라. "
         "clarify의 user_message는 한국어 평문이어야 하고 400/401/CORS/stack trace 같은 개발자 표현을 쓰지 마라. "
         "도구 계약에 없는 도구명을 만들지 말고, required_tool은 tool_contracts의 키 중 하나만 사용해라."
     )

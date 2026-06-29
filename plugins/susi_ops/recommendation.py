@@ -63,6 +63,27 @@ def _region_map() -> dict[str, str]:
     return _REGION_MAP
 
 
+def _gender_key(value: Any) -> str:
+    text = str(value or "").strip().casefold()
+    if text in {"m", "male", "man", "boy", "남", "남자", "남학생"}:
+        return "male"
+    if text in {"f", "female", "woman", "girl", "여", "여자", "여학생"}:
+        return "female"
+    if any(marker in text for marker in ("남자", "남학생", " male", "boy")):
+        return "male"
+    if any(marker in text for marker in ("여자", "여학생", " female", "girl")):
+        return "female"
+    return ""
+
+
+def _is_gender_ineligible(university: Any, department: Any, gender_key: str) -> bool:
+    if gender_key != "male":
+        return False
+    text = f"{university or ''} {department or ''}"
+    women_only_markers = ("여자대학교", "여대", "여자대학")
+    return any(marker in text for marker in women_only_markers)
+
+
 # 학교 평가 티어 (실기전형 입결 서열 + 지역·명성 종합) — 추천 정렬 1순위.
 # 캡틴이 직접 평가해 채운다(susi_school_tier.json). 미평가 학교는 기본 'C'.
 _SCHOOL_TIER_PATH = pathlib.Path(os.path.expanduser("~/.miho/academy_ops/susi_school_tier.json"))
@@ -201,6 +222,7 @@ def recommend_candidates(
     admission_track: str | None = None,
     region: Any = None,
     max_candidates: int = 30,
+    student_gender: str | None = None,
 ) -> dict[str, Any]:
     if region is None or str(region).strip() == "":
         # 사장님 설계(2026-06-12): 지역은 도구가 요구한다 — 설명문 지시는 대화
@@ -249,6 +271,7 @@ def recommend_candidates(
 
     candidates = []
     skipped = {"calc_failed": 0, "unreachable": 0, "stage1_blocked": 0, "non_practical": 0}
+    gender_key = _gender_key(student_gender)
     for row in rule_rows:
         if _is_blocked_official_row(_row_get(row, "confidence", ""), _row_get(row, "score_logic_json", "{}")):
             skipped["not_in_guide"] = skipped.get("not_in_guide", 0) + 1
@@ -259,6 +282,9 @@ def recommend_candidates(
             continue
         if _is_specific_sport_practical_row(row["practical_events_json"]):
             skipped["specific_sport"] = skipped.get("specific_sport", 0) + 1
+            continue
+        if _is_gender_ineligible(row["university"], row["department"], gender_key):
+            skipped["gender_ineligible"] = skipped.get("gender_ineligible", 0) + 1
             continue
         # 실기전형만 추천 대상 — 같은 학과의 비실기 전형은 PDF 빈칸을 만들므로 제외한다.
         ct = _json_loads(row["calculation_test_json"], {}) or {}
@@ -488,5 +514,7 @@ def recommend_candidates(
             "전 후보는 verified 룰 + 전년도 결과가 있는 학교만이며, 실기 만점으로도 전년도 최종합에 "
             "못 닿는 학교는 이미 제외됐다. suggested_verdict는 제안일 뿐 — 최종 분류와 서사는 네 판단."
         ),
+        "region_note": result_payload_note_region,
+        "student_gender_filter": gender_key or None,
         "candidates": candidates,
     }

@@ -25,7 +25,14 @@ ALL_CANDIDATE_LIMIT = 400
 ALL_CANDIDATE_PAGE_SIZE = 10
 
 
-def build_all_candidates_content(student_name: str, region: str) -> dict[str, Any]:
+def build_all_candidates_content(
+    student_name: str,
+    region: str,
+    *,
+    admission_track: str | None = None,
+    student_gender: str | None = None,
+    extra_filters: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Build standard-template content from the single susi recommendation pipeline."""
     clean_student = str(student_name or "").strip()
     clean_region = str(region or "").strip()
@@ -37,6 +44,8 @@ def build_all_candidates_content(student_name: str, region: str) -> dict[str, An
     result = recommend_candidates(
         clean_student,
         region=clean_region,
+        admission_track=admission_track,
+        student_gender=student_gender,
         max_candidates=ALL_CANDIDATE_LIMIT,
     )
     if result.get("need_region"):
@@ -44,7 +53,13 @@ def build_all_candidates_content(student_name: str, region: str) -> dict[str, An
     if result.get("error"):
         raise ValueError(str(result["error"]))
 
-    candidates = result.get("candidates") or []
+    candidates = _merged_candidates(
+        result.get("candidates") or [],
+        clean_student=clean_student,
+        clean_region=clean_region,
+        student_gender=student_gender,
+        extra_filters=extra_filters,
+    )
     if not isinstance(candidates, list):
         candidates = []
     total_feasible = _int_or_default(result.get("total_feasible"), len(candidates))
@@ -120,6 +135,48 @@ def build_all_candidates_content(student_name: str, region: str) -> dict[str, An
         },
         "footnote": "산출 근거: 수시 추천 검증 룰 · 전년도 입시결과",
     }
+
+
+def _merged_candidates(
+    base_candidates: Any,
+    *,
+    clean_student: str,
+    clean_region: str,
+    student_gender: str | None,
+    extra_filters: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    candidates = list(base_candidates) if isinstance(base_candidates, list) else []
+    seen = {_candidate_key(candidate) for candidate in candidates if isinstance(candidate, dict)}
+    for item in extra_filters or []:
+        if not isinstance(item, dict):
+            continue
+        result = recommend_candidates(
+            clean_student,
+            region=clean_region,
+            university=item.get("university"),
+            department=item.get("department"),
+            admission_track=item.get("admission_track"),
+            student_gender=item.get("student_gender") or student_gender,
+            max_candidates=ALL_CANDIDATE_LIMIT,
+        )
+        for candidate in result.get("candidates") or []:
+            if not isinstance(candidate, dict):
+                continue
+            key = _candidate_key(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(candidate)
+    return candidates
+
+
+def _candidate_key(candidate: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(candidate.get("university_id") or ""),
+        str(candidate.get("university") or ""),
+        str(candidate.get("department") or ""),
+        str(candidate.get("admission_track") or ""),
+    )
 
 
 def _candidate_row(candidate: dict[str, Any]) -> dict[str, str]:
@@ -221,8 +278,17 @@ def _all_candidates_tool_handler(args: dict[str, Any] | None = None, **_: Any) -
         return reviewed
     student_name = str(args.get("student_name") or "").strip()
     region = str(args.get("region") or "").strip()
+    admission_track = str(args.get("admission_track") or "").strip() or None
+    student_gender = str(args.get("student_gender") or "").strip() or None
+    extra_filters = args.get("extra_filters") if isinstance(args.get("extra_filters"), list) else None
     try:
-        content = build_all_candidates_content(student_name, region)
+        content = build_all_candidates_content(
+            student_name,
+            region,
+            admission_track=admission_track,
+            student_gender=student_gender,
+            extra_filters=extra_filters,
+        )
     except ValueError as exc:
         return json.dumps({"ok": False, "errors": [str(exc)]}, ensure_ascii=False)
 
@@ -261,6 +327,9 @@ def _all_candidates_tool_handler(args: dict[str, Any] | None = None, **_: Any) -
                 "html_path": str(html_path),
                 "student_name": student_name,
                 "region": region,
+                "admission_track": admission_track,
+                "student_gender": student_gender,
+                "extra_filters": extra_filters or [],
                 "row_count": len(rows),
                 "school_names": school_names,
                 "evidence_tools": ["susi27_recommend_candidates"],
@@ -333,6 +402,28 @@ def register_practical_reco_all_candidates_tool(ctx: Any) -> None:
                     "type": "string",
                     "description": "사용자가 말한 지역 표현. 예: '수도권, 충청, 강원' 또는 '전국'.",
                 },
+                "admission_track": {
+                    "type": "string",
+                    "description": "선택: 사용자가 특정 전형명 포함/예외를 명시했을 때만 전달. 예: '지역균형'.",
+                },
+                "student_gender": {
+                    "type": "string",
+                    "description": "선택: 사용자가 남자/여자를 명시했을 때만 전달해 성별 제한 대학을 제외한다.",
+                },
+                "extra_filters": {
+                    "type": "array",
+                    "description": "선택: 전체 후보에 추가로 포함할 특정 전형 필터들. 예: 단국대 체육교육과 지역균형 예외.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "university": {"type": "string"},
+                            "department": {"type": "string"},
+                            "admission_track": {"type": "string"},
+                            "student_gender": {"type": "string"},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
             },
             "required": ["student_name", "region"],
             "additionalProperties": False,
@@ -341,6 +432,8 @@ def register_practical_reco_all_candidates_tool(ctx: Any) -> None:
         description=(
             "수시 실기전형 추천 PDF에서 사용자가 추천 개수를 지정하지 않고 지역 전체 후보를 원할 때 쓴다. "
             "지역 안에서 실기 만점 합산으로 전년도 최종합에 닿는 모든 후보를 상향 여부로 임의 제외하지 않고 산출하고, "
+            "사용자가 특정 전형명 포함/예외(예: 지역균형)나 성별(남자/여자)을 명시하면 admission_track/student_gender로 전달한다. "
+            "기본 전체 후보에 특정 예외 전형을 추가해야 하면 extra_filters에 대학·학과·전형명을 넣어 같은 추천 파이프라인으로 병합한다. "
             "academy_practical_reco_package와 같은 practical_reco_shell.html 브랜드 템플릿을 compact 다중 페이지로 사용한다. "
             "LLM이 학교 행·점수·전년도 컷을 직접 만들지 않는다. 임시 HTML/PDF 생성 대신 이 도구를 호출한다."
         ),

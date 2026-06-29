@@ -71,7 +71,9 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         "purpose": (
             "수시 실기전형 추천 PDF에서 사용자가 추천 개수를 지정하지 않고 지역 전체 후보를 원할 때 쓴다. "
             "예: '수도권·강원·충청 가능한 학교 다 PDF로 줘', '지역 설정한 모든 학교 보여줘'. "
-            "학생명과 사용자가 말한 region만 넘긴다. 학교 행·환산점수·전년도 컷·실기종목은 "
+            "학생명과 사용자가 말한 region만 넘긴다. 사용자가 특정 전형명 포함/예외(예: 지역균형)나 "
+            "성별(남자/여자)을 명시하면 admission_track/student_gender도 함께 넘긴다. 기본 전체 후보에 특정 전형을 "
+            "예외 추가해야 하면 extra_filters에 대학·학과·전형명을 넣어 같은 추천 파이프라인으로 병합한다. 학교 행·환산점수·전년도 컷·실기종목은 "
             "susi27_recommend_candidates 단일 파이프라인 결과로 코드가 직접 만든다. "
             "academy_practical_reco_package와 같은 practical_reco_shell.html 브랜드 템플릿을 compact 다중 페이지로 쓰므로 "
             "임시 HTML/PDF를 직접 만들지 말 것."

@@ -100,6 +100,58 @@ def test_region_groups_keeps_requested_empty_provinces_visible(monkeypatch) -> N
     assert groups["서울"]["count"] == 0
 
 
+def test_build_all_candidates_passes_optional_track_and_gender_to_single_pipeline(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_recommend(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return _fake_recommend(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "plugins.academy_ops.practical_reco_all_candidates.recommend_candidates",
+        fake_recommend,
+    )
+
+    build_all_candidates_content("김동혁", "수도권, 강원, 충청", admission_track="지역균형", student_gender="남자")
+
+    assert calls[0]["admission_track"] == "지역균형"
+    assert calls[0]["student_gender"] == "남자"
+
+
+def test_build_all_candidates_merges_extra_filters_through_single_pipeline(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_recommend(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        if kwargs.get("university") == "단국대":
+            extra = _candidate(99, region="경기")
+            extra["university"] = "단국대학교"
+            extra["department"] = "체육교육과"
+            extra["admission_track"] = "지역균형선발"
+            return {"student": "김동혁", "region_filter": ["경기"], "total_feasible": 1, "candidates": [extra]}
+        return _fake_recommend(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "plugins.academy_ops.practical_reco_all_candidates.recommend_candidates",
+        fake_recommend,
+    )
+
+    content = build_all_candidates_content(
+        "김동혁",
+        "수도권, 강원, 충청",
+        admission_track="실기",
+        student_gender="남자",
+        extra_filters=[{"university": "단국대", "department": "체육교육", "admission_track": "지역균형"}],
+    )
+
+    rows = content["comparison"]["rows"]
+    assert any(row["school"] == "단국대학교" and "지역균형" in row["track"] for row in rows)
+    assert calls[1]["university"] == "단국대"
+    assert calls[1]["department"] == "체육교육"
+    assert calls[1]["admission_track"] == "지역균형"
+    assert calls[1]["student_gender"] == "남자"
+
+
 def test_build_all_candidates_filters_full_practical_unreachable_rows(monkeypatch) -> None:
     unreachable = _candidate(2, region="강원")
     unreachable["reachable_at_full_practical"] = False

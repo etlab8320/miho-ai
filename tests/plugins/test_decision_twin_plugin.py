@@ -378,6 +378,29 @@ async def test_decision_twin_allows_score_tool_with_life_record_thread_memory() 
 
 
 @pytest.mark.asyncio
+async def test_decision_twin_does_not_swallow_recommendation_correction_with_region_gate() -> None:
+    async def resolver(_messages):
+        return {
+            "action": "route",
+            "intent": "기존 후보표에서 조건전형/성별 오류 수정",
+            "confidence": 0.86,
+            "needs_region_question": True,
+            "evidence": ["LLM이 지역 누락으로 오판했지만 본문은 기존 후보표 수정이다"],
+        }
+
+    event = _event("아 지역균형 중 단대 체교는 예외로 세팅하고 교과전형은 추천하지말아 그리고 남자인데 여자가 나오잖아 그것다 수정해줘")
+    event.channel_context = "직전 답변: 동혁이 수도권·강원·충청권 후보 명단"
+
+    result = await _decision_twin_pre_gateway_dispatch(
+        event=event,
+        gateway=SimpleNamespace(_is_user_authorized=lambda _source: True),
+        resolver=resolver,
+    )
+
+    assert result == {"action": "allow"}
+
+
+@pytest.mark.asyncio
 async def test_decision_twin_clarify_returns_allow() -> None:
     """clarify 결정은 무조건 allow로 처리된다."""
 
