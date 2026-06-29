@@ -173,7 +173,7 @@ def _voyage_embedding(text: str, *, input_type: str | None) -> tuple[list[float]
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=10.0,
+            timeout=_embedding_http_timeout(),
         )
         response.raise_for_status()
         data = response.json()
@@ -181,6 +181,15 @@ def _voyage_embedding(text: str, *, input_type: str | None) -> tuple[list[float]
     except Exception:
         return None
     return [float(value) for value in vector], model
+
+
+def _embedding_http_timeout() -> float:
+    raw = os.getenv("MIHO_EMBEDDING_HTTP_TIMEOUT", "").strip()
+    try:
+        value = float(raw) if raw else 1.5
+    except ValueError:
+        value = 1.5
+    return max(0.2, min(value, 10.0))
 
 
 def _openai_embedding(text: str) -> list[float] | None:
@@ -196,7 +205,7 @@ def _openai_embedding(text: str) -> list[float] | None:
         base_url = os.getenv("OPENAI_BASE_URL", "").strip()
         if base_url:
             kwargs["base_url"] = base_url
-        client = OpenAI(**kwargs)
+        client = OpenAI(timeout=_embedding_http_timeout(), **kwargs)
         provider, configured_model = _embedding_settings()
         model = configured_model if provider == "openai" else ""
         model = model or "text-embedding-3-small"

@@ -22,6 +22,7 @@ def test_embed_text_uses_openai_when_key_is_configured(monkeypatch):
     class FakeOpenAI:
         def __init__(self, **kwargs):
             assert kwargs["api_key"] == "test-key"
+            assert kwargs["timeout"] == 1.5
             self.embeddings = SimpleNamespace(create=self._create)
 
         def _create(self, **kwargs):
@@ -63,7 +64,7 @@ def test_embed_text_prefers_voyage_when_key_is_configured(monkeypatch):
         assert headers["Authorization"] == "Bearer voyage-key"
         assert json["model"] == "voyage-4-large"
         assert json["input_type"] == "query"
-        assert timeout == 10.0
+        assert timeout == 1.5
         return FakeResponse()
 
     fake_module = ModuleType("httpx")
