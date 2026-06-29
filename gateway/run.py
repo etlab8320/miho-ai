@@ -86,6 +86,28 @@ _TELEGRAM_NOISY_STATUS_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_MIHO_HEARTBEAT_LINES = (
+    "🦊 미호가 꼬리를 세우고 처리 중이야.",
+    "🦊 꼬리 아홉 개 풀가동 중.",
+    "🌙 달빛 아래서 조용히 물고 오는 중.",
+    "🦊 아직 사냥 중이야. 결과 나오면 바로 내려놓을게.",
+)
+
+
+def _miho_heartbeat_line(elapsed_minutes: int = 0) -> str:
+    """Return a deterministic, dependency-free gateway heartbeat line.
+
+    Heartbeats are liveness signals, not prose generation. They must keep
+    firing even when auxiliary LLMs are slow/unavailable, so keep this path
+    hardcoded and tiny.
+    """
+    try:
+        idx = max(0, int(elapsed_minutes)) % len(_MIHO_HEARTBEAT_LINES)
+    except Exception:
+        idx = 0
+    return _MIHO_HEARTBEAT_LINES[idx]
+
+
 _GATEWAY_PROVIDER_ERROR_RE = re.compile(
     r"("  # infrastructure/provider error preambles, not ordinary assistant prose
     r"api\s+(?:call\s+)?failed"
@@ -3207,23 +3229,21 @@ class GatewayRunner:
         status_detail = f" ({', '.join(status_parts)})" if status_parts else ""
         if is_steer_mode:
             message = (
-                f"⏩ Steered into current run{status_detail}. "
-                f"Your message arrives after the next tool call."
+                f"🦊 미호가 지금 흐름에 새 지시를 끼워 넣었어{status_detail}."
             )
         elif is_queue_mode and demoted_for_subagents:
             message = (
-                f"⏳ Subagent working{status_detail} — your message is queued for "
-                f"when it finishes (use /stop to cancel everything)."
+                f"🦊 꼬리 하나는 하위 작업을 붙잡고 있어{status_detail}. "
+                f"방금 말은 끝나는 대로 이어서 볼게."
             )
         elif is_queue_mode:
             message = (
-                f"⏳ Queued for the next turn{status_detail}. "
-                f"I'll respond once the current task finishes."
+                f"🦊 방금 말은 다음 꼬리에 묶어뒀어{status_detail}. "
+                f"지금 물고 있는 것 끝나면 바로 이어갈게."
             )
         else:
             message = (
-                f"⚡ Interrupting current task{status_detail}. "
-                f"I'll respond to your message shortly."
+                f"🦊 지금 작업 흐름을 살짝 돌려서 네 말부터 볼게{status_detail}."
             )
 
         # First-touch onboarding: the very first time a user sends a message
@@ -3322,14 +3342,12 @@ class GatewayRunner:
         """
         active = self._snapshot_running_agents()
 
-        action = "restarting" if self._restart_requested else "shutting down"
-        hint = (
-            "Your current task will be interrupted. "
-            "Send any message after restart and I'll try to resume where you left off."
+        msg = (
+            "🦊 미호가 게이트웨이를 갈아타는 중이야. "
+            "지금 물고 있는 답은 끝까지 내려놓고 다시 연결할게."
             if self._restart_requested
-            else "Your current task will be interrupted."
+            else "⚠️ Gateway shutting down — Your current task will be interrupted."
         )
-        msg = f"⚠️ Gateway {action} — {hint}"
 
         notified: set[tuple[str, str, Optional[str]]] = set()
         for session_key in active:
@@ -3376,17 +3394,33 @@ class GatewayRunner:
                 if not adapter:
                     continue
 
-                platform_cfg = self.config.platforms.get(platform)
-                if platform_cfg is not None and not platform_cfg.gateway_restart_notification:
-                    logger.info(
-                        "Shutdown notification suppressed for active session: %s has gateway_restart_notification=false",
-                        platform_str,
-                    )
-                    continue
-
                 # Include thread_id if present so the message lands in the
                 # correct forum topic / thread.
                 metadata = {"thread_id": thread_id} if thread_id else None
+
+                # If restart was requested externally (for example by
+                # `miho gateway restart` from a tool run), there may be no
+                # .restart_notify.json from the /restart command path. Seed a
+                # requester-style startup notification from the active chat so
+                # the user sees a post-reconnect completion signal.
+                if self._restart_requested:
+                    try:
+                        notify_path = _miho_home / ".restart_notify.json"
+                        if not notify_path.exists():
+                            notify_data = {
+                                "platform": platform_str,
+                                "chat_id": chat_id,
+                            }
+                            if thread_id:
+                                notify_data["thread_id"] = thread_id
+                            atomic_json_write(notify_path, notify_data)
+                            logger.info(
+                                "Seeded restart notification target from active session %s:%s",
+                                platform_str,
+                                chat_id,
+                            )
+                    except Exception as exc:
+                        logger.debug("Failed to seed active-session restart notification: %s", exc)
 
                 result = await adapter.send(chat_id, msg, metadata=metadata)
                 if result is not None and getattr(result, "success", True) is False:
@@ -6719,33 +6753,10 @@ class GatewayRunner:
         # are system-generated and must skip user authorization.
         is_internal = bool(getattr(event, "internal", False))
 
-        # Send a tiny receipt before any potentially-slow pre-dispatch hook.
-        # Some broad domain routers may do network work before the main agent
-        # starts; without a receipt the user sees silence and assumes the bot
-        # ignored them. Keep it authorized + non-command only to avoid leaking
-        # presence to unauthorized senders or cluttering slash-command UX.
-        if not is_internal:
-            try:
-                raw_text = str(getattr(event, "text", "") or "").strip()
-                should_ack = (
-                    source.platform == Platform.DISCORD
-                    and raw_text
-                    and not raw_text.startswith("/")
-                    and source.user_id is not None
-                    and self._is_user_authorized(source)
-                    and os.getenv("MIHO_GATEWAY_IMMEDIATE_ACK", "1").strip().lower()
-                    not in {"0", "false", "no", "off"}
-                )
-                if should_ack:
-                    adapter = self.adapters.get(source.platform)
-                    if adapter:
-                        await adapter.send(
-                            source.chat_id,
-                            "받았어. 확인 중.",
-                            metadata=self._thread_metadata_for_source(source),
-                        )
-            except Exception as _ack_exc:
-                logger.debug("gateway initial ack failed: %s", _ack_exc)
+        # Do not send a first-touch ACK by default.  In Discord it looks like
+        # the assistant started answering before tools run, which makes long
+        # coding/debug sessions feel interrupted. Liveness is handled by the
+        # hardcoded long-running heartbeat below instead.
 
         # Fire pre_gateway_dispatch plugin hook for user-originated messages.
         # Plugins receive the MessageEvent and may return a dict influencing flow:
@@ -8517,22 +8528,40 @@ class GatewayRunner:
                 # compression.hygiene_hard_message_limit.
                 # (#2153)
                 _HARD_MSG_LIMIT = _hyg_hard_msg_limit
-                _needs_compress = (
-                    _approx_tokens >= _compress_token_threshold
-                    or _msg_count >= _HARD_MSG_LIMIT
-                )
+                _token_limit_hit = _approx_tokens >= _compress_token_threshold
+                _message_limit_hit = _msg_count >= _HARD_MSG_LIMIT
+                _needs_compress = _token_limit_hit or _message_limit_hit
 
                 if _needs_compress:
+                    _hyg_reason = "token-threshold" if _token_limit_hit else "message-count"
+                    if _token_limit_hit and _message_limit_hit:
+                        _hyg_reason = "token-threshold+message-count"
                     logger.info(
                         "Session hygiene: %s messages, ~%s tokens (%s) — auto-compressing "
-                        "(threshold: %s%% of %s = %s tokens)",
+                        "(reason=%s; token threshold: %s%% of %s = %s tokens; "
+                        "message limit: %s)",
                         _msg_count, f"{_approx_tokens:,}", _token_source,
+                        _hyg_reason,
                         int(_hyg_threshold_pct * 100),
                         f"{_hyg_context_length:,}",
                         f"{_compress_token_threshold:,}",
+                        _HARD_MSG_LIMIT,
                     )
 
                     _hyg_meta = self._thread_metadata_for_source(source, self._reply_anchor_for_event(event))
+                    try:
+                        _adapter = self.adapters.get(source.platform)
+                        if _adapter and source.chat_id:
+                            await _adapter.send(
+                                source.chat_id,
+                                "🦊 대화가 길어져서 미호가 맥락을 착착 접어두는 중이야.",
+                                metadata=_hyg_meta,
+                            )
+                    except Exception as _nerr:
+                        logger.warning(
+                            "Failed to deliver compression-start notice to user: %s",
+                            _nerr,
+                        )
 
                     try:
                         from run_agent import AIAgent
@@ -14483,18 +14512,22 @@ class GatewayRunner:
                 )
                 return None
 
-            platform_cfg = self.config.platforms.get(platform)
-            if platform_cfg is not None and not platform_cfg.gateway_restart_notification:
-                logger.info(
-                    "Restart notification suppressed: %s has gateway_restart_notification=false",
-                    platform_str,
-                )
-                return None
-
             metadata = {"thread_id": thread_id} if thread_id else None
+            summary = str(data.get("summary") or data.get("details") or "").strip()
+            if summary:
+                summary = summary[:900]
+                message = (
+                    "🦊 게이트웨이 재시작 끝났어. 미호 다시 연결됐어.\n\n"
+                    f"방금 작업 내용:\n{summary}"
+                )
+            else:
+                message = (
+                    "🦊 게이트웨이 재시작 끝났어. 미호 다시 연결됐어.\n"
+                    "방금 작업 결과는 재시작 직전에 같은 스레드에 내려놨어."
+                )
             result = await adapter.send(
                 str(chat_id),
-                "♻ Gateway restarted successfully. Your session continues.",
+                message,
                 metadata=metadata,
             )
             # adapter.send() catches provider errors (e.g. "Chat not found")
@@ -16631,6 +16664,47 @@ class GatewayRunner:
                         _cleanup_msg_ids.append(str(mid))
                 _fut.add_done_callback(_track_status_id)
 
+        async def _send_llm_progress_copy(kind: str, status: dict[str, Any], *, timeout: float = 3.0) -> None:
+            if not _status_adapter or not _run_still_current():
+                return
+            try:
+                from gateway.progress_copy import generate_gateway_progress_copy
+
+                copy = await generate_gateway_progress_copy(
+                    kind=kind,
+                    user_message=message,
+                    status={
+                        **(status or {}),
+                        "platform": source.platform.value if source.platform else "",
+                    },
+                    timeout=timeout,
+                )
+            except Exception as exc:
+                logger.debug("LLM progress copy skipped: %s", exc)
+                return
+            if not copy or not _run_still_current():
+                return
+            fut = safe_schedule_threadsafe(
+                _status_adapter.send(
+                    _status_chat_id,
+                    copy,
+                    metadata=_status_thread_metadata,
+                ),
+                _loop_for_step,
+                logger=logger,
+                log_message=f"llm progress copy ({kind}) scheduling error",
+            )
+            if fut is not None and _cleanup_progress:
+                def _track_llm_status_id(done_fut) -> None:
+                    try:
+                        res = done_fut.result()
+                    except Exception:
+                        return
+                    mid = getattr(res, "message_id", None)
+                    if getattr(res, "success", False) and mid:
+                        _cleanup_msg_ids.append(str(mid))
+                fut.add_done_callback(_track_llm_status_id)
+
         def run_sync():
             # The conditional re-assignment of `message` further below
             # (prepending model-switch notes) makes Python treat it as a
@@ -17539,6 +17613,8 @@ class GatewayRunner:
         
         interrupt_monitor = asyncio.create_task(monitor_for_interrupt())
 
+        _initial_progress_task = None
+
         # Periodic "still working" notifications for long-running tasks.
         # Fires every N seconds so the user knows the agent hasn't died.
         # Config: agent.gateway_notify_interval in config.yaml, or
@@ -17571,11 +17647,13 @@ class GatewayRunner:
                         _status_detail = " — " + ", ".join(_parts)
                     except Exception:
                         pass
+                _content = _miho_heartbeat_line(_elapsed_mins)
+                if _status_detail:
+                    _content = f"{_content} `{_status_detail.lstrip(' — ')}`"
                 try:
                     _notify_res = await _notify_adapter.send(
                         source.chat_id,
-                        f"⏳ 아직 작업 중이야. 멈춘 게 아니고 계속 진행 중. "
-                        f"({_elapsed_mins}분 경과{_status_detail})",
+                        _content,
                         metadata=_status_thread_metadata,
                     )
                     if (
@@ -18020,6 +18098,8 @@ class GatewayRunner:
             if progress_task:
                 progress_task.cancel()
             interrupt_monitor.cancel()
+            if _initial_progress_task:
+                _initial_progress_task.cancel()
             _notify_task.cancel()
 
             # Wait for stream consumer to finish its final edit

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from gateway.discord_workspace_paths import (
@@ -91,7 +92,7 @@ def archive_workspace_for_thread(thread: Any) -> Path | None:
     for channel_dir in channel_candidates:
         thread_dir = child_by_id(channel_dir / "threads", thread_id)
         if thread_dir is not None:
-            return _archive_path(
+            archived = _archive_path(
                 thread_dir,
                 {
                     "archived_at": utc_now(),
@@ -103,4 +104,44 @@ def archive_workspace_for_thread(thread: Any) -> Path | None:
                 },
                 category="threads",
             )
+            _cleanup_academy_thread_local_state(thread)
+            return archived
     return None
+
+
+def _cleanup_academy_thread_local_state(thread: Any) -> None:
+    """Remove Miho-local academy pointers for a deleted Discord thread.
+
+    Source systems are intentionally untouched. The workspace itself has already
+    been moved to the recoverable Discord archive by the caller; this only drops
+    local binding/context rows that would otherwise keep routing to a deleted
+    thread.
+    """
+    try:
+        from plugins.academy_ops.student_thread_binding import (
+            clear_bindings_for_thread,
+            context_key_prefix_for_thread,
+        )
+        from plugins.academy_ops.thread_context import clear_thread_contexts_by_prefix
+
+        source = _thread_source_stub(thread)
+        clear_bindings_for_thread(source)
+        prefix = context_key_prefix_for_thread(source)
+        if prefix:
+            clear_thread_contexts_by_prefix(prefix)
+    except Exception:
+        # Thread deletion must never fail because local academy cleanup failed.
+        return
+
+
+def _thread_source_stub(thread: Any) -> Any:
+    parent = getattr(thread, "parent", None)
+    guild = getattr(thread, "guild", None) or getattr(parent, "guild", None)
+    return SimpleNamespace(
+        platform=SimpleNamespace(value="discord"),
+        guild_id=str(getattr(guild, "id", "") or ""),
+        parent_chat_id=str(getattr(parent, "id", None) or getattr(thread, "parent_id", "") or ""),
+        chat_id=str(getattr(thread, "id", "") or ""),
+        thread_id=str(getattr(thread, "id", "") or ""),
+        chat_name=str(getattr(thread, "name", "") or ""),
+    )

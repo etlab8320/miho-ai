@@ -33,12 +33,15 @@ def run_feedback_improvement_loop(
     extract_content: ContentExtractor | None = None,
     max_activations: int | None = 1,
     record_failure: Callable[..., dict[str, Any]] | None = None,
+    allow_immediate_activation: bool = False,
 ) -> dict[str, Any]:
-    """Record user-reported failure and immediately run Self-Harness.
+    """Record user-reported failure and run a guarded Self-Harness pass.
 
-    This is not a user-facing fallback. It is the runtime bridge from "user says
-    the result is bad" to "ledger event + LLM miner/proposer + receipts +
-    activation/rollback smoke" in the same process.
+    Runtime feedback is an interrupt path, not a free license to mutate working
+    governance behavior. By default it records the failure, mines/proposes, and
+    generates receipts, but holds activation for the scheduled autopilot or an
+    explicit caller opt-in. This keeps the immediate path useful without letting
+    a live user correction break previously-good behavior mid-conversation.
     """
 
     recorder = record_failure or record_quality_failure
@@ -59,6 +62,7 @@ def run_feedback_improvement_loop(
         call_llm=call_llm,
         extract_content=extract_content,
         max_activations=max_activations,
+        allow_activation=allow_immediate_activation,
     )
     learning = record_runtime_learning(
         request_id=request_id,
@@ -74,6 +78,11 @@ def run_feedback_improvement_loop(
         "status": _status_from_autopilot(autopilot),
         "recorded_event_id": int(event.get("id") or 0),
         "self_harness_triggered": True,
+        "activation_policy": (
+            "immediate_activation_allowed"
+            if allow_immediate_activation
+            else "record_and_hold_for_cron"
+        ),
         "user_visible_message_allowed": False,
         "runtime_learning": learning,
         "autopilot": autopilot,

@@ -49,6 +49,7 @@ from .student_record_cohort_tool import register_student_record_cohort_tool
 from .student_record_chart_tool import register_student_record_chart_tool
 from .student_records_tool import register_student_records_tool
 from .thread_roster_tool import register_thread_roster_tool
+from .student_thread_binding import student_binding_command
 from .report_render_tool import register_report_image_tool
 from .render_image_tool import register_render_image_tool
 from .result_reviewer import (
@@ -68,6 +69,12 @@ def register(ctx: Any) -> None:
         _academy_command,
         description="PACA/Peak 로그인 연결, 기능 카탈로그, 실행 전 미리보기",
         args_hint="[요청]",
+    )
+    ctx.register_command(
+        "student-binding",
+        student_binding_command,
+        description="Discord 학생 스레드 기본 학생 바인딩 확인/변경/해제",
+        args_hint="[확인|학생명|해제|새로고침]",
     )
     ctx.register_hook("pre_gateway_dispatch", _academy_pre_gateway_dispatch)
     ctx.register_hook("pre_tool_call", block_academy_handrolled_outputs)

@@ -111,6 +111,7 @@ async def resolve_and_execute_academy_request(
     tool_timeout: float = TOOL_TIMEOUT_SECONDS,
     synthesize: bool = True,
     context_key: str | None = None,
+    default_student_query: str | None = None,
 ) -> AcademyNaturalRoute:
     clean = text.strip()
     if not clean or clean.startswith("/"):
@@ -162,7 +163,12 @@ async def resolve_and_execute_academy_request(
         tool_timeout=tool_timeout,
         today=today,
         context_key=context_key,
-        resolve_args=_resolved_args,
+        resolve_args=lambda tool, route_args, key: _resolved_args(
+            tool,
+            route_args,
+            key,
+            default_student_query=default_student_query,
+        ),
         with_reference_today=_with_reference_today,
     )
     if plan_response is not None:
@@ -185,6 +191,7 @@ async def resolve_and_execute_academy_request(
         tool_name,
         decision.get("args") if isinstance(decision.get("args"), dict) else {},
         context_key,
+        default_student_query=default_student_query,
     )
     if should_render_attendance_day_image(clean, tool_name):
         args["image"] = True
@@ -284,13 +291,25 @@ def _resolver_messages(
     )
 
 
-def _resolved_args(tool_name: str, args: dict[str, Any], context_key: str | None) -> dict[str, Any]:
+def _resolved_args(
+    tool_name: str,
+    args: dict[str, Any],
+    context_key: str | None,
+    *,
+    default_student_query: str | None = None,
+) -> dict[str, Any]:
     """Fill follow-up args left implicit from the last academy turn."""
     context = get_thread_context(context_key)
-    if not context:
-        return args
     contract_args = TOOL_CONTRACTS.get(tool_name, {}).get("args", [])
     resolved = dict(args)
+    if (
+        "student_query" in contract_args
+        and _is_blank(resolved.get("student_query"))
+        and not _is_blank(default_student_query)
+    ):
+        resolved["student_query"] = str(default_student_query).strip()
+    if not context:
+        return resolved
     for name in INHERITABLE_ENTITY_ARGS:
         if name in contract_args and _is_blank(resolved.get(name)) and not _is_blank(context.get(name)):
             resolved[name] = context[name]

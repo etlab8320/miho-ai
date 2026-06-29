@@ -141,6 +141,7 @@ def self_harness_runtime_feedback_probe_passed() -> bool:
                 call_llm=fake_call_llm,
                 extract_content=_extract_content,
                 record_failure=_probe_record_quality_failure,
+                allow_immediate_activation=True,
             )
             learning = result.get("runtime_learning")
             return (

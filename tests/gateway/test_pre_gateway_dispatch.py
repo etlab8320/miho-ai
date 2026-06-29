@@ -177,3 +177,25 @@ async def test_internal_events_bypass_hook(monkeypatch):
     # Even though the hook would say skip, internal events bypass it.
     await runner._handle_message(event)
     assert called["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_discord_does_not_send_immediate_ack_before_dispatch(monkeypatch):
+    """Discord should stay quiet before pre-dispatch; heartbeat handles liveness later."""
+    _clear_auth_env(monkeypatch)
+    monkeypatch.setenv("DISCORD_ALLOWED_USERS", "15551234567@s.whatsapp.net")
+
+    async def _fake_hook(name, **kwargs):
+        if name == "pre_gateway_dispatch":
+            return [{"action": "skip", "reason": "plugin-handled"}]
+        return []
+
+    monkeypatch.setattr("miho_cli.plugins.invoke_hook_async", _fake_hook)
+
+    runner, adapter = _make_runner(Platform.DISCORD)
+    event = _make_event("이번 작업 봐줘", platform=Platform.DISCORD)
+
+    result = await runner._handle_message(event)
+
+    assert result is None
+    adapter.send.assert_not_awaited()

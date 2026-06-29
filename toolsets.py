@@ -29,8 +29,8 @@ from typing import List, Dict, Any, Set, Optional
 # Shared tool list for CLI and all messaging platform toolsets.
 # Edit this once to update all platforms simultaneously.
 _MIHO_CORE_TOOLS = [
-    # Web
-    "web_search", "web_extract",
+    # Web / public research router
+    "research_router", "web_search", "web_extract",
     # Terminal + process management
     "terminal", "process",
     # File manipulation
@@ -80,14 +80,14 @@ _MIHO_CORE_TOOLS = [
 TOOLSETS = {
     # Basic toolsets - individual tool categories
     "web": {
-        "description": "Web research and content extraction tools",
-        "tools": ["web_search", "web_extract"],
+        "description": "Single public research router plus legacy web search/extraction backends",
+        "tools": ["research_router", "web_search", "web_extract"],
         "includes": []  # No other toolsets included
     },
     
     "search": {
-        "description": "Web search only (no content extraction/scraping)",
-        "tools": ["web_search"],
+        "description": "LLM-mapped public research router and web search fallback",
+        "tools": ["research_router", "web_search"],
         "includes": []
     },
 

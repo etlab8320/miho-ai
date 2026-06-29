@@ -12,7 +12,7 @@ import os
 import re
 import shutil
 import subprocess
-from typing import Any
+from typing import Any, cast
 
 from tools.registry import registry
 
@@ -137,6 +137,39 @@ AGENT_REACH_ROUTE_SCHEMA = {
             },
         },
         "required": ["request"],
+    },
+}
+
+RESEARCH_ROUTER_SCHEMA = {
+    "name": "research_router",
+    "description": (
+        "Single safe entry point for public research/search routing. The assistant must provide "
+        "its LLM-derived mapping in llm_intent; this tool only checks live Agent Reach status, "
+        "applies deterministic safety boundaries, and returns a backend plan. It does not execute "
+        "web searches, social searches, account actions, installs, cookie imports, or writes."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "request": {
+                "type": "string",
+                "description": "The user's original research/search request.",
+            },
+            "llm_intent": {
+                "type": "object",
+                "description": (
+                    "LLM mapping result. Required. Suggested keys: task_type, source_type, "
+                    "desired_output, candidate_channels, requires_login, may_write, uses_private_or_internal_data, "
+                    "needs_current_broad_search, needs_youtube_summary_card, rationale."
+                ),
+            },
+            "run_doctor": {
+                "type": "boolean",
+                "description": "Run agent-reach doctor to check live channel availability.",
+                "default": True,
+            },
+        },
+        "required": ["request", "llm_intent"],
     },
 }
 
@@ -304,6 +337,237 @@ def agent_reach_route_tool(args: dict[str, Any] | None = None, **_: Any) -> str:
     }, ensure_ascii=True)
 
 
+INTERNAL_DOMAIN_MARKERS = frozenset({
+    "academy",
+    "paca",
+    "peak",
+    "life_record",
+    "student_record",
+    "susi",
+    "susi27",
+    "susi26",
+    "jungsi",
+    "sports_motion",
+    "sports_max",
+    "student_private",
+    "internal_db",
+})
+
+AGENT_REACH_PUBLIC_CHANNELS = frozenset({
+    "web",
+    "youtube",
+    "github",
+    "rss",
+    "bilibili",
+    "v2ex",
+})
+
+SOCIAL_OR_LOGIN_CHANNELS = frozenset({
+    "twitter",
+    "x",
+    "reddit",
+    "linkedin",
+    "xiaohongshu",
+    "xueqiu",
+    "xiaoyuzhou",
+})
+
+LEGACY_BACKENDS: dict[str, list[str]] = {
+    "web": ["web_extract", "web_search"],
+    "exa_search": ["web_search"],
+    "youtube": ["youtube_analyze_video"],
+    "github": ["web_search", "terminal:gh"],
+    "rss": ["web_extract", "terminal:feedparser"],
+    "twitter": ["x_search"],
+    "x": ["x_search"],
+    "reddit": ["web_search"],
+    "linkedin": ["web_search", "web_extract"],
+}
+
+SPECIALIZED_DOMAIN_BACKENDS: dict[str, list[str]] = {
+    "academy": ["academy_*", "academy_api_query"],
+    "paca": ["academy_*", "academy_api_query"],
+    "peak": ["academy_*", "academy_api_query"],
+    "life_record": ["life_record_*"],
+    "student_record": ["life_record_*", "academy_student_*"],
+    "susi": ["susi27_*", "susi26_rule_lookup"],
+    "susi27": ["susi27_*"],
+    "jungsi": ["jungsi_*"],
+    "sports_motion": ["sports_motion_*", "sports_max_analysis_variables"],
+    "sports_max": ["sports_max_analysis_variables", "sports_motion_*"],
+}
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def _as_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple, set)):
+        return [str(v) for v in value if str(v).strip()]
+    return [str(value)]
+
+
+def _normalize_channel(channel: str) -> str:
+    value = (channel or "").strip().lower().replace("-", "_")
+    if value in {"x", "x_search"}:
+        return "twitter"
+    if value in {"url", "page", "reader", "jina"}:
+        return "web"
+    if value in {"yt", "video"}:
+        return "youtube"
+    return value
+
+
+def _domain_markers(intent: dict[str, Any]) -> set[str]:
+    markers: set[str] = set()
+    for key in ("domain", "source_type", "task_type", "data_domain"):
+        for item in _as_list(intent.get(key)):
+            normalized = item.strip().lower().replace("-", "_")
+            if normalized:
+                markers.add(normalized)
+    return markers
+
+
+def _candidate_channels(intent: dict[str, Any]) -> list[str]:
+    raw = intent.get("candidate_channels") or intent.get("channels") or intent.get("channel")
+    channels = [_normalize_channel(item) for item in _as_list(raw)]
+    seen: set[str] = set()
+    out: list[str] = []
+    for channel in channels:
+        if channel and channel not in seen:
+            out.append(channel)
+            seen.add(channel)
+    return out
+
+
+def research_router_tool(args: dict[str, Any] | None = None, **_: Any) -> str:
+    """LLM-mapped, status-checked research router.
+
+    The router intentionally refuses to infer meaning from keywords. The caller
+    must provide an LLM mapping in ``llm_intent``. This lets the model decide the
+    source/output mapping while deterministic code only enforces safety and live
+    availability.
+    """
+    args = args or {}
+    request = str(args.get("request") or "").strip()
+    intent = args.get("llm_intent")
+    if not request:
+        return json.dumps({"success": False, "error": "request is required"}, ensure_ascii=True)
+    if not isinstance(intent, dict) or not intent:
+        return json.dumps({
+            "success": False,
+            "error": "llm_intent is required; research_router does not perform Python keyword fallback semantic routing",
+            "policy": "LLM maps intent/source/output; deterministic code only checks safety/status.",
+        }, ensure_ascii=True)
+
+    channels: dict[str, dict[str, Any]] = {}
+    status_error: str | None = None
+    if args.get("run_doctor", True):
+        doctor_channels, _, status_error = _run_doctor()
+        channels = cast(dict[str, dict[str, Any]], doctor_channels)
+
+    markers = _domain_markers(intent)
+    private_or_internal = _as_bool(intent.get("uses_private_or_internal_data")) or bool(markers & INTERNAL_DOMAIN_MARKERS)
+    may_write = _as_bool(intent.get("may_write")) or _as_bool(intent.get("requires_write")) or _as_bool(intent.get("account_action"))
+    requires_login = _as_bool(intent.get("requires_login")) or _as_bool(intent.get("requires_cookie"))
+    needs_summary_card = _as_bool(intent.get("needs_youtube_summary_card")) or str(intent.get("desired_output", "")).lower() in {"youtube_summary_card", "youtube_rag_summary"}
+
+    if private_or_internal:
+        specialized = sorted({backend for marker in markers for backend in SPECIALIZED_DOMAIN_BACKENDS.get(marker, [])})
+        return json.dumps({
+            "success": True,
+            "decision": "blocked_from_agent_reach",
+            "request": request,
+            "selected_backend": specialized[0] if specialized else "specialized_domain_tool",
+            "backend_family": "specialized_internal_tool",
+            "specialized_backends": specialized,
+            "reason": "Internal/private academy, admissions, student, sports, or DB data must use dedicated Miho tools, not public research backends.",
+            "safety": "No search executed. No account action. No private data exported.",
+        }, ensure_ascii=True)
+
+    if may_write or requires_login:
+        return json.dumps({
+            "success": True,
+            "decision": "blocked",
+            "request": request,
+            "selected_backend": None,
+            "reason": "Research Router is read-only and must not perform login, cookie import, posting, DM, comment, follow, or other account/write actions.",
+            "safety": "No search executed. No platform/account action performed.",
+        }, ensure_ascii=True)
+
+    candidates = _candidate_channels(intent)
+    if not candidates:
+        return json.dumps({
+            "success": False,
+            "decision": "unroutable",
+            "request": request,
+            "error": "LLM mapping did not provide candidate_channels; refusing Python semantic fallback.",
+        }, ensure_ascii=True)
+
+    plans: list[dict[str, Any]] = []
+    for channel in candidates:
+        status = channels.get(channel, {})
+        status_value = status.get("status", "unknown")
+        agent_reach_allowed = channel in AGENT_REACH_PUBLIC_CHANNELS and status_value == "ok" and not needs_summary_card
+        legacy = LEGACY_BACKENDS.get(channel, [])
+        if channel == "youtube" and needs_summary_card:
+            legacy = ["youtube_analyze_video"] + [b for b in legacy if b != "youtube_analyze_video"]
+        if channel in SOCIAL_OR_LOGIN_CHANNELS and status_value != "ok":
+            backend = legacy[0] if legacy else None
+            family = "legacy_or_unavailable"
+            allowed = bool(backend)
+            reason = "Agent Reach channel is social/login-sensitive or unavailable; use guarded legacy read-only backend only if appropriate."
+        elif agent_reach_allowed:
+            backend = f"agent_reach:{channel}"
+            family = "agent_reach"
+            allowed = True
+            reason = "Agent Reach public read-only channel is available."
+        else:
+            backend = legacy[0] if legacy else None
+            family = "legacy"
+            allowed = bool(backend)
+            reason = "Agent Reach unavailable/unsuitable for this output; use existing Miho backend."
+        plans.append({
+            "channel": channel,
+            "status": status_value,
+            "active_backend": status.get("active_backend"),
+            "selected_backend": backend,
+            "backend_family": family,
+            "allowed": allowed,
+            "reason": reason,
+            "legacy_fallbacks": legacy,
+        })
+
+    selected = next((plan for plan in plans if plan.get("allowed") and plan.get("selected_backend")), None)
+    decision = "planned" if selected else "unroutable"
+    return json.dumps({
+        "success": True,
+        "decision": decision,
+        "request": request,
+        "llm_intent": intent,
+        "selected_backend": selected.get("selected_backend") if selected else None,
+        "backend_family": selected.get("backend_family") if selected else None,
+        "plans": plans,
+        "status_error": status_error,
+        "policy": {
+            "llm_mapping_required": True,
+            "python_semantic_fallback": False,
+            "agent_reach_scope": "public read-only channel collection only",
+            "internal_domain_tools_protected": True,
+        },
+        "safety": "Planner only. It does not execute searches, installs, cookie imports, login, writes, or platform actions.",
+    }, ensure_ascii=True)
+
+
 registry.register(
     name="agent_reach_status",
     toolset="agent_reach",
@@ -319,5 +583,14 @@ registry.register(
     schema=AGENT_REACH_ROUTE_SCHEMA,
     handler=agent_reach_route_tool,
     emoji="AR",
+    max_result_size_chars=60_000,
+)
+
+registry.register(
+    name="research_router",
+    toolset="web",
+    schema=RESEARCH_ROUTER_SCHEMA,
+    handler=research_router_tool,
+    emoji="RR",
     max_result_size_chars=60_000,
 )

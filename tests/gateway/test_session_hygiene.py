@@ -387,9 +387,10 @@ async def test_session_hygiene_messages_stay_in_originating_topic(monkeypatch, t
     result = await runner._handle_message(event)
 
     assert result == "ok"
-    # Compression warnings are no longer sent to users — compression
-    # happens silently with server-side logging only.
-    assert len(adapter.sent) == 0
+    progress_messages = [s for s in adapter.sent if "맥락을 착착 접어두는 중" in s["content"]]
+    assert len(progress_messages) == 1
+    assert progress_messages[0]["chat_id"] == "-1001"
+    assert progress_messages[0]["metadata"] == {"thread_id": "17585"}
     assert FakeCompressAgent.last_instance is not None
     FakeCompressAgent.last_instance.shutdown_memory_provider.assert_called_once()
     FakeCompressAgent.last_instance.close.assert_called_once()

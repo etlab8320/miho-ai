@@ -29,6 +29,11 @@ from . import login_preflight
 from .natural_router import AcademyNaturalRoute, resolve_and_execute_academy_request
 from .self_check import verdict_or_ok
 from .thread_context import academy_context_key, format_context_note, get_thread_context
+from .student_thread_binding import (
+    format_binding_prompt_note,
+    get_binding_for_source,
+    student_binding_command,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -112,6 +117,15 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
         return {"action": "allow"}
     refresh_remote_pending_logins()
     text = str(getattr(event, "text", "") or "")
+    binding_command_args = _student_binding_natural_args(text)
+    if binding_command_args is not None:
+        return {
+            "action": "respond",
+            "text": student_binding_command(binding_command_args),
+            "route": "academy_ops",
+            "reason": "student_binding_command",
+            "priority": ACADEMY_ROUTE_PRIORITY,
+        }
     binding = get_binding(discord_user_id)
     has_login_context = (
         login_preflight.has_academy_login_context(text) or binding is not None or has_pending_login(discord_user_id)
@@ -148,9 +162,11 @@ async def _academy_pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> dic
             fallback = _login_command()
             return _route_response(await _guidance_text(text, "login_required", fallback), "login_reconnect")
         return {"action": "allow"}
+    student_binding = get_binding_for_source(source, infer=True)
     route = await resolve_and_execute_academy_request(
         text,
         context_key=context_key,
+        default_student_query=str(student_binding.get("student_query") or "").strip() or None,
     )
     if route == AcademyNaturalRoute.HANDLED:
         answer = route.response_text
@@ -188,6 +204,23 @@ def _route_response(text: str, reason: str) -> dict[str, object]:
     }
 
 
+def _student_binding_natural_args(text: str) -> str | None:
+    clean = str(text or "").strip()
+    if not clean:
+        return None
+    prefixes = ("학생바인딩", "학생 바인딩", "/학생바인딩", "/학생_바인딩")
+    for prefix in prefixes:
+        if clean == prefix:
+            return "확인"
+        if clean.startswith(prefix + " "):
+            return clean[len(prefix):].strip()
+    if clean in {"이 스레드 기본 학생 누구야?", "이 스레드 기본 학생 누구야", "바인딩 확인"}:
+        return "확인"
+    if clean in {"바인딩 풀어줘", "학생 바인딩 풀어줘", "이 스레드 바인딩 해제"}:
+        return "해제"
+    return None
+
+
 async def _guidance_text(user_text: str, intent: str, fallback: str) -> str:
     return await naturalize_guidance_response(user_text=user_text, intent=intent, fallback=fallback)
 
@@ -208,7 +241,10 @@ def _persist_handled_turn(session_store: Any, event: Any, question: str, answer:
 
 
 def _inject_prior_context(event: Any, context_key: str) -> bool:
-    note = format_context_note(get_thread_context(context_key))
+    source = getattr(event, "source", None)
+    binding_note = format_binding_prompt_note(get_binding_for_source(source, infer=True)) if source is not None else ""
+    prior_note = format_context_note(get_thread_context(context_key))
+    note = " ".join(part for part in (binding_note, prior_note) if part)
     if not note:
         return False
     existing = str(getattr(event, "channel_prompt", "") or "").strip()

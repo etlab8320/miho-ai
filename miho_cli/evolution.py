@@ -269,6 +269,72 @@ def _cmd_autopilot(args) -> int:
     return 0 if result.get("target_reached") else 1
 
 
+def _cmd_wikigraph(args) -> int:
+    import importlib
+
+    system_wikigraph = importlib.import_module("agent.system_wikigraph")
+
+    action = getattr(args, "wikigraph_action", None)
+    if action == "init":
+        result = system_wikigraph.init_wiki()
+        print("wikigraph: initialized")
+        print(f"  wiki:  {result['wiki_dir']}")
+        print(f"  graph: {result['db_path']}")
+        if result.get("created"):
+            print(f"  created: {len(result['created'])} file(s)")
+        return 0
+    if action == "sync":
+        result = system_wikigraph.sync_project(
+            project_root=getattr(args, "project_root", None),
+            full=bool(getattr(args, "full", False)),
+            from_git=bool(getattr(args, "from_git", False)),
+        )
+        summary = result.get("summary") or {}
+        print(f"wikigraph: synced #{result.get('sync_id')} project={result.get('project_root')}")
+        print(
+            "  "
+            + ", ".join(
+                f"{key}={summary.get(key, 0)}"
+                for key in ("files", "tests", "tools", "skills", "configs", "events", "edges")
+            )
+        )
+        if result.get("changed_files"):
+            print(f"  changed_files: {len(result['changed_files'])}")
+        print(f"  wiki:  {result['wiki_dir']}")
+        print(f"  graph: {result['db_path']}")
+        return 0
+    if action == "status":
+        print(system_wikigraph.status_text(system_wikigraph.graph_status()))
+        return 0
+    if action == "impact":
+        print(system_wikigraph.render_impact_text(system_wikigraph.impact(args.query, limit=args.limit)))
+        return 0
+    if action == "query":
+        print(system_wikigraph.render_graphrag_text(system_wikigraph.graphrag(args.query, hops=args.hops, limit=args.limit)))
+        return 0
+    if action == "visualize":
+        result = system_wikigraph.render_graph_html(args.query, output_path=getattr(args, "output", None), limit=args.limit)
+        print("wikigraph: visualized")
+        print(f"  output: {result['output_path']}")
+        print(f"  nodes={result['nodes']} edges={result['edges']} wiki_hits={result['wiki_hits']}")
+        return 0
+    if action == "install-hooks":
+        result = system_wikigraph.install_git_hooks(project_root=getattr(args, "project_root", None), force=bool(getattr(args, "force", False)))
+        print("wikigraph: git hooks installed")
+        print(f"  repo: {result['repo']}")
+        print(f"  installed: {len(result['installed'])}")
+        if result.get("skipped"):
+            print(f"  skipped_existing_non_miho_hooks: {len(result['skipped'])}")
+        print(f"  log: {result['log_path']}")
+        return 0
+    if action == "watch-once":
+        result = system_wikigraph.watch_once(project_root=getattr(args, "project_root", None))
+        print(f"wikigraph: watch-once sync #{result.get('sync_id')} changed_files={len(result.get('changed_files') or [])}")
+        return 0
+    print("evolution wikigraph: choose init, sync, status, impact, query, visualize, install-hooks, or watch-once", file=sys.stderr)
+    return 2
+
+
 def register_cli(parent: argparse.ArgumentParser) -> None:
     parent.set_defaults(func=lambda a: (parent.print_help(), 0)[1])
     subs = parent.add_subparsers(dest="evolution_command")
@@ -341,6 +407,47 @@ def register_cli(parent: argparse.ArgumentParser) -> None:
     p_autopilot.add_argument("--max-cycles", type=int, default=5)
     p_autopilot.add_argument("--target-score", type=int, default=100)
     p_autopilot.set_defaults(func=_cmd_autopilot)
+
+    p_wikigraph = subs.add_parser("wikigraph", aliases=["wg"], help="Build and query the local Miho System WikiGraph")
+    wg_sub = p_wikigraph.add_subparsers(dest="wikigraph_action")
+
+    wg_init = wg_sub.add_parser("init", help="Create ~/.miho/system_wiki and ~/.miho/system_graph")
+    wg_init.set_defaults(func=_cmd_wikigraph)
+
+    wg_sync = wg_sub.add_parser("sync", help="Index Miho source/runtime structure into the WikiGraph")
+    wg_sync.add_argument("--project-root", default=None, help="Project root to scan; defaults to current directory")
+    wg_sync.add_argument("--full", action="store_true", help="Scan the full project even when --from-git is used")
+    wg_sync.add_argument("--from-git", action="store_true", help="Use git status changed files as the primary sync input")
+    wg_sync.set_defaults(func=_cmd_wikigraph)
+
+    wg_status = wg_sub.add_parser("status", help="Show WikiGraph node/edge counts and last sync")
+    wg_status.set_defaults(func=_cmd_wikigraph)
+
+    wg_impact = wg_sub.add_parser("impact", help="Show related nodes/edges for a file, component, tool, or phrase")
+    wg_impact.add_argument("query")
+    wg_impact.add_argument("--limit", type=int, default=40)
+    wg_impact.set_defaults(func=_cmd_wikigraph)
+
+    wg_query = wg_sub.add_parser("query", help="GraphRAG query: expand related nodes, risks, wiki pages, and tests")
+    wg_query.add_argument("query")
+    wg_query.add_argument("--hops", type=int, default=2)
+    wg_query.add_argument("--limit", type=int, default=80)
+    wg_query.set_defaults(func=_cmd_wikigraph)
+
+    wg_visualize = wg_sub.add_parser("visualize", aliases=["viz"], help="Render a self-contained HTML/SVG WikiGraph map")
+    wg_visualize.add_argument("query")
+    wg_visualize.add_argument("--output", default=None)
+    wg_visualize.add_argument("--limit", type=int, default=90)
+    wg_visualize.set_defaults(func=_cmd_wikigraph)
+
+    wg_hooks = wg_sub.add_parser("install-hooks", help="Install local git hooks that auto-sync WikiGraph after external edits")
+    wg_hooks.add_argument("--project-root", default=None)
+    wg_hooks.add_argument("--force", action="store_true", help="Overwrite existing Miho-managed hooks; skip non-Miho hooks unless set")
+    wg_hooks.set_defaults(func=_cmd_wikigraph)
+
+    wg_watch = wg_sub.add_parser("watch-once", help="Run one change-aware sync pass for cron/watchdog integration")
+    wg_watch.add_argument("--project-root", default=None)
+    wg_watch.set_defaults(func=_cmd_wikigraph)
 
 
 def cli_main(argv=None) -> int:

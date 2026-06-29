@@ -64,7 +64,35 @@ def _prior_event(event_id: int = 1) -> dict[str, Any]:
     }
 
 
-def test_runtime_feedback_loop_records_feedback_and_activates(tmp_path, monkeypatch) -> None:
+def test_runtime_feedback_loop_default_records_and_holds_activation(tmp_path, monkeypatch) -> None:
+    _reload_home(tmp_path, monkeypatch)
+
+    from plugins.governance_os.self_harness_runtime import run_feedback_improvement_loop
+
+    result = run_feedback_improvement_loop(
+        request_id="feedback-runtime-safe-default",
+        playbook_key="designed_pdf_artifact",
+        failure_signature="pdf_footer_overflow",
+        user_feedback="PDF 푸터가 페이지 밖으로 밀렸어",
+        artifact_paths=("/tmp/bad.pdf",),
+        recent_events=(_prior_event(),),
+        receipt_runner=_all_pass,
+        smoke_runner=_all_fail,
+        call_llm=_agentic_call_llm,
+        extract_content=_extract,
+    )
+
+    assert result["status"] == "held"
+    assert result["activation_policy"] == "record_and_hold_for_cron"
+    assert result["self_harness_triggered"] is True
+    assert result["recorded_event_id"]
+    assert result["autopilot"]["held"]
+    assert result["autopilot"]["held"][0]["reason"] == "activation_disabled"
+    assert not result["autopilot"]["activated"]
+    assert not result["autopilot"]["rolled_back"]
+
+
+def test_runtime_feedback_loop_records_feedback_and_activates_when_explicitly_allowed(tmp_path, monkeypatch) -> None:
     evolution = _reload_home(tmp_path, monkeypatch)
 
     from miho_cli.owner_profile import list_profile_events
@@ -83,8 +111,8 @@ def test_runtime_feedback_loop_records_feedback_and_activates(tmp_path, monkeypa
         smoke_runner=_all_pass,
         call_llm=_agentic_call_llm,
         extract_content=_extract,
+        allow_immediate_activation=True,
     )
-
     assert result["schema_version"] == "miho-self-harness/runtime-feedback-loop/v1"
     assert result["status"] == "activated"
     assert result["self_harness_triggered"] is True
@@ -129,6 +157,7 @@ def test_runtime_feedback_loop_rolls_back_on_regression(tmp_path, monkeypatch) -
         smoke_runner=_all_fail,
         call_llm=_agentic_call_llm,
         extract_content=_extract,
+        allow_immediate_activation=True,
     )
 
     assert result["status"] == "rolled_back"

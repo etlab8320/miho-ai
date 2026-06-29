@@ -106,3 +106,105 @@ def test_registry_discovers_agent_reach_toolset():
     assert registry.get_entry("agent_reach_route") is not None
     assert "agent_reach_status" in registry.get_tool_names_for_toolset("agent_reach")
     assert "agent_reach_route" in registry.get_tool_names_for_toolset("agent_reach")
+
+
+def test_research_router_requires_llm_mapping():
+    result = json.loads(agent_reach_tool.research_router_tool({"request": "search this"}))
+
+    assert result["success"] is False
+    assert "llm_intent is required" in result["error"]
+    assert result["policy"].startswith("LLM maps")
+
+
+def test_research_router_prefers_available_agent_reach_public_channel(monkeypatch):
+    monkeypatch.setattr(
+        agent_reach_tool,
+        "_run_doctor",
+        lambda: (
+            {"github": {"status": "ok", "active_backend": "gh CLI"}},
+            {"github": {"status": "ok"}},
+            None,
+        ),
+    )
+
+    result = json.loads(agent_reach_tool.research_router_tool({
+        "request": "research github repos for agent-reach",
+        "llm_intent": {
+            "task_type": "public_research",
+            "source_type": "github",
+            "desired_output": "search_results",
+            "candidate_channels": ["github"],
+            "rationale": "GitHub repository research",
+        },
+    }))
+
+    assert result["decision"] == "planned"
+    assert result["selected_backend"] == "agent_reach:github"
+    assert result["backend_family"] == "agent_reach"
+    assert result["policy"]["llm_mapping_required"] is True
+    assert result["policy"]["python_semantic_fallback"] is False
+
+
+def test_research_router_uses_youtube_specialized_tool_for_summary_card(monkeypatch):
+    monkeypatch.setattr(
+        agent_reach_tool,
+        "_run_doctor",
+        lambda: (
+            {"youtube": {"status": "ok", "active_backend": "yt-dlp"}},
+            {"youtube": {"status": "ok"}},
+            None,
+        ),
+    )
+
+    result = json.loads(agent_reach_tool.research_router_tool({
+        "request": "summarize this YouTube video and make a card",
+        "llm_intent": {
+            "task_type": "video_summary",
+            "source_type": "youtube",
+            "desired_output": "youtube_summary_card",
+            "candidate_channels": ["youtube"],
+            "needs_youtube_summary_card": True,
+        },
+    }))
+
+    assert result["decision"] == "planned"
+    assert result["selected_backend"] == "youtube_analyze_video"
+    assert result["backend_family"] == "legacy"
+
+
+def test_research_router_blocks_internal_academy_data():
+    result = json.loads(agent_reach_tool.research_router_tool({
+        "request": "학생 출결 찾아줘",
+        "llm_intent": {
+            "task_type": "academy",
+            "source_type": "paca",
+            "candidate_channels": ["web"],
+            "uses_private_or_internal_data": True,
+        },
+        "run_doctor": False,
+    }))
+
+    assert result["decision"] == "blocked_from_agent_reach"
+    assert result["backend_family"] == "specialized_internal_tool"
+    assert "academy_api_query" in result["specialized_backends"]
+
+
+def test_research_router_blocks_login_or_write_action():
+    result = json.loads(agent_reach_tool.research_router_tool({
+        "request": "twitter에 글 올려줘",
+        "llm_intent": {
+            "task_type": "social_action",
+            "source_type": "twitter",
+            "candidate_channels": ["twitter"],
+            "may_write": True,
+        },
+        "run_doctor": False,
+    }))
+
+    assert result["decision"] == "blocked"
+    assert result["selected_backend"] is None
+
+
+def test_registry_discovers_research_router():
+    assert registry.get_entry("research_router") is not None
+    assert "research_router" in registry.get_tool_names_for_toolset("web")

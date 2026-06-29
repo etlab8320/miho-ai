@@ -152,7 +152,7 @@ class TestBusySessionAck:
         if not content and call_kwargs.args:
             # positional args
             content = str(call_kwargs)
-        assert "Interrupting" in content or "respond" in content
+        assert "흐름을 살짝 돌려서" in content
         assert "/stop" not in content  # no need — we ARE interrupting
 
         # Verify agent interrupt was called
@@ -181,7 +181,7 @@ class TestBusySessionAck:
         agent.interrupt.assert_not_called()
         assert sk in adapter._pending_messages
         content = adapter._send_with_retry.call_args.kwargs.get("content", "")
-        assert "Subagent working" in content
+        assert "하위 작업" in content
 
     @pytest.mark.asyncio
     async def test_priority_interrupt_queues_when_subagents_are_active(self):
@@ -247,9 +247,9 @@ class TestBusySessionAck:
         adapter._send_with_retry.assert_called_once()
         call_kwargs = adapter._send_with_retry.call_args
         content = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content", "")
-        assert "Queued for the next turn" in content
-        assert "respond once the current task finishes" in content
-        assert "Interrupting" not in content
+        assert "다음 꼬리에 묶어뒀어" in content
+        assert "지금 물고 있는 것 끝나면" in content
+        assert "흐름을 살짝 돌려서" not in content
 
     @pytest.mark.asyncio
     async def test_steer_mode_calls_agent_steer_no_interrupt_no_queue(self):
@@ -280,8 +280,8 @@ class TestBusySessionAck:
         adapter._send_with_retry.assert_called_once()
         call_kwargs = adapter._send_with_retry.call_args
         content = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content", "")
-        assert "Steered" in content or "steer" in content.lower()
-        assert "Interrupting" not in content
+        assert "새 지시를 끼워 넣었어" in content
+        assert "흐름을 살짝 돌려서" not in content
 
     @pytest.mark.asyncio
     async def test_steer_mode_falls_back_to_queue_when_agent_rejects(self):
@@ -309,8 +309,8 @@ class TestBusySessionAck:
         # Ack uses queue-mode wording (not steer, not interrupt)
         call_kwargs = adapter._send_with_retry.call_args
         content = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content", "")
-        assert "Queued for the next turn" in content
-        assert "Steered" not in content
+        assert "다음 꼬리에 묶어뒀어" in content
+        assert "새 지시를 끼워 넣었어" not in content
 
     @pytest.mark.asyncio
     async def test_steer_mode_falls_back_to_queue_when_agent_pending(self):
@@ -334,7 +334,7 @@ class TestBusySessionAck:
 
         call_kwargs = adapter._send_with_retry.call_args
         content = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content", "")
-        assert "Queued for the next turn" in content
+        assert "다음 꼬리에 묶어뒀어" in content
 
     @pytest.mark.asyncio
     async def test_debounce_suppresses_rapid_acks(self):
@@ -537,7 +537,7 @@ class TestBusySessionOnboardingHint:
         content = call_kwargs.kwargs.get("content", "")
 
         # Normal ack body
-        assert "Interrupting" in content
+        assert "흐름을 살짝 돌려서" in content
         # First-touch hint appended
         assert "First-time tip" in content
         assert "/busy queue" in content
@@ -585,7 +585,7 @@ class TestBusySessionOnboardingHint:
         call_kwargs = adapter._send_with_retry.call_args
         content = call_kwargs.kwargs.get("content", "")
 
-        assert "Interrupting" in content
+        assert "흐름을 살짝 돌려서" in content
         assert "First-time tip" not in content
         assert "/busy queue" not in content
 
@@ -612,8 +612,47 @@ class TestBusySessionOnboardingHint:
             await runner._handle_active_session_busy_message(event, sk)
 
         content = adapter._send_with_retry.call_args.kwargs.get("content", "")
-        assert "Queued for the next turn" in content
+        assert "다음 꼬리에 묶어뒀어" in content
         assert "First-time tip" in content
         assert "/busy interrupt" in content
         # Must NOT tell the user to /busy queue when they're already on queue.
         assert "/busy queue" not in content
+
+    @pytest.mark.asyncio
+    async def test_busy_ack_uses_hardcoded_miho_copy(self, monkeypatch):
+        """Busy-session ack should not depend on an auxiliary LLM."""
+        runner, _sentinel = _make_runner()
+        runner._busy_input_mode = "queue"
+        adapter = _make_adapter()
+        event = _make_event(text="이어서 이것도 봐줘")
+        sk = build_session_key(event.source)
+
+        agent = MagicMock()
+        agent.get_activity_summary.return_value = {
+            "api_call_count": 3,
+            "max_iterations": 90,
+            "current_tool": "terminal",
+            "last_activity_desc": "running terminal",
+            "seconds_since_activity": 1.0,
+        }
+        runner._running_agents[sk] = agent
+        runner._running_agents_ts[sk] = time.time() - 120
+        runner.adapters[event.source.platform] = adapter
+
+        import gateway.progress_copy as progress_copy
+
+        called = {"value": False}
+
+        async def fake_generate_gateway_progress_copy(**kwargs):
+            called["value"] = True
+            return "좋아, 지금 작업 흐름은 유지하고 이 요청은 다음 순서로 붙여둘게."
+
+        monkeypatch.setattr(progress_copy, "generate_gateway_progress_copy", fake_generate_gateway_progress_copy)
+
+        result = await runner._handle_active_session_busy_message(event, sk)
+
+        assert result is True
+        content = adapter._send_with_retry.call_args.kwargs.get("content", "")
+        assert "다음 꼬리에 묶어뒀어" in content
+        assert "terminal" in content
+        assert called["value"] is False

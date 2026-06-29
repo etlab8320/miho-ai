@@ -349,6 +349,7 @@ async def test_send_restart_notification_delivers_and_cleans_up(tmp_path, monkey
     notify_path.write_text(json.dumps({
         "platform": "telegram",
         "chat_id": "42",
+        "summary": "- 하트비트 경로를 고정 문구로 바꿨어\n- 재시작 알림을 보강했어",
     }))
 
     runner, adapter = make_restart_runner()
@@ -360,7 +361,9 @@ async def test_send_restart_notification_delivers_and_cleans_up(tmp_path, monkey
     adapter.send.assert_called_once()
     call_args = adapter.send.call_args
     assert call_args[0][0] == "42"  # chat_id
-    assert "restarted" in call_args[0][1].lower()
+    assert "재시작 끝났어" in call_args[0][1]
+    assert "방금 작업 내용" in call_args[0][1]
+    assert "하트비트 경로" in call_args[0][1]
     assert call_args[1].get("metadata") is None  # no thread
     assert not notify_path.exists()
 
@@ -497,6 +500,62 @@ async def test_send_restart_notification_logs_warning_on_sendresult_failure(
 
 
 @pytest.mark.asyncio
+async def test_send_restart_notification_ignores_platform_suppression_for_requester(
+    tmp_path, monkeypatch
+):
+    """The direct requester comeback ping must survive gateway_restart_notification=False."""
+    monkeypatch.setattr(gateway_run, "_miho_home", tmp_path)
+
+    notify_path = tmp_path / ".restart_notify.json"
+    notify_path.write_text(json.dumps({
+        "platform": "telegram",
+        "chat_id": "42",
+    }))
+
+    runner, adapter = make_restart_runner()
+    runner.config.platforms[Platform.TELEGRAM].gateway_restart_notification = False
+    adapter.send = AsyncMock(return_value=SendResult(success=True, message_id="restart"))
+
+    delivered_target = await runner._send_restart_notification()
+
+    assert delivered_target == ("telegram", "42", None)
+    adapter.send.assert_called_once()
+    assert "게이트웨이 재시작 끝났어" in adapter.send.call_args.args[1]
+    assert not notify_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_active_restart_shutdown_seeds_comeback_notification_when_external_restart(
+    tmp_path, monkeypatch
+):
+    """External service restarts should still ping the active chat after reconnect."""
+    monkeypatch.setattr(gateway_run, "_miho_home", tmp_path)
+
+    runner, adapter = make_restart_runner()
+    runner._restart_requested = True
+    runner.config.platforms[Platform.TELEGRAM].gateway_restart_notification = False
+    source = make_restart_source(chat_id="42", thread_id="topic-7")
+    session_key = build_session_key(source)
+    runner._running_agents[session_key] = object()
+    runner._cache_session_source(session_key, source)
+
+    await runner._notify_active_sessions_of_shutdown()
+
+    sent_calls = getattr(adapter, "sent_calls")
+    assert sent_calls
+    chat_id, content, metadata = sent_calls[0]
+    assert chat_id == "42"
+    assert "게이트웨이를 갈아타는 중" in content
+    assert metadata == {"thread_id": "topic-7"}
+    data = json.loads((tmp_path / ".restart_notify.json").read_text())
+    assert data == {
+        "platform": "telegram",
+        "chat_id": "42",
+        "thread_id": "topic-7",
+    }
+
+
+@pytest.mark.asyncio
 async def test_send_home_channel_startup_notification_skipped_when_flag_disabled(
     tmp_path, monkeypatch
 ):
@@ -544,15 +603,10 @@ async def test_send_home_channel_startup_notification_default_flag_true(
 
 
 @pytest.mark.asyncio
-async def test_send_restart_notification_skipped_when_flag_disabled(
+async def test_send_restart_notification_delivers_when_flag_disabled(
     tmp_path, monkeypatch
 ):
-    """The /restart originator's notification also honors the per-platform flag.
-
-    Slack used by end users → flag off → no "Gateway restarted" message even
-    when an end user accidentally triggers /restart. The marker file is still
-    cleaned up so the notification doesn't leak into the next boot.
-    """
+    """The /restart originator's direct comeback ping ignores the generic mute flag."""
     monkeypatch.setattr(gateway_run, "_miho_home", tmp_path)
 
     notify_path = tmp_path / ".restart_notify.json"
@@ -567,8 +621,8 @@ async def test_send_restart_notification_skipped_when_flag_disabled(
 
     delivered_target = await runner._send_restart_notification()
 
-    assert delivered_target is None
-    adapter.send.assert_not_called()
+    assert delivered_target == ("telegram", "42", None)
+    adapter.send.assert_called_once()
     assert not notify_path.exists()
 
 

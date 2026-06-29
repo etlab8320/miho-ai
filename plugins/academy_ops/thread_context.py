@@ -196,6 +196,28 @@ def get_thread_context(key: str | None) -> dict[str, Any]:
     return {name: value for name, value in item.items() if name != "updated_at"}
 
 
+def clear_thread_contexts_by_prefix(prefix: str) -> int:
+    """Delete short-lived academy context rows for one Discord thread.
+
+    The context key format ends with the Discord user id, so thread deletion
+    must remove every user-scoped row that shares the thread prefix.
+    """
+    clean = str(prefix or "")
+    if not clean:
+        return 0
+    removed = 0
+    for key in list(_CONTEXTS):
+        if key.startswith(clean):
+            _CONTEXTS.pop(key, None)
+            removed += 1
+    db = _get_db_path()
+    _ensure_schema(db)
+    with sqlite3.connect(db) as conn:
+        cur = conn.execute("DELETE FROM thread_context WHERE key LIKE ?", (clean + "%",))
+        removed += int(cur.rowcount or 0)
+    return removed
+
+
 def remember_thread_context(
     key: str | None,
     *,

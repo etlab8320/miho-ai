@@ -86,6 +86,7 @@ def run_self_harness_autopilot(
     call_llm: LlmCaller | None = None,
     extract_content: ContentExtractor | None = None,
     max_activations: int | None = 1,
+    allow_activation: bool = True,
 ) -> dict[str, Any]:
     """Run one full autonomous Self-Harness cycle and return a summary.
 
@@ -131,6 +132,7 @@ def run_self_harness_autopilot(
                 smoke=smoke,
                 registry=registry,
                 base_dir=base_dir,
+                allow_activation=allow_activation,
             )
         except Exception as exc:  # one bad candidate must not abort the loop
             logger.warning("self-harness candidate %s failed: %s", candidate_id, exc, exc_info=True)
@@ -344,6 +346,7 @@ def _process_candidate(
     smoke: ReceiptRunner,
     registry: Any,
     base_dir: Any,
+    allow_activation: bool = True,
 ) -> dict[str, Any]:
     candidate_id = str(candidate.get("id") or "")
     if not is_agentic_candidate(candidate):
@@ -356,6 +359,17 @@ def _process_candidate(
             "record": {
                 "candidate_id": candidate_id,
                 "reason": decision["reason"],
+                "missing_tests": decision["missing_tests"],
+                "failed_tests": decision["failed_tests"],
+                "contract_errors": decision["contract_errors"],
+            },
+        }
+    if not allow_activation:
+        return {
+            "bucket": "held",
+            "record": {
+                "candidate_id": candidate_id,
+                "reason": "activation_disabled",
                 "missing_tests": decision["missing_tests"],
                 "failed_tests": decision["failed_tests"],
                 "contract_errors": decision["contract_errors"],
