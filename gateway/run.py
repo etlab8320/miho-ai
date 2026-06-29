@@ -17546,7 +17546,8 @@ class GatewayRunner:
                 try:
                     _notify_res = await _notify_adapter.send(
                         source.chat_id,
-                        f"⏳ Still working... ({_elapsed_mins} min elapsed{_status_detail})",
+                        f"⏳ 아직 작업 중이야. 멈춘 게 아니고 계속 진행 중. "
+                        f"({_elapsed_mins}분 경과{_status_detail})",
                         metadata=_status_thread_metadata,
                     )
                     if (

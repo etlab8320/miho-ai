@@ -66,7 +66,7 @@ def handle_finish_reason_and_length(
             truncated_response_parts=truncated_response_parts,
         )
 
-    if agent.api_mode in {"chat_completions", "bedrock_converse", "anthropic_messages"}:
+    if agent.api_mode in {"chat_completions", "bedrock_converse", "anthropic_messages", "codex_responses"}:
         if trunc_msg is not None and not trunc_has_tool_calls:
             return _text_continuation_result(
                 agent=agent,
@@ -252,6 +252,17 @@ def _text_continuation_result(
         )
 
     partial = agent._strip_think_blocks("".join(truncated_response_parts)).strip()
+    if partial:
+        partial = (
+            partial
+            + "\n\n⚠️ 답변이 길이 제한에 걸려 여기까지 전달했어. "
+            "작업 결과를 잃지 않도록 부분 결과를 먼저 보냈고, 이어서 물어보면 바로 계속 정리할게."
+        )
+    else:
+        partial = (
+            "⚠️ 답변이 출력 길이 제한에 걸려 완성본을 만들지 못했어. "
+            "작업 자체는 중단하지 않았고, 다음 메시지에서 이어서 정리할 수 있어."
+        )
     agent._cleanup_task_resources(effective_task_id)
     agent._persist_session(messages, conversation_history)
     return LengthRecoveryResult(
@@ -262,7 +273,7 @@ def _text_continuation_result(
         truncated_response_parts,
         False,
         {
-            "final_response": partial or None,
+            "final_response": partial,
             "messages": messages,
             "api_calls": api_call_count,
             "completed": False,
@@ -336,7 +347,10 @@ def _rollback_or_fail_first_truncation(
     effective_task_id: str,
 ) -> LengthRecoveryResult:
     if len(messages) > 1:
-        agent._vprint(f"{agent.log_prefix}   ⏪ Rolling back to last complete assistant turn")
+        agent._vprint(
+            f"{agent.log_prefix}   ⏪ Output was truncated after prior work; "
+            "returning a user-visible checkpoint instead of going silent"
+        )
         rolled_back_messages = agent._get_messages_up_to_last_assistant(messages)
         agent._cleanup_task_resources(effective_task_id)
         agent._persist_session(messages, conversation_history)
@@ -348,7 +362,11 @@ def _rollback_or_fail_first_truncation(
             truncated_response_parts,
             False,
             {
-                "final_response": None,
+                "final_response": (
+                    "⚠️ 답변이 출력 길이 제한에 걸려 마지막 문장을 완성하지 못했어. "
+                    "그래도 작업 결과를 잃지 않도록 여기서 멈췄다고 알려줄게. "
+                    "바로 다음 메시지에서 이전 도구 결과를 이어 받아 정리할 수 있어."
+                ),
                 "messages": rolled_back_messages,
                 "api_calls": api_call_count,
                 "completed": False,
@@ -367,7 +385,11 @@ def _rollback_or_fail_first_truncation(
         truncated_response_parts,
         False,
         {
-            "final_response": None,
+            "final_response": (
+                "⚠️ 첫 답변이 출력 길이 제한에 걸려 완성되지 못했어. "
+                "작업이 조용히 사라지지 않도록 실패 상태를 먼저 전달했어. "
+                "짧게 다시 요청하거나, 이어서 요약하라고 보내줘."
+            ),
             "messages": messages,
             "api_calls": api_call_count,
             "completed": False,
