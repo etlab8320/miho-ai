@@ -3488,6 +3488,33 @@ class BasePlatformAdapter(ABC):
                     )
                     _record_delivery(result)
 
+                    if result is not None and not getattr(result, "success", False):
+                        # UX safety net: if the real final answer failed to
+                        # send (most often platform length/format limits), do
+                        # not leave the user with silence after a long run.
+                        # Send a tiny plain-text notice through the adapter's
+                        # raw send path.  If the platform itself is down this
+                        # will fail too, but failures are swallowed so this
+                        # fallback can never break the normal pipeline.
+                        try:
+                            await self.send(
+                                chat_id=event.source.chat_id,
+                                content=(
+                                    "작업은 끝났는데 최종 답변 전송에 실패했어. "
+                                    "대부분 메시지가 너무 길거나 플랫폼 형식 제한에 걸린 경우야. "
+                                    "`/status`로 상태를 확인하거나 같은 요청을 조금 짧게 다시 보내줘."
+                                ),
+                                reply_to=_reply_anchor,
+                                metadata=_thread_metadata,
+                            )
+                        except Exception:
+                            logger.debug(
+                                "[%s] Final-delivery failure notice also failed for %s",
+                                self.name,
+                                event.source.chat_id,
+                                exc_info=True,
+                            )
+
                     # Schedule auto-deletion of system-notice replies.
                     # Detached so the handler returns immediately; errors
                     # (permission denied, message too old) are swallowed.
