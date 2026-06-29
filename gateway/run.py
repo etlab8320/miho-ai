@@ -6719,6 +6719,34 @@ class GatewayRunner:
         # are system-generated and must skip user authorization.
         is_internal = bool(getattr(event, "internal", False))
 
+        # Send a tiny receipt before any potentially-slow pre-dispatch hook.
+        # Some broad domain routers may do network work before the main agent
+        # starts; without a receipt the user sees silence and assumes the bot
+        # ignored them. Keep it authorized + non-command only to avoid leaking
+        # presence to unauthorized senders or cluttering slash-command UX.
+        if not is_internal:
+            try:
+                raw_text = str(getattr(event, "text", "") or "").strip()
+                should_ack = (
+                    source.platform == Platform.DISCORD
+                    and raw_text
+                    and not raw_text.startswith("/")
+                    and source.user_id is not None
+                    and self._is_user_authorized(source)
+                    and os.getenv("MIHO_GATEWAY_IMMEDIATE_ACK", "1").strip().lower()
+                    not in {"0", "false", "no", "off"}
+                )
+                if should_ack:
+                    adapter = self.adapters.get(source.platform)
+                    if adapter:
+                        await adapter.send(
+                            source.chat_id,
+                            "받았어. 확인 중.",
+                            metadata=self._thread_metadata_for_source(source),
+                        )
+            except Exception as _ack_exc:
+                logger.debug("gateway initial ack failed: %s", _ack_exc)
+
         # Fire pre_gateway_dispatch plugin hook for user-originated messages.
         # Plugins receive the MessageEvent and may return a dict influencing flow:
         #   {"action": "skip",    "reason": ...}    -> drop (no reply, plugin handled)
