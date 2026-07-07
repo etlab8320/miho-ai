@@ -176,7 +176,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
                subcommands=("status", "run", "pause", "resume", "pin", "unpin", "restore", "list-archived")),
     CommandDef("evolution", "Auditable Miho evolution ledger, snapshots, rollbacks, and System WikiGraph",
                "Tools & Skills", args_hint="[status|list|show|snapshot|rollback|record|mine|cycle|wikigraph]",
-               subcommands=("status", "list", "ls", "show", "snapshot", "rollback", "record", "mine", "propose", "validate", "promote", "cycle", "train", "immunity", "doctor", "autopilot", "wikigraph", "wg", "query", "visualize", "viz", "relationships", "external-prompts", "external-prompt-corpus", "prompts", "install-hooks", "watch-once")),
+               subcommands=("status", "list", "ls", "show", "snapshot", "rollback", "record", "mine", "propose", "validate", "promote", "cycle", "train", "immunity", "doctor", "autopilot", "wikigraph", "wg", "query", "visualize", "viz", "relationships", "external-prompts", "external-prompt-corpus", "prompts", "frontend-tools", "frontend-tool-corpus", "frontends", "install-hooks", "watch-once")),
     CommandDef("kanban", "Multi-profile collaboration board (tasks, links, comments)",
                "Tools & Skills", args_hint="[subcommand]",
                subcommands=("init", "boards", "create", "list", "ls", "show", "assign",

@@ -9,6 +9,7 @@ def test_evolution_registry_includes_wikigraph():
     assert "wikigraph" in cmd.subcommands
     assert "wg" in cmd.subcommands
     assert "external-prompts" in cmd.subcommands
+    assert "frontend-tools" in cmd.subcommands
     assert "install-hooks" in cmd.subcommands
     assert "visualize" in cmd.subcommands
 
@@ -51,16 +52,24 @@ def test_evolution_wikigraph_relationships_cli(tmp_path, monkeypatch, capsys):
 
 def test_evolution_wikigraph_external_prompts_sync_cli(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho-home"))
-    source = tmp_path / "prompt-corpus"
+    source = tmp_path / "external-prompts"
     source.mkdir()
-    (source / "agent.md").write_text(
-        "Use tools, protect secrets, run tests, and verify before final answer.",
-        encoding="utf-8",
-    )
+    (source / "agent.md").write_text("Use tools, protect secrets, run tests.", encoding="utf-8")
 
-    code = cli_main(["wikigraph", "external-prompts", "sync", "--source", str(source)])
+    rc = cli_main(["wikigraph", "external-prompts", "sync", "--source", str(source)])
 
-    assert code == 0
     out = capsys.readouterr().out
+    assert rc == 0
     assert "wikigraph: external prompt corpus synced" in out
     assert "artifacts_indexed=1" in out
+
+
+def test_evolution_wikigraph_frontend_tools_sync_cli(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("MIHO_HOME", str(tmp_path / "miho-home"))
+
+    rc = cli_main(["wikigraph", "frontend-tools", "sync"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "wikigraph: frontend tool corpus synced" in out
+    assert "tools_indexed=" in out

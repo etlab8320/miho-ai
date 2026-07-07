@@ -275,6 +275,7 @@ def _cmd_wikigraph(args) -> int:
     system_wikigraph = importlib.import_module("agent.system_wikigraph")
     relationships = importlib.import_module("agent.system_wikigraph_relationships")
     external_prompts = importlib.import_module("agent.external_prompt_corpus")
+    frontend_tools = importlib.import_module("agent.frontend_tool_corpus")
 
     action = getattr(args, "wikigraph_action", None)
     if action == "init":
@@ -355,6 +356,24 @@ def _cmd_wikigraph(args) -> int:
             return 0
         print("evolution wikigraph external-prompts: choose sync", file=sys.stderr)
         return 2
+    if action == "frontend-tools":
+        frontend_action = getattr(args, "frontend_tools_action", None)
+        if frontend_action == "sync":
+            result = frontend_tools.sync_frontend_tool_corpus()
+            summary = result.get("summary") or {}
+            print("wikigraph: frontend tool corpus synced")
+            print(
+                "  "
+                + ", ".join(
+                    f"{key}={summary.get(key, 0)}"
+                    for key in ("tools_indexed", "stacks_indexed", "edges")
+                )
+            )
+            print(f"  wiki:  {result['wiki_dir']}")
+            print(f"  graph: {result['db_path']}")
+            return 0
+        print("evolution wikigraph frontend-tools: choose sync", file=sys.stderr)
+        return 2
     if action == "install-hooks":
         result = system_wikigraph.install_git_hooks(project_root=getattr(args, "project_root", None), force=bool(getattr(args, "force", False)))
         print("wikigraph: git hooks installed")
@@ -368,7 +387,7 @@ def _cmd_wikigraph(args) -> int:
         result = system_wikigraph.watch_once(project_root=getattr(args, "project_root", None))
         print(f"wikigraph: watch-once sync #{result.get('sync_id')} changed_files={len(result.get('changed_files') or [])}")
         return 0
-    print("evolution wikigraph: choose init, sync, status, impact, query, visualize, relationships, external-prompts, install-hooks, or watch-once", file=sys.stderr)
+    print("evolution wikigraph: choose init, sync, status, impact, query, visualize, relationships, external-prompts, frontend-tools, install-hooks, or watch-once", file=sys.stderr)
     return 2
 
 
@@ -489,6 +508,11 @@ def register_cli(parent: argparse.ArgumentParser) -> None:
     wg_external_sync = wg_external_sub.add_parser("sync", help="Index local external prompt corpus metadata without copying prompt bodies")
     wg_external_sync.add_argument("--source", default=None, help="Local prompt corpus directory; defaults to ~/.miho/governance/external_prompt_corpus")
     wg_external_sync.set_defaults(func=_cmd_wikigraph, wikigraph_action="external-prompts")
+
+    wg_frontend = wg_sub.add_parser("frontend-tools", aliases=["frontend-tool-corpus", "frontends"], help="Index vetted frontend tool metadata and MAX/Miho adoption guidance")
+    wg_frontend_sub = wg_frontend.add_subparsers(dest="frontend_tools_action")
+    wg_frontend_sync = wg_frontend_sub.add_parser("sync", help="Index recommended frontend tool metadata without installing packages")
+    wg_frontend_sync.set_defaults(func=_cmd_wikigraph, wikigraph_action="frontend-tools")
 
     wg_hooks = wg_sub.add_parser("install-hooks", help="Install local git hooks that auto-sync WikiGraph after external edits")
     wg_hooks.add_argument("--project-root", default=None)
