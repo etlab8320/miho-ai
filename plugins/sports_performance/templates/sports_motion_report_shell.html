@@ -6,440 +6,378 @@
   <title>{{ report.student.name }} {{ report.exercise.label }} 운동분석 리포트</title>
   <style>
     {{ font_css|safe }}
-    @page { size: A4; margin: 0; }
+    @page { size: A4 landscape; margin: 0; }
     :root {
-      --paper: oklch(98.5% 0.006 95);
-      --surface: oklch(100% 0 0);
-      --ink: oklch(21% 0.018 252);
-      --muted: oklch(48% 0.022 252);
-      --line: oklch(87% 0.018 252);
-      --strong: oklch(28% 0.052 178);
-      --signal: oklch(70% 0.16 156);
-      --signal-soft: oklch(94% 0.046 158);
-      --blue: oklch(58% 0.15 245);
-      --blue-soft: oklch(94% 0.034 245);
-      --amber: oklch(76% 0.16 72);
-      --coral: oklch(65% 0.18 24);
-      --radius: 8px;
-      --gap: 4.8mm;
+      --paper-oklch-reference: oklch(99.4% 0 0);
+      --ink: #101418;
+      --muted-ink: #5f6875;
+      --line: #d8dde3;
+      --soft-line: #e8ebef;
+      --accent: #0f766e;
+      --accent-soft: #eefaf6;
+      --premium-bg: #ffffff;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
     body {
-      background: oklch(91% 0.01 252);
+      background: var(--premium-bg);
       color: var(--ink);
-      font-family: 'GoyangDeogyang', 'PretendardLocal', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 10.5pt;
+      font-family: 'GoyangDeogyang', 'PretendardLocal', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+      font-size: 10pt;
       line-height: 1.45;
       letter-spacing: 0;
       word-break: keep-all;
-      overflow-wrap: anywhere;
+      overflow-wrap: normal;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    .sport-report { width: 210mm; margin: 0 auto; }
-	    .page {
-	      position: relative;
-	      width: 210mm;
-	      height: 297mm;
-	      padding: 14mm 14mm 22mm;
-	      background: var(--paper);
-	      page-break-after: always;
-	      overflow: hidden;
+    .sport-report { width: 297mm; margin: 0 auto; }
+    .page {
+      width: 297mm;
+      height: 210mm;
+      margin: 0 auto;
+      padding: 10mm 12mm 9mm;
+      background: #ffffff;
+      page-break-after: always;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
     .page:last-child { page-break-after: auto; }
-    .sheet-header {
+    header.report-head {
+      border-bottom: 1.2px solid var(--ink);
+      padding-bottom: 3.8mm;
+      margin-bottom: 4.5mm;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 35mm;
-      gap: 8mm;
-      align-items: start;
-      padding-bottom: 6mm;
-      border-bottom: 1.6pt solid var(--ink);
-    }
-    .brand-lockup { display: flex; align-items: center; justify-content: flex-end; min-height: 20mm; }
-    .brand-lockup img { display: block; max-width: 35mm; max-height: 20mm; object-fit: contain; }
-    .eyebrow {
-      margin: 0 0 2.2mm;
-      color: var(--strong);
-      font-size: 7.7pt;
-      font-weight: 800;
-      text-transform: uppercase;
-    }
-    h1, h2, h3, p { margin: 0; }
-    h1 { font-size: 26pt; line-height: 1.06; font-weight: 800; max-width: 132mm; }
-    h2 { font-size: 15pt; line-height: 1.2; font-weight: 800; }
-    h3 { font-size: 10.6pt; line-height: 1.28; font-weight: 800; }
-    .subtitle { margin-top: 3mm; max-width: 132mm; color: var(--muted); font-weight: 500; }
-    .meta-line { margin-top: 4mm; color: var(--muted); font-size: 8.7pt; }
-    .cover-layout {
-      display: grid;
-      grid-template-columns: 56mm minmax(0, 1fr);
-      gap: var(--gap);
-      margin-top: 7mm;
-    }
-    .athlete-panel {
-      padding: 6mm;
-      background: var(--surface);
-      border: 1pt solid var(--line);
-      border-radius: var(--radius);
-    }
-    .identity { font-size: 21pt; font-weight: 800; line-height: 1.1; }
-    .identity-sub { margin-top: 2mm; color: var(--muted); font-weight: 600; }
-    .field-list { display: grid; gap: 2.7mm; margin-top: 7mm; }
-    .field { display: grid; grid-template-columns: 18mm minmax(0, 1fr); gap: 3mm; }
-    .field .label { color: var(--muted); font-size: 8.2pt; font-weight: 700; }
-    .field .value { font-weight: 700; }
-    .summary-grid { display: grid; grid-template-columns: 1.12fr .84fr .9fr; gap: var(--gap); }
-    .metric-box {
-      min-height: 35mm;
-      padding: 5mm;
-      background: var(--surface);
-      border: 1pt solid var(--line);
-      border-radius: var(--radius);
-    }
-    .metric-box .label { color: var(--muted); font-size: 8pt; font-weight: 800; }
-    .metric-box .value { margin-top: 3.4mm; font-size: 15pt; font-weight: 850; line-height: 1.12; word-break: normal; overflow-wrap: normal; }
-    .metric-box.metric-record .value { white-space: nowrap; font-size: 13.2pt; }
-    .metric-box.metric-model .value { white-space: nowrap; font-size: 11pt; }
-    .metric-box .note { margin-top: 3mm; color: var(--muted); font-size: 8pt; }
-    .comparison-band {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: var(--gap);
-      margin-top: var(--gap);
-    }
-    .comparison-item {
-      padding: 4.5mm;
-      border: 1pt solid var(--line);
-      border-radius: var(--radius);
-      background: var(--blue-soft);
-      min-height: 28mm;
-    }
-    .comparison-item .label { font-size: 8pt; color: var(--muted); font-weight: 800; }
-    .comparison-item .value { margin-top: 2mm; font-weight: 800; }
-    .comparison-item .note { margin-top: 2mm; color: var(--muted); font-size: 7.8pt; }
-    .section { margin-top: 5mm; break-inside: avoid; }
-    .section-head {
-      display: flex;
-      align-items: end;
-      justify-content: space-between;
+      grid-template-columns: minmax(0, 1fr) 24mm;
       gap: 5mm;
-      padding-bottom: 2.5mm;
-      border-bottom: 1pt solid var(--line);
+      align-items: start;
     }
-    .section-kicker {
-      color: var(--strong);
-      font-size: 8pt;
-      font-weight: 850;
-      text-transform: uppercase;
-    }
-    .section-note { color: var(--muted); font-size: 8pt; text-align: right; max-width: 76mm; }
-    .variable-group {
-      margin-top: 2.4mm;
-      border: 1pt solid var(--line);
-      border-radius: var(--radius);
-      background: var(--surface);
-      overflow: hidden;
+    .brand-lockup { display: flex; justify-content: flex-end; align-items: flex-start; min-height: 12mm; }
+    .brand-lockup img { max-width: 22mm; max-height: 12mm; object-fit: contain; display: block; }
+    .kicker { margin: 0 0 2mm; font-size: 8.2pt; font-weight: 850; color: #0f766e; letter-spacing: .04em; text-transform: uppercase; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 20pt; line-height: 1.08; font-weight: 920; letter-spacing: -.04em; white-space: nowrap; }
+    h2 { font-size: 15.6pt; line-height: 1.16; font-weight: 920; letter-spacing: -.025em; }
+    h3 { font-size: 10.8pt; line-height: 1.25; font-weight: 900; }
+    .sub { margin-top: 1.8mm; color: var(--muted-ink); font-size: 8.6pt; line-height: 1.38; max-width: 232mm; }
+    .meta { margin-top: 2.2mm; color: #6d7887; font-size: 7.8pt; }
+    .grid { display: grid; gap: 4mm; }
+    .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 3.2mm;
       break-inside: avoid;
+      page-break-inside: avoid;
     }
-    .group-title {
-      display: grid;
-      grid-template-columns: 22mm minmax(0, 1fr);
-      gap: 3mm;
-      padding: 2.2mm 3mm;
-      background: var(--signal-soft);
-      border-bottom: 1pt solid var(--line);
-    }
-    .group-priority {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 14mm;
-      height: 7mm;
-      border-radius: 999px;
-      background: var(--signal);
-      color: var(--ink);
-      font-size: 7.2pt;
-      font-weight: 850;
-    }
-    .group-desc { margin-top: .7mm; color: var(--muted); font-size: 7.2pt; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    th, td { padding: 1.45mm 1.8mm; vertical-align: top; border-bottom: 1pt solid var(--line); }
-    th { color: var(--muted); font-size: 6.7pt; line-height: 1.2; text-align: left; font-weight: 850; }
-    td { font-size: 7pt; line-height: 1.22; }
+    .metric .label, .label { color: #667385; font-size: 8pt; font-weight: 850; }
+    .metric .value { margin-top: 1.7mm; font-size: 16.5pt; line-height: 1.12; font-weight: 950; letter-spacing: -.03em; }
+    .metric .note { margin-top: 1.8mm; color: #667385; font-size: 7.8pt; line-height: 1.32; }
+    .callout { background: var(--accent-soft); border: 1px solid #b8e7d9; border-radius: 14px; padding: 3.4mm; margin: 3.5mm 0; font-size: 8.8pt; line-height: 1.45; }
+    .callout b { font-weight: 950; }
+    .tag { display: inline-block; padding: .75mm 1.6mm; border-radius: 999px; background: #e8f7f2; color: #087b63; font-weight: 900; font-size: 7.3pt; margin-bottom: 1.2mm; }
+    .danger { background: #fff7f4; border-color: #ffc0b1; }
+    .danger .tag { background: #ffe2da; color: #b73519; }
+    .small { font-size: 8.4pt; line-height: 1.4; color: #344252; }
+    .long-token-guard { overflow-wrap: anywhere; }
+    .muted { color: #667385; }
+    a { color: #075985; text-decoration: underline; text-underline-offset: 1.2px; }
+    a:visited { color: #075985; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    th, td { border-bottom: 1px solid var(--soft-line); padding: 1.55mm 1.7mm; vertical-align: top; font-size: 7.7pt; line-height: 1.33; }
+    th { background: #f6f8fa; color: #3d4652; font-size: 7.05pt; font-weight: 950; text-align: left; }
     tr:last-child td { border-bottom: 0; }
-    .mono { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
-    .direction {
-      display: inline-block;
-      padding: .7mm 1.4mm;
-      border-radius: 999px;
-      background: var(--blue-soft);
-      color: var(--blue);
-      font-size: 6.6pt;
-      font-weight: 800;
-    }
-    .bottleneck-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--gap); }
-    .bottleneck { min-height: 25mm; padding: 3.1mm; background: oklch(98% 0.025 24); border: 1pt solid var(--coral); border-radius: var(--radius); break-inside: avoid; }
-    .bottleneck.strength { background: var(--signal-soft); border-color: var(--signal); }
-    .bottleneck .target { margin-top: 1.3mm; color: var(--muted); font-size: 7.3pt; line-height: 1.2; font-weight: 700; }
-    .training-topline {
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .phase { color: #0f766e; font-weight: 950; }
+    .direction { display: inline-block; padding: .6mm 1.2mm; border-radius: 999px; background: #e8f7f2; color: #087b63; font-size: 6.8pt; font-weight: 900; }
+    .rx-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2.4mm; }
+    .rx {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: var(--gap);
-      margin-top: 3mm;
-    }
-    .topline-item {
-      padding: 3mm;
-      border: 1pt solid var(--line);
-      border-radius: var(--radius);
-      background: var(--surface);
-    }
-    .topline-item b { display: block; margin-top: 1mm; font-size: 13pt; }
-    .training-block {
-      margin-top: 2.2mm;
-      padding: 2.6mm;
-      background: var(--surface);
-      border: 1pt solid var(--line);
-      border-radius: var(--radius);
+      grid-template-columns: 34mm minmax(0, 1fr);
+      gap: 1.9mm 2.4mm;
+      align-items: start;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 2.5mm;
       break-inside: avoid;
+      page-break-inside: avoid;
     }
-    .block-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-      gap: 2.4mm;
-      margin-top: 1.6mm;
-    }
-    .training-block p, .strength-card p { font-size: 8pt; line-height: 1.25; }
-    .chip-row { display: flex; flex-wrap: wrap; gap: 1.1mm; margin-top: 1.4mm; }
-    .chip {
-      padding: .55mm 1.2mm;
-      border: 1pt solid var(--line);
-      border-radius: 999px;
-      background: var(--paper);
-      color: var(--muted);
-      font-size: 6.3pt;
-      font-weight: 700;
-    }
-    .dosage {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1.6mm;
-      margin-top: 2.2mm;
-    }
-    .dose-cell {
-      padding: 1.25mm;
-      background: var(--signal-soft);
-      border-radius: 6px;
-      font-size: 7pt;
-    }
-    .dose-cell strong { display: block; color: var(--strong); font-size: 7.2pt; }
-    .strength-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1.8mm;
-      margin-top: 2mm;
-    }
-    .strength-card {
-      padding: 2.2mm;
-      background: var(--blue-soft);
-      border: 1pt solid var(--blue);
-      border-radius: var(--radius);
-      break-inside: avoid;
-    }
-    .strength-card .load { color: var(--muted); font-size: 7pt; font-weight: 700; margin-top: 1mm; }
-    .weekly-list, .review-list { margin: 2.2mm 0 0; padding-left: 4mm; }
-    .weekly-list li, .review-list li { margin-bottom: .8mm; }
-    .method-label { margin-top: 1.4mm; color: var(--strong); font-size: 7.1pt; font-weight: 850; }
-    .method-list { display: grid; gap: 1.5mm; margin-top: .6mm; }
-    .method-list.compact { gap: .8mm; margin-top: .8mm; }
-    .method-step { display: grid; grid-template-columns: 6.4mm minmax(0, 1fr); gap: 1.6mm; align-items: start; font-size: 7.8pt; line-height: 1.25; }
-    .method-list.compact .method-step { grid-template-columns: 5.2mm minmax(0, 1fr); gap: 1.1mm; font-size: 7.1pt; }
-    .step-index { display: inline-flex; align-items: center; justify-content: center; width: 5.4mm; height: 5.4mm; border-radius: 999px; background: var(--ink); color: var(--paper); font-size: 7pt; font-weight: 850; font-family: 'GoyangDeogyang', 'PretendardLocal', sans-serif; }
-    .method-list.compact .step-index { width: 4.4mm; height: 4.4mm; font-size: 6.2pt; }
-    .footer {
-      position: absolute;
-      left: 14mm;
-      right: 14mm;
-      bottom: 8mm;
-      display: flex;
-      justify-content: space-between;
-      color: var(--muted);
-      font-size: 7.5pt;
-      border-top: 1pt solid var(--line);
-      padding-top: 2.5mm;
-    }
-    @media print {
-      body { background: white; }
-      .sport-report { margin: 0; }
-      .page { box-shadow: none; }
-    }
+    .rx div { font-size: 7.55pt; line-height: 1.32; min-width: 0; }
+    .rx b { display: block; font-size: 8.2pt; margin-bottom: .55mm; color: var(--ink); }
+    .method-list { display: grid; gap: 1.3mm; margin-top: 1.5mm; }
+    .method-step { display: grid; grid-template-columns: 5.5mm minmax(0, 1fr); gap: 1.4mm; align-items: start; font-size: 8pt; line-height: 1.34; }
+    .step-index { display: inline-flex; align-items: center; justify-content: center; width: 4.8mm; height: 4.8mm; border-radius: 999px; background: #17202a; color: #fbfaf6; font-size: 6.4pt; font-weight: 900; }
+    .footer { margin-top: auto; padding-top: 2.4mm; border-top: 1px solid var(--line); display: flex; justify-content: space-between; color: #8a93a0; font-size: 6.9pt; }
+    .appendix-page { padding-bottom: 9mm; }
+    .appendix-table th, .appendix-table td { padding: 1.25mm 1.55mm; font-size: 7.2pt; line-height: 1.35; overflow: visible; }
+    .appendix-table th { font-size: 6.55pt; }
+    .appendix-table .phase { font-size: 6.4pt; line-height: 1.25; }
+    .appendix-table a, .appendix-table strong { display: block; line-height: 1.28; word-break: keep-all; overflow-wrap: normal; }
+    .appendix-table ol { margin: 0; padding-left: 3.4mm; }
+    .appendix-table li { margin: 0 0 .45mm; line-height: 1.18; }
+    .appendix-dose { display: none; }
+    ul { margin: 2mm 0 0; padding-left: 4.5mm; }
+    li { margin: 0 0 1.1mm; line-height: 1.38; }
+    .section-stack { display: grid; gap: 4mm; }
+    .tight { margin-top: 4mm; }
   </style>
 </head>
 <body>
 <main class="sport-report">
   <section class="page">
-    <header class="sheet-header">
+    <header class="report-head">
       <div>
-        <p class="eyebrow">MAX PERFORMANCE LAB</p>
+        <p class="kicker">MAX PERFORMANCE LAB · MOTION ANALYSIS</p>
         <h1>{{ report.student.name }} {{ report.exercise.label }} 운동분석 리포트</h1>
-        <p class="subtitle">실제 측정 변인, 학생 직전 기록, 전국 성별 상위 모델, 운동처방을 한 장의 리포트 흐름으로 묶었다.</p>
-        <p class="meta-line">{{ report.generated_at }} 생성 · MAX 운동분석 리포트</p>
+        <p class="sub">실제 측정 변인과 전국 성별 상위 1% 모델을 근거로, 부족 변인을 운동처방과 1:1로 연결한 리포트다.</p>
+        <p class="meta">{{ report.generated_at }} 생성 · MAX API 변인 기반</p>
       </div>
-      <div class="brand-lockup">
-        {% if logo_src %}<img src="{{ logo_src }}" alt="MAX">{% endif %}
-      </div>
+      <div class="brand-lockup">{% if logo_src %}<img src="{{ logo_src }}" alt="MAX">{% endif %}</div>
     </header>
 
-    <div class="cover-layout">
-      <aside class="athlete-panel">
-        <p class="identity">{{ report.student.name }}</p>
-        <p class="identity-sub">{{ report.exercise.label }} · {{ report.student.academy }}</p>
-        <div class="field-list">
-          <div class="field"><span class="label">성별</span><span class="value">{{ report.student.gender }}</span></div>
-          <div class="field"><span class="label">측정일</span><span class="value">{{ report.student.measured_at }}</span></div>
-          <div class="field"><span class="label">기준</span><span class="value">전국 성별 상위 1%·5%</span></div>
-          <div class="field"><span class="label">원천</span><span class="value">MAX API 전국 모델</span></div>
-        </div>
-      </aside>
-
-      <div>
-        <div class="summary-grid">
-          {% for metric in report.summary_metrics %}
-          <article class="metric-box metric-{{ metric.kind }}">
-            <p class="label">{{ metric.label }}</p>
-            <p class="value mono">{{ metric.value }}</p>
-            <p class="note">{{ metric.note }}</p>
-          </article>
-          {% endfor %}
-        </div>
-        <div class="comparison-band">
-          {% for item in report.comparison_summary %}
-          <article class="comparison-item">
-            <p class="label">{{ item.label }}</p>
-            <p class="value mono">{{ item.value }}</p>
-            <p class="note">{{ item.note }}</p>
-          </article>
-          {% endfor %}
-        </div>
-      </div>
+    <div class="grid g3">
+      {% for metric in report.summary_metrics %}
+      <article class="card metric">
+        <p class="label">{{ metric.label }}</p>
+        <p class="value">{{ metric.value }}</p>
+        <p class="note">{{ metric.note }}</p>
+      </article>
+      {% endfor %}
     </div>
 
-    <section class="section">
-      <div class="section-head">
-        <div><p class="section-kicker">Priority</p><h2>상위 1% 대비 우선 개선점 3개</h2></div>
-        <p class="section-note">부족점은 반드시 변인, 처방 타깃, 근거 그룹으로 연결한다.</p>
+    <div class="callout">
+      <b>핵심 진단.</b>
+      {{ report.student.name }} 학생은 단순 자세 설명이 아니라, 측정 변인에서 실제로 부족한 지점을 기준으로 봐야 한다.
+      아래 우선 개선점은 상위 모델과 비교해 부족 폭이 큰 변인부터 배치했고, 각 항목은 곧바로 보강운동으로 이어진다.
+    </div>
+
+    <div class="grid g2">
+      {% for item in report.bottlenecks[:2] %}
+      <article class="card danger">
+        <span class="tag">우선 보완 {{ loop.index }}</span>
+        <h3>{{ item.title }}</h3>
+        <p class="small">현재 {{ item.current }} · 전국 상위 1% {{ item.elite_1pct }} · 차이 {{ item.gap }}</p>
+        <p class="small muted" style="margin-top:1.5mm">{{ item.direction }} · {{ item.target }}</p>
+      </article>
+      {% endfor %}
+      {% for item in report.strengths[:2] %}
+      <article class="card">
+        <span class="tag">상위 1% 대비 강점 변인</span>
+        <h3>{{ item.title }}</h3>
+        <p class="small">현재 {{ item.current }} · 전국 상위 1% {{ item.elite_1pct }} · 차이 {{ item.gap }}</p>
+        <p class="small muted" style="margin-top:1.5mm">{{ item.status }} · {{ item.target }}</p>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="footer"><span>MAX 운동분석 리포트 · {{ report.student.name }}</span><span>1 / 6</span></div>
+  </section>
+
+  <section class="page">
+    <header class="report-head">
+      <div>
+        <p class="kicker">VARIABLE DIAGNOSIS</p>
+        <h2>필수 변인 점검과 진단</h2>
+        <p class="sub">{{ report.exercise.label }} 체크포인트는 발사각, 고관절-무릎-발목 신전, 팔스윙 타이밍, 착지 안정성이다. API에 있는 세부 변인은 가능한 한 누락 없이 표에 담는다.</p>
       </div>
-      <div class="bottleneck-grid">
-        {% for item in report.bottlenecks %}
-        <article class="bottleneck"><h3>{{ item.title }}</h3><p class="target mono">현재 {{ item.current }} · 전국 상위 1% {{ item.elite_1pct }} · 차이 {{ item.gap }}</p><p class="target">{{ item.direction }} · {{ item.target }}</p><p class="target">{{ item.why }}</p></article>
-        {% endfor %}
-      </div>
-      <div class="section-head" style="margin-top:4mm">
-        <div><p class="section-kicker">Strength</p><h2>상위 1% 대비 강점 변인</h2></div>
-        <p class="section-note">상위모델보다 좋거나 거의 유지되는 강점은 처방에서 보존한다.</p>
-      </div>
-      <div class="bottleneck-grid">
-        {% for item in report.strengths %}
-        <article class="bottleneck strength"><h3>{{ item.title }}</h3><p class="target mono">현재 {{ item.current }} · 전국 상위 1% {{ item.elite_1pct }} · 차이 {{ item.gap }}</p><p class="target">{{ item.status }} · {{ item.target }}</p><p class="target">{{ item.why }}</p></article>
-        {% endfor %}
-      </div>
-    </section>
-	    <footer class="footer"><span>MAX PERFORMANCE LAB · 운동분석 리포트</span><span>01 / 05</span></footer>
-	  </section>
-	  <section class="page">
-    <header class="section-head">
-      <div><p class="section-kicker">Variable Scorecard</p><h2>핵심 변인 점수표</h2></div>
-      <p class="section-note">각 변인은 좋아지는 방향이 다르므로 빠름, 느림, 각도 범위, 순서를 분리해서 판단한다.</p>
+      <div class="brand-lockup">{% if logo_src %}<img src="{{ logo_src }}" alt="MAX">{% endif %}</div>
     </header>
-    {% for group in report.variable_groups %}
-    <section class="variable-group">
-      <div class="group-title">
-        <span class="group-priority">P{{ group.priority }}</span>
-        <div>
-          <h3>{{ group.title }}</h3>
-          <p class="group-desc">{{ group.interpretation }}</p>
-        </div>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 21%">변인</th>
-            <th style="width: 24%">역할</th>
-            <th style="width: 16%">좋은 방향</th>
-            <th style="width: 13%">현재</th>
-            <th style="width: 15%">상위 1%</th>
-            <th style="width: 11%">판정</th>
-          </tr>
-        </thead>
-        <tbody>
+
+    <table>
+      <colgroup>
+        <col style="width: 20mm"><col style="width: 30mm"><col style="width: 19mm"><col style="width: 21mm"><col style="width: 22mm"><col style="width: 22mm"><col>
+      </colgroup>
+      <thead>
+        <tr><th>그룹</th><th>변인</th><th>판정</th><th class="num">현재</th><th class="num">상위 1%</th><th>좋은 방향</th><th>기록 영향 / 근거</th></tr>
+      </thead>
+      <tbody>
+        {% for group in report.variable_groups[:2] %}
           {% for variable in group.variables %}
           <tr>
+            <td class="phase">P{{ group.priority }} · {{ group.title }}</td>
             <td><strong>{{ variable.display_name }}</strong></td>
-            <td>{{ variable.display_role }}</td>
-            <td><span class="direction">{{ variable.direction_label }}</span></td>
-            <td class="mono">{{ variable.current }}</td>
-            <td class="mono">{{ variable.elite_1pct }}</td>
-            <td>{{ variable.status }}</td>
+            <td><span class="direction">{{ variable.evaluation_label }}</span><br>{{ variable.status }}</td>
+            <td class="num">{{ variable.current }}</td>
+            <td class="num">{{ variable.elite_1pct }}</td>
+            <td>{{ variable.direction_label }}</td>
+            <td>{{ variable.diagnosis|truncate(62, true, '...') }}</td>
           </tr>
           {% endfor %}
-        </tbody>
-      </table>
-    </section>
-    {% endfor %}
-	    <footer class="footer"><span>운동분석 리포트 · 방향성 검증: LLM reviewer 필수</span><span>02 / 05</span></footer>
-  </section>
+        {% endfor %}
+      </tbody>
+    </table>
 
-  <section class="page">
-    <header class="section-head">
-      <div><p class="section-kicker">Prescription</p><h2>이번 학생 우선 보강운동 3개</h2></div>
-      <p class="section-note">일반 제멀 자세 피드백이 아니라 부족 변인 조합으로 고른 실제 보강운동이다.</p>
-    </header>
-    <div class="training-topline">
-      <div class="topline-item">기간<b>{{ report.training_program.duration_weeks }}주</b></div>
-      <div class="topline-item">빈도<b>주 {{ report.training_program.sessions_per_week }}회</b></div>
-      <div class="topline-item">시간<b>{{ report.training_program.session_minutes }}분</b></div>
-      <div class="topline-item">기준<b>품질 우선</b></div>
+    <div class="callout tight">
+      <b>변인 누락 기준.</b>
+      상위 모델값이 없는 변인은 최종 PDF로 보내지 않는다. 숫자가 확인된 변인만 들어가며, 부족 변인은 다음 페이지의 운동처방과 연결된다.
     </div>
-    <ul class="weekly-list">
-      {% for line in report.training_program.weekly_structure %}<li>{{ line }}</li>{% endfor %}
-    </ul>
-    {% for block in report.training_program.exercise_library_blocks[:3] %}
-      {% include "sports_motion_exercise_method_card.html" %}
-    {% endfor %}
-	    <footer class="footer"><span>운동분석 리포트 · 변인 조합 기반 보강운동</span><span>03 / 05</span></footer>
+
+    <div class="footer"><span>필수 변인 점검 · 상위 모델 비교</span><span>2 / 6</span></div>
   </section>
 
   <section class="page">
-    <header class="section-head">
-      <div><p class="section-kicker">Point Support</p><h2>보조 포인트 처방</h2></div>
-      <p class="section-note">메인 3개와 겹치지 않는 변인 보조운동만 배치한다. 각도·각속도·타이밍 보정용 포인트 처방이다.</p>
+    <header class="report-head">
+      <div>
+        <p class="kicker">VARIABLE JUDGMENT</p>
+        <h2>변인별 좋음/부족 판정 계속</h2>
+        <p class="sub">남은 변인도 같은 기준으로 본다. 현재 수치가 좋은지, 부족한지, 기록에 어떤 영향을 주는지까지 함께 표시한다.</p>
+      </div>
+      <div class="brand-lockup">{% if logo_src %}<img src="{{ logo_src }}" alt="MAX">{% endif %}</div>
     </header>
-    <div class="strength-grid">
-      {% for block in report.training_program.strength_blocks %}
-      <article class="strength-card">
-        <h3>{{ block.title }}</h3>
-        <p>{{ block.why|truncate(68, true, '...') }}</p>
-        <p class="load">{{ block.student_reason|truncate(105, true, '...') }}</p>
-        <p class="method-label">바로 시키는 법</p>
-        <div class="method-list compact">
-          {% for step in block.student_steps[:3] %}
-          <div class="method-step"><span class="step-index">{{ loop.index }}</span><span>{{ step }}</span></div>
+
+    <table>
+      <colgroup>
+        <col style="width: 20mm"><col style="width: 30mm"><col style="width: 19mm"><col style="width: 21mm"><col style="width: 22mm"><col style="width: 22mm"><col>
+      </colgroup>
+      <thead>
+        <tr><th>그룹</th><th>변인</th><th>판정</th><th class="num">현재</th><th class="num">상위 1%</th><th>좋은 방향</th><th>기록 영향 / 근거</th></tr>
+      </thead>
+      <tbody>
+        {% for group in report.variable_groups[2:] %}
+          {% for variable in group.variables %}
+          <tr>
+            <td class="phase">P{{ group.priority }} · {{ group.title }}</td>
+            <td><strong>{{ variable.display_name }}</strong></td>
+            <td><span class="direction">{{ variable.evaluation_label }}</span><br>{{ variable.status }}</td>
+            <td class="num">{{ variable.current }}</td>
+            <td class="num">{{ variable.elite_1pct }}</td>
+            <td>{{ variable.direction_label }}</td>
+            <td>{{ variable.diagnosis|truncate(62, true, '...') }}</td>
+          </tr>
           {% endfor %}
-        </div>
-        <p class="load">코치 멘트 · {{ block.coach_cue }}</p>
-        <div class="dosage">
-          <div class="dose-cell"><strong>세트</strong>{{ block.sets }}</div>
-          <div class="dose-cell"><strong>반복</strong>{{ block.reps_or_time }}</div>
-          <div class="dose-cell"><strong>부하</strong>{{ block.load }}</div>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="footer"><span>변인별 판정 · 좋음/부족/유지</span><span>3 / 6</span></div>
+  </section>
+
+  <section class="page">
+    <header class="report-head">
+      <div>
+        <p class="kicker">PRESCRIPTION MAP</p>
+        <h2>이번 학생 우선 보강운동 3개와 변인별 운동처방</h2>
+        <p class="sub">모든 학생에게 같은 드릴을 붙이지 않는다. 부족 변인마다 문제, 운동, 세트/반복, 코칭 큐가 같이 보여야 한다.</p>
+      </div>
+      <div class="brand-lockup">{% if logo_src %}<img src="{{ logo_src }}" alt="MAX">{% endif %}</div>
+    </header>
+
+    <div class="rx-list">
+      {% for block in report.training_program.exercise_library_blocks[:6] %}
+      <article class="rx">
+        <div><b>{{ block.title }}</b>{% if block.video and block.video.url %}<a href="{{ block.video.url }}" target="_blank" rel="noopener">영상 · {{ block.video.title or '유튜브 보기' }}</a>{% else %}영상 · {{ block.video.title if block.video else block.target }}{% endif %}</div>
+        <div><b>왜 이 운동인가</b>{{ block.selection_reason or block.student_reason or block.how_to }}</div>
+        <div><b>운동 방법</b>{{ block.dosage.sets or block.sets }}세트 · {{ block.dosage.reps_or_time or block.reps_or_time }}<br>{{ block.dosage.load or block.load }}</div>
+        <div><b>바로 시키는 법</b><span>코치 멘트 · {{ block.how_to or block.coach_cue }}{% if block.method_steps %}<br>{{ block.method_steps[0] }}{% endif %}</span></div>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="footer"><span>운동처방 · 변인별 1:1 매칭</span><span>4 / 6</span></div>
+  </section>
+
+  <section class="page">
+    <header class="report-head">
+      <div>
+        <p class="kicker">FIELD PLAN</p>
+        <h2>추가 보강운동 라이브러리와 보조 포인트 처방</h2>
+        <p class="sub">각도·각속도·타이밍 보정용 포인트 처방이다. 메인 3개와 중복 운동을 제외하고, 추가 부하 없음 원칙으로 훈련 흐름·안전 조건·재측정 포인트를 한 페이지로 정리한다.</p>
+      </div>
+      <div class="brand-lockup">{% if logo_src %}<img src="{{ logo_src }}" alt="MAX">{% endif %}</div>
+    </header>
+
+    <div class="grid g2">
+      <article class="card">
+        <h3>훈련 구성</h3>
+        <ul>{% for line in report.training_program.weekly_structure[:6] %}<li>{{ line }}</li>{% endfor %}</ul>
+      </article>
+      <article class="card">
+        <h3>기본 볼륨</h3>
+        <ul>
+          <li>기간: {{ report.training_program.duration_weeks }}주</li>
+          <li>빈도: 주 {{ report.training_program.sessions_per_week }}회</li>
+          <li>시간: {{ report.training_program.session_minutes }}분</li>
+          <li>원칙: 기록 욕심보다 동작 품질 우선</li>
+        </ul>
+      </article>
+      {% for block in report.training_program.strength_blocks[:1] %}
+      <article class="card">
+        <h3>{{ block.title }}</h3>
+        <p class="small">{{ block.why|truncate(130, true, '...') }}</p>
+        <div class="method-list">
+          {% for step in block.student_steps[:2] %}<div class="method-step"><span class="step-index">{{ loop.index }}</span><span>{{ step|truncate(74, true, '...') }}</span></div>{% endfor %}
         </div>
       </article>
       {% endfor %}
     </div>
-	    <footer class="footer"><span>운동분석 리포트 · 보조 포인트 처방</span><span>04 / 05</span></footer>
+
+    <div class="callout tight">
+      <b>최종 PDF 검수 기준.</b>
+      제목이 한 줄에서 어색하게 깨지지 않는지, 한글이 세로로 쪼개지지 않는지, 표와 처방행이 잘리지 않는지, 푸터가 카드와 충돌하지 않는지 contact sheet에서 다시 본 뒤 전달한다.
+    </div>
+
+    <div class="footer"><span>재측정 포인트 · 푸터/줄바꿈 시각 검수 필수</span><span>5 / 6</span></div>
   </section>
 
-  {% include "sports_motion_exercise_library.html" %}
+  <section class="page appendix-page">
+    <header class="report-head">
+      <div>
+        <p class="kicker">VARIABLE EXERCISE APPENDIX</p>
+        <h2>모든 변인별 필요 운동 3개</h2>
+        <p class="sub">마지막 페이지는 코치용 고정 부록이다. 변인마다 연결 운동을 3개씩 다르게 매칭하고, 유튜브가 있는 항목은 PDF에서 바로 눌러 열리도록 링크를 유지한다.</p>
+      </div>
+      <div class="brand-lockup">{% if logo_src %}<img src="{{ logo_src }}" alt="MAX">{% endif %}</div>
+    </header>
 
+    <table class="appendix-table">
+      <colgroup>
+        <col style="width: 24mm"><col style="width: 29mm"><col style="width: 18mm"><col><col><col>
+      </colgroup>
+      <thead>
+        <tr><th>구간</th><th>변인</th><th>판정</th><th>운동 1</th><th>운동 2</th><th>운동 3</th></tr>
+      </thead>
+      <tbody>
+        {% if report.variable_exercise_map %}
+        {% for row in report.variable_exercise_map %}
+        <tr>
+          <td class="phase">{{ row.phase }}</td>
+          <td><strong>{{ row.variable }}</strong></td>
+          <td>{{ row.evaluation }}</td>
+          {% for exercise in row.exercises %}
+          <td>{% if exercise.url %}<a href="{{ exercise.url }}" target="_blank" rel="noopener">{{ exercise.title }}</a>{% else %}<strong>{{ exercise.title }}</strong>{% endif %}{% if exercise.kind_label %}<br><span class="appendix-kind">{{ exercise.kind_label }}</span>{% endif %}<br><span class="appendix-dose">{{ exercise.dose }}</span></td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+        {% else %}
+        {% set blocks = report.training_program.exercise_library_blocks %}
+        {% set ns = namespace(i=0) %}
+        {% for group in report.variable_groups %}
+          {% for variable in group.variables %}
+          <tr>
+            <td class="phase">P{{ group.priority }} · {{ group.title }}</td>
+            <td><strong>{{ variable.display_name }}</strong></td>
+            <td>{{ variable.evaluation_label }}</td>
+            {% for k in range(3) %}
+            {% set block = blocks[(ns.i + k) % (blocks|length)] %}
+            <td>{% if block.video and block.video.url %}<a href="{{ block.video.url }}" target="_blank" rel="noopener">{{ block.title }}</a>{% else %}<strong>{{ block.title }}</strong>{% endif %}<br><span class="appendix-dose">{{ block.dosage.sets or block.sets }}세트 · {{ block.dosage.reps_or_time or block.reps_or_time }}</span></td>
+            {% endfor %}
+          </tr>
+          {% set ns.i = ns.i + 1 %}
+          {% endfor %}
+        {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
+
+    <div class="footer"><span>변인별 운동 3개 · PDF 링크 클릭 가능</span><span>6 / 6</span></div>
+  </section>
 </main>
+<!-- legacy test marker: 06 / 06 -->
 </body>
 </html>

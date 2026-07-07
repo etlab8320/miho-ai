@@ -193,6 +193,31 @@ def test_decision_prompt_contains_context_and_tool_contracts() -> None:
     assert "session_search" in joined
 
 
+def test_decision_prompt_prioritizes_legacy_susi_formula_goal_over_pdf_surface() -> None:
+    messages = build_decision_messages(
+        user_text="작년 대진대 입학처 수시 모집요강 PDF 보고 솔빈이 점수를 작년 산식으로 계산해봐",
+    )
+    joined = "\n".join(message["content"] for message in messages)
+
+    assert "작년 공식 모집요강" in joined
+    assert "개인 산식 비교" in joined
+    assert "susi26_rule_lookup" in joined
+    assert "susi27_score_calculate" in joined
+    assert "pixel_document_evidence" in joined
+
+
+def test_decision_tool_contracts_include_susi_prev_year_formula_workflow() -> None:
+    from plugins.decision_twin.contracts import decision_tool_contracts
+
+    contracts = decision_tool_contracts()
+    prev_contract = contracts["susi26_rule_lookup"]
+    current_contract = contracts["susi27_score_calculate"]
+
+    assert "작년 공식 모집요강" in prev_contract["purpose"]
+    assert "개인 산식 비교" in prev_contract["purpose"]
+    assert "susi26_rule_lookup" in current_contract["purpose"]
+
+
 def test_annotate_result_text_preserves_user_text() -> None:
     """원문이 맨 앞에 보존되고, routing directive가 뒤에 붙는다."""
     decision = parse_decision_payload(

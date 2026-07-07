@@ -273,6 +273,8 @@ def _cmd_wikigraph(args) -> int:
     import importlib
 
     system_wikigraph = importlib.import_module("agent.system_wikigraph")
+    relationships = importlib.import_module("agent.system_wikigraph_relationships")
+    external_prompts = importlib.import_module("agent.external_prompt_corpus")
 
     action = getattr(args, "wikigraph_action", None)
     if action == "init":
@@ -300,6 +302,11 @@ def _cmd_wikigraph(args) -> int:
         )
         if result.get("changed_files"):
             print(f"  changed_files: {len(result['changed_files'])}")
+        relation_result = relationships.sync_relationships(
+            project_root=getattr(args, "project_root", None)
+        )
+        relation_summary = relation_result.get("summary") or {}
+        print(f"  relationship_edges: {relation_summary.get('edges', 0)}")
         print(f"  wiki:  {result['wiki_dir']}")
         print(f"  graph: {result['db_path']}")
         return 0
@@ -318,6 +325,36 @@ def _cmd_wikigraph(args) -> int:
         print(f"  output: {result['output_path']}")
         print(f"  nodes={result['nodes']} edges={result['edges']} wiki_hits={result['wiki_hits']}")
         return 0
+    if action == "relationships":
+        if not bool(getattr(args, "no_sync", False)):
+            relationships.sync_relationships(project_root=getattr(args, "project_root", None))
+        result = relationships.render_governance_relationship_html(
+            output_path=getattr(args, "output", None),
+            limit=getattr(args, "limit", 180),
+        )
+        print("wikigraph: relationships visualized")
+        print(f"  output: {result['output_path']}")
+        print(f"  nodes={result['nodes']} edges={result['edges']}")
+        return 0
+    if action == "external-prompts":
+        external_action = getattr(args, "external_prompts_action", None)
+        if external_action == "sync":
+            result = external_prompts.sync_external_prompt_corpus(source=getattr(args, "source", None))
+            summary = result.get("summary") or {}
+            print("wikigraph: external prompt corpus synced")
+            print(f"  source: {result.get('source')}")
+            print(
+                "  "
+                + ", ".join(
+                    f"{key}={summary.get(key, 0)}"
+                    for key in ("files_scanned", "artifacts_indexed", "patterns_indexed", "edges", "skipped_sensitive", "skipped_large")
+                )
+            )
+            print(f"  wiki:  {result['wiki_dir']}")
+            print(f"  graph: {result['db_path']}")
+            return 0
+        print("evolution wikigraph external-prompts: choose sync", file=sys.stderr)
+        return 2
     if action == "install-hooks":
         result = system_wikigraph.install_git_hooks(project_root=getattr(args, "project_root", None), force=bool(getattr(args, "force", False)))
         print("wikigraph: git hooks installed")
@@ -331,7 +368,7 @@ def _cmd_wikigraph(args) -> int:
         result = system_wikigraph.watch_once(project_root=getattr(args, "project_root", None))
         print(f"wikigraph: watch-once sync #{result.get('sync_id')} changed_files={len(result.get('changed_files') or [])}")
         return 0
-    print("evolution wikigraph: choose init, sync, status, impact, query, visualize, install-hooks, or watch-once", file=sys.stderr)
+    print("evolution wikigraph: choose init, sync, status, impact, query, visualize, relationships, external-prompts, install-hooks, or watch-once", file=sys.stderr)
     return 2
 
 
@@ -439,6 +476,19 @@ def register_cli(parent: argparse.ArgumentParser) -> None:
     wg_visualize.add_argument("--output", default=None)
     wg_visualize.add_argument("--limit", type=int, default=90)
     wg_visualize.set_defaults(func=_cmd_wikigraph)
+
+    wg_relationships = wg_sub.add_parser("relationships", aliases=["relations", "governance-map"], help="Render the skill/tool/cron/agent failure-prevention map")
+    wg_relationships.add_argument("--project-root", default=None)
+    wg_relationships.add_argument("--output", default=None)
+    wg_relationships.add_argument("--limit", type=int, default=180)
+    wg_relationships.add_argument("--no-sync", action="store_true", help="Render from existing graph.db without refreshing relationships")
+    wg_relationships.set_defaults(func=_cmd_wikigraph)
+
+    wg_external = wg_sub.add_parser("external-prompts", aliases=["external-prompt-corpus", "prompts"], help="Index metadata-only external prompt corpora for governance comparison")
+    wg_external_sub = wg_external.add_subparsers(dest="external_prompts_action")
+    wg_external_sync = wg_external_sub.add_parser("sync", help="Index local external prompt corpus metadata without copying prompt bodies")
+    wg_external_sync.add_argument("--source", default=None, help="Local prompt corpus directory; defaults to ~/.miho/governance/external_prompt_corpus")
+    wg_external_sync.set_defaults(func=_cmd_wikigraph, wikigraph_action="external-prompts")
 
     wg_hooks = wg_sub.add_parser("install-hooks", help="Install local git hooks that auto-sync WikiGraph after external edits")
     wg_hooks.add_argument("--project-root", default=None)

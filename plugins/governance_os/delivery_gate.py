@@ -137,6 +137,7 @@ def _governance_transform_llm_output(
         decision,
         semantic_verdict,
         decision_factory=FinalDeliveryDecision,
+        known_playbooks=frozenset(registry.playbooks),
     )
     if decision.action == "block":
         retry_evidence = _delivery_evidence(decision, context=context, outcomes=outcomes)

@@ -24,13 +24,13 @@ Do not print or send the token.
 
 ## Verified endpoint
 
-Base URL comes from `MIHO_ACADEMY_PACA_BASE_URL` or defaults to `https://chejump.com` via `plugins.academy_ops.paca_client.DEFAULT_PACA_BASE_URL`.
+Base URL comes from `plugins.academy_ops.paca_config.resolve_paca_base_url()`, which honors `MIHO_ACADEMY_PACA_BASE_URL` first and then `academy_ops.paca_base_url` in `~/.miho/config.yaml`.
 
 ```python
-import datetime, os, httpx
-from plugins.academy_ops.paca_client import DEFAULT_PACA_BASE_URL
+import datetime, httpx
+from plugins.academy_ops.paca_config import resolve_paca_base_url
 
-base = os.getenv("MIHO_ACADEMY_PACA_BASE_URL", DEFAULT_PACA_BASE_URL).rstrip("/")
+base = resolve_paca_base_url()
 date = datetime.date.today().isoformat()
 response = httpx.get(
     f"{base}/peak/attendance/students",

@@ -76,7 +76,7 @@ def render_login_page(*, state: str, error: str = "") -> str:
     <h1>Miho 학원 계정 연결</h1>
     <p class="hint">PACA/Peak 계정으로 로그인하면 디스코드에서 해당 학원 데이터만 조회할 수 있어.</p>
     {error_block}
-    <form method="post" action="/academy/login">
+    <form method="post" action="">
       <input type="hidden" name="state" value="{safe_state}">
       <label for="email">이메일</label>
       <input id="email" name="email" type="email" autocomplete="username" required>

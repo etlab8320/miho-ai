@@ -11,7 +11,7 @@ GET /peak/plans?date=YYYY-MM-DD
 Authorization: Bearer <token>
 ```
 
-Observed base URL in the local plugin flow was `DEFAULT_PACA_BASE_URL` / `MIHO_ACADEMY_PACA_BASE_URL`.
+Resolve the base URL through `plugins.academy_ops.paca_config.resolve_paca_base_url()` or `AcademyApiClient`; this uses `MIHO_ACADEMY_PACA_BASE_URL` first and then `academy_ops.paca_base_url` from `~/.miho/config.yaml`.
 
 ## Observed response shape
 

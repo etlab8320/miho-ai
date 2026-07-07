@@ -62,21 +62,56 @@ def decision_from_semantic_verdict(
     verdict: SemanticDeliveryVerdict | None,
     *,
     decision_factory: Callable[..., Any],
+    known_playbooks: frozenset[str] | None = None,
 ) -> Any:
     if verdict is None or verdict.action == "abstain":
+        return decision
+    playbook_key = _trusted_playbook_key(
+        decision,
+        verdict,
+        known_playbooks=known_playbooks,
+    )
+    if verdict.action == "block" and _unknown_verdict_playbook(
+        verdict,
+        known_playbooks=known_playbooks,
+    ) and not str(getattr(decision, "playbook_key", "") or ""):
         return decision
     if verdict.action == "allow":
         return decision_factory(
             action="allow",
             reason=f"agent_semantic_allow:{verdict.reason}",
-            playbook_key=verdict.playbook_key or decision.playbook_key,
+            playbook_key=playbook_key,
         )
     return decision_factory(
         action="block",
         reason=f"agent_semantic_block:{verdict.reason}",
-        playbook_key=verdict.playbook_key or decision.playbook_key,
+        playbook_key=playbook_key,
         retry_tools=verdict.retry_tools or decision.retry_tools,
     )
+
+
+def _trusted_playbook_key(
+    decision: Any,
+    verdict: SemanticDeliveryVerdict,
+    *,
+    known_playbooks: frozenset[str] | None,
+) -> str:
+    verdict_key = str(verdict.playbook_key or "").strip()
+    fallback = str(getattr(decision, "playbook_key", "") or "").strip()
+    if not verdict_key:
+        return fallback
+    if known_playbooks is not None and verdict_key not in known_playbooks:
+        return fallback
+    return verdict_key
+
+
+def _unknown_verdict_playbook(
+    verdict: SemanticDeliveryVerdict,
+    *,
+    known_playbooks: frozenset[str] | None,
+) -> bool:
+    verdict_key = str(verdict.playbook_key or "").strip()
+    return bool(known_playbooks is not None and verdict_key and verdict_key not in known_playbooks)
 
 
 def _needs_semantic_agent_verdict(decision: Any) -> bool:

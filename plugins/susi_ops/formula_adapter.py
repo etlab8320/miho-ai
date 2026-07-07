@@ -56,6 +56,8 @@ def _formula_calculate(
     if module is None:
         return None
     fn = (getattr(module, "REGISTRY", None) or {}).get(university)
+    if fn is None and "강릉캠퍼스" in str(university or ""):
+        fn = (getattr(module, "REGISTRY", None) or {}).get(str(university).replace(" 강릉캠퍼스", ""))
     if fn is None:
         return None
     # 대학 요강 표준: 진로선택과목만 성취도(A/B/C)→등급 환산해 반영하고, 일반선택

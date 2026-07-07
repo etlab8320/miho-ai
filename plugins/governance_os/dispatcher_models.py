@@ -20,6 +20,8 @@ class DispatchDecision:
     forbidden_tools: tuple[str, ...] = field(default_factory=tuple)
     agent_chain: tuple[str, ...] = field(default_factory=tuple)
     review_gates: tuple[str, ...] = field(default_factory=tuple)
+    retry_policy: str = ""
+    delivery_format: str = ""
     reason: str = ""
     routing_source: str = "candidate_scorer"
 

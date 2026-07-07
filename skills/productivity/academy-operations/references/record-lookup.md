@@ -25,12 +25,11 @@ Use this when 맥스 asks for a specific event's records for today, e.g. `오늘
 ```python
 from datetime import date
 from plugins.academy_ops.auth_store import load_bindings, decrypt_token
-from plugins.academy_ops.paca_client import DEFAULT_PACA_BASE_URL
 from plugins.academy_ops.academy_api import AcademyApiClient
 
 binding = next(iter(load_bindings().values()))
 token = decrypt_token(binding.token_ciphertext) or ""
-client = AcademyApiClient(token=token, base_url=DEFAULT_PACA_BASE_URL)
+client = AcademyApiClient(token=token)
 
 today = date.today()
 rows = []

@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from .registry import GovernanceRegistry
+from .review import ReviewGateOutcome
 
 
 def final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
@@ -114,8 +115,8 @@ def final_delivery_probe_passed(registry: GovernanceRegistry) -> bool:
 def final_delivery_retry_probe_passed(registry: GovernanceRegistry) -> bool:
     import plugins.governance_os.review as review_module
 
+    from . import final_delivery_retry as retry_module
     from .final_delivery_orchestrator import FINAL_DELIVERY_ORCHESTRATOR_TASK
-    from .final_delivery_retry import retry_blocked_final_delivery
 
     temp_dir = tempfile.TemporaryDirectory()
     artifact_path = Path(temp_dir.name) / "report.mhtml"
@@ -186,9 +187,11 @@ def final_delivery_retry_probe_passed(registry: GovernanceRegistry) -> bool:
         return str(response or "")
 
     original = review_module._call_auxiliary_reviewer
+    original_gate = retry_module.evaluate_review_gate
     review_module._call_auxiliary_reviewer = fake_auxiliary_reviewer
+    retry_module.evaluate_review_gate = _readiness_review_gate
     try:
-        direct_result = retry_blocked_final_delivery(
+        direct_result = retry_module.retry_blocked_final_delivery(
             registry=registry,
             playbook_key="discord_attachment_delivery",
             retry_tools=("media_delivery_contract",),
@@ -211,7 +214,7 @@ def final_delivery_retry_probe_passed(registry: GovernanceRegistry) -> bool:
             ],
             dispatch_tool=fake_dispatch,
         )
-        orchestrated_result = retry_blocked_final_delivery(
+        orchestrated_result = retry_module.retry_blocked_final_delivery(
             registry=registry,
             playbook_key="discord_attachment_delivery",
             retry_tools=("media_delivery_contract",),
@@ -226,6 +229,7 @@ def final_delivery_retry_probe_passed(registry: GovernanceRegistry) -> bool:
         )
     finally:
         review_module._call_auxiliary_reviewer = original
+        retry_module.evaluate_review_gate = original_gate
         temp_dir.cleanup()
     return (
         direct_result is not None
@@ -246,7 +250,7 @@ def final_delivery_retry_probe_passed(registry: GovernanceRegistry) -> bool:
 def pdf_attachment_quality_loop_probe_passed(registry: GovernanceRegistry) -> bool:
     import plugins.governance_os.review as review_module
 
-    from .result_transform import governance_transform_tool_result
+    from . import result_transform as transform_module
     from tools.html_pdf_autocorrect_tool import html_pdf_autocorrect_tool
     from tools.html_pdf_quality_gate_tool import html_pdf_quality_gate_tool
 
@@ -335,11 +339,13 @@ def pdf_attachment_quality_loop_probe_passed(registry: GovernanceRegistry) -> bo
 
     original_dispatch = tool_registry.dispatch
     original_reviewer = review_module._call_auxiliary_reviewer
+    original_gate = transform_module.evaluate_review_gate
     tool_registry.dispatch = fake_dispatch  # type: ignore[method-assign]
     review_module._call_auxiliary_reviewer = fake_auxiliary_reviewer
+    transform_module.evaluate_review_gate = _readiness_review_gate
     passed = False
     try:
-        transformed = governance_transform_tool_result(
+        transformed = transform_module.governance_transform_tool_result(
             tool_name="html_pdf_quality_gate",
             result=json.dumps(
                 {
@@ -382,7 +388,7 @@ def pdf_attachment_quality_loop_probe_passed(registry: GovernanceRegistry) -> bo
         )
         passed = (
             bool(transformed)
-            and json.loads(str(transformed))["media_tag"] == f"MEDIA:{pdf_path.resolve()}"
+            and media_tag_matches(transformed, f"MEDIA:{pdf_path.resolve()}")
             and [name for name, _args in calls]
             == [
                 "html_pdf_autocorrect",
@@ -400,5 +406,82 @@ def pdf_attachment_quality_loop_probe_passed(registry: GovernanceRegistry) -> bo
     finally:
         tool_registry.dispatch = original_dispatch  # type: ignore[method-assign]
         review_module._call_auxiliary_reviewer = original_reviewer
+        transform_module.evaluate_review_gate = original_gate
         temp_dir.cleanup()
     return passed
+
+
+def media_tag_matches(transformed: object, expected_media_tag: str) -> bool:
+    try:
+        payload = json.loads(str(transformed))
+    except (TypeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return str(payload.get("media_tag") or "") == expected_media_tag
+
+
+def _readiness_review_gate(
+    _registry: GovernanceRegistry,
+    *,
+    playbook_key: str,
+    tool_name: str,
+    result: Any,
+    **_kwargs: Any,
+) -> ReviewGateOutcome:
+    payload = result if isinstance(result, dict) else _loads_payload(result)
+    reviewer = payload.get("reviewer") if isinstance(payload, dict) else None
+    if not isinstance(reviewer, dict):
+        return ReviewGateOutcome(
+            status="fail",
+            reason="readiness_reviewer_missing",
+            retry_tools=(tool_name,),
+        )
+    checked = _tuple_str(reviewer.get("checked"))
+    status = str(reviewer.get("status") or "").strip()
+    if status == "pass":
+        return ReviewGateOutcome(
+            status="pass",
+            reason="auxiliary_reviewer_pass",
+            checked=checked,
+        )
+    if status == "retry_needed":
+        return ReviewGateOutcome(
+            status="retry_needed",
+            reason="reviewer_retry_needed",
+            checked=checked,
+            retry_tools=_tuple_str(reviewer.get("retry_tools")),
+            retry_args=_tuple_dict(reviewer.get("retry_args")),
+        )
+    return ReviewGateOutcome(
+        status="fail",
+        reason=f"readiness_review_{playbook_key}_{tool_name}_{status or 'unknown'}",
+        checked=checked,
+    )
+
+
+def _loads_payload(value: Any) -> dict[str, Any] | None:
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _tuple_str(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, (list, tuple, set)):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    text = str(value).strip()
+    return (text,) if text else ()
+
+
+def _tuple_dict(value: Any) -> tuple[dict[str, Any], ...]:
+    if isinstance(value, dict):
+        return (value,)
+    if isinstance(value, (list, tuple)):
+        return tuple(item for item in value if isinstance(item, dict))
+    return ()

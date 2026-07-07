@@ -55,14 +55,13 @@ See `references/life-record-pdf-save.md` for the verified save pattern and the l
 
 ```python
 from plugins.academy_ops.auth_store import load_bindings, decrypt_token
-from plugins.academy_ops.paca_client import DEFAULT_PACA_BASE_URL
 from plugins.academy_ops.academy_api import AcademyApiClient
 from plugins.academy_ops.student_card import AcademyStudentCardService
 from plugins.academy_ops.student_card_renderer import StudentCardImageRenderer
 
 binding = next(iter(load_bindings().values()))
 token = decrypt_token(binding.token_ciphertext) or ""
-client = AcademyApiClient(token=token, base_url=DEFAULT_PACA_BASE_URL)
+client = AcademyApiClient(token=token)
 card = AcademyStudentCardService(client).build("학생명")
 image_path = StudentCardImageRenderer().render(card)
 ```
@@ -87,13 +86,13 @@ A binding confirms the Discord user is linked, but not necessarily that a specif
 For requests like “어제 박성준 운동계획서”, “강사 운동계획”, or “수업계획 보여줘”, use the live Peak plans endpoint before saying the operation is unsupported. Resolve relative dates with the system date, then query by `date`:
 
 ```python
-import os, httpx
+import httpx
 from plugins.academy_ops.auth_store import load_bindings, decrypt_token
-from plugins.academy_ops.paca_client import DEFAULT_PACA_BASE_URL
+from plugins.academy_ops.paca_config import resolve_paca_base_url
 
 binding = next(iter(load_bindings().values()))
 token = decrypt_token(binding.token_ciphertext)
-base = os.getenv("MIHO_ACADEMY_PACA_BASE_URL", DEFAULT_PACA_BASE_URL).rstrip("/")
+base = resolve_paca_base_url()
 response = httpx.get(
     f"{base}/peak/plans",
     params={"date": "YYYY-MM-DD"},
@@ -169,13 +168,13 @@ See `references/staff-schedule-relative-dates.md` for the verified lookup patter
 For today's attendance, use Peak's read endpoint with the stored bearer token:
 
 ```python
-import datetime, os, httpx
+import datetime, httpx
 from plugins.academy_ops.auth_store import load_bindings, decrypt_token
-from plugins.academy_ops.paca_client import DEFAULT_PACA_BASE_URL
+from plugins.academy_ops.paca_config import resolve_paca_base_url
 
 binding = next(iter(load_bindings().values()))
 token = decrypt_token(binding.token_ciphertext)
-base = os.getenv("MIHO_ACADEMY_PACA_BASE_URL", DEFAULT_PACA_BASE_URL).rstrip("/")
+base = resolve_paca_base_url()
 date = datetime.date.today().isoformat()
 response = httpx.get(
     f"{base}/peak/attendance/students",

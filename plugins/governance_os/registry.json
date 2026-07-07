@@ -59,8 +59,11 @@
         "academy_hakjong_report_package",
         "academy_practical_reco_package",
         "academy_practical_reco_all_candidates",
+        "susi26_rule_lookup",
+        "susi27_rule_lookup",
         "susi27_recommend_candidates",
         "susi27_score_calculate",
+        "web_search",
         "life_record_ingest_pdf",
         "life_record_verify"
       ],
@@ -322,6 +325,60 @@
       "ledger_policy": "record score tool, reviewer status, formula failures, and retry tools",
       "memory_policy": "store recurring formula correction only after verified repeated failure",
       "rollback_policy": "no DB mutation; rerun official formula calculation with corrected inputs"
+    },
+    "susi_legacy_formula_compare": {
+      "domain": "academy",
+      "triggers": [
+        "작년 공식 모집요강",
+        "작년 모집요강",
+        "전년도 모집요강",
+        "입학처 수시 모집요강",
+        "작년 산식",
+        "전년도 산식",
+        "개인 산식 비교",
+        "개인산식 비교",
+        "작년깔로 계산",
+        "작년 점수 올해 점수 비교"
+      ],
+      "required_context": [
+        "student_identity",
+        "student_subjects",
+        "target_university",
+        "admission_track",
+        "official_previous_year_source"
+      ],
+      "required_tools": [
+        "susi26_rule_lookup",
+        "susi27_rule_lookup",
+        "susi27_score_calculate",
+        "web_search"
+      ],
+      "forbidden_tools": [
+        "execute_code",
+        "terminal",
+        "shell",
+        "write_file",
+        "sqlite3",
+        "pixel_document_evidence_as_final_calculator"
+      ],
+      "agent_chain": [
+        "dispatcher",
+        "risk_judge",
+        "tool_contract_guard",
+        "academy_domain_agent",
+        "research_domain_agent",
+        "result_reviewer",
+        "ledger_writer"
+      ],
+      "review_gates": [
+        "academy_result_reviewer",
+        "source_attribution_review"
+      ],
+      "retry_policy": "작년 룰 조회가 빈약하면 공식 입학처 PDF/web source를 확보하고, 그래도 산식 근거가 없을 때만 구체적 blocker를 말한다",
+      "delivery_format": "작년 공식 모집요강 근거, 학생 성적 입력, 작년 산식 계산표, 올해 산식 계산표, 차이 원인을 한국어로 함께 제시한다",
+      "ledger_policy": "record previous-year source, formula evidence, current score payload, reviewer status, and blockers",
+      "memory_policy": "store recurring formula-comparison correction only after verified repeated failure",
+      "rollback_policy": "no DB mutation; rerun lookup/calculation with corrected official source or student grades"
     },
     "dev_code_update": {
       "domain": "dev",

@@ -7,6 +7,19 @@ from typing import Any
 from .db import _connect, _json_loads, _like, db_path
 
 
+def _normalize_university_query(value: str | None) -> str | None:
+    """Normalize common Korean university shorthands used in 상담 prompts."""
+    if not value:
+        return value
+    text = str(value).strip()
+    replacements = {
+        "강원대": "강원대학교",
+    }
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+    return text
+
+
 def _minimum_csat(score_logic: dict[str, Any], admission_meta_json: str | None = None) -> dict[str, Any]:
     meta = _json_loads(admission_meta_json, {}) or {}
     raw = {}
@@ -33,6 +46,7 @@ def lookup_rules(
     limit: int = 20,
     detail: bool = False,
 ) -> dict[str, Any]:
+    university = _normalize_university_query(university)
     # 기본은 요약 모드: 추천/리포트에 필요한 필드만 반환한다. score_logic 같은
     # 엔진 내부 룰 JSON(행당 수천 자)은 calculate_score가 university_id로 DB에서
     # 직접 읽으므로 에이전트 컨텍스트에 실을 필요가 없다 — 20행 풀 반환이

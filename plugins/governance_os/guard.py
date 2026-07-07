@@ -17,8 +17,11 @@ _GOVERNANCE_DEV_TARGETS = (
     "tests/e2e/test_discord_governance_delivery.py",
     "docs/governance-os",
     "governance_os",
+    "miho governance",
 )
 _DEV_VERIFICATION_COMMANDS = (
+    "miho governance ",
+    ".venv/bin/miho governance ",
     "python -m pytest",
     "pytest ",
     "pytest\n",
@@ -63,6 +66,8 @@ def governance_pre_tool_call(tool_name: Any = None, args: Any = None, **context:
     registry = load_runtime_registry()
     turn_text = _turn_text(context)
     payload = _search_blob({"args": args, "turn_text": turn_text})
+    if _is_pytest_verification_call(name, payload):
+        return None
     if _is_governance_dev_verification_call(name, args, registry=registry, payload=payload):
         return None
     if name == "terminal" and any(marker in payload for marker in _DESTRUCTIVE_COMMAND_MARKERS):
@@ -116,6 +121,19 @@ def _is_governance_dev_verification_call(
     if name != "terminal":
         return False
     return any(marker in blob for marker in _DEV_VERIFICATION_COMMANDS)
+
+
+def _is_pytest_verification_call(tool_name: str, payload: str) -> bool:
+    """Allow repository test commands even when test names mention governed domains."""
+
+    if tool_name.casefold().strip() != "terminal":
+        return False
+    blob = payload or ""
+    if any(marker in blob for marker in _DESTRUCTIVE_COMMAND_MARKERS):
+        return False
+    if "tests/" not in blob:
+        return False
+    return any(marker in blob for marker in ("python -m pytest", "pytest ", "pytest\n", ".venv/bin/python -m pytest"))
 
 
 def _matches_non_dev_artifact_generation(registry: Any, blob: str) -> bool:

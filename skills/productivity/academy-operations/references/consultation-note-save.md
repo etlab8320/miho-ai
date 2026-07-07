@@ -9,14 +9,13 @@ Minimal verified pattern:
 
 ```python
 from plugins.academy_ops.auth_store import load_bindings, decrypt_token
-from plugins.academy_ops.paca_client import DEFAULT_PACA_BASE_URL
 from plugins.academy_ops.academy_api import AcademyApiClient
 from plugins.academy_ops.student_card import AcademyStudentCardService
 from plugins.academy_ops.consultation_notes import ConsultationNoteRepository
 
 binding = next(iter(load_bindings().values()))
 token = decrypt_token(binding.token_ciphertext) or ""
-client = AcademyApiClient(token=token, base_url=DEFAULT_PACA_BASE_URL)
+client = AcademyApiClient(token=token)
 card = AcademyStudentCardService(client).build("백지민")
 repo = ConsultationNoteRepository()
 repo.add_note(

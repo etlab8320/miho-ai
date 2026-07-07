@@ -33,9 +33,10 @@ def format_login_link(url: str, expires_minutes: int, *, is_local: bool) -> str:
     lines = [
         "학원 계정 연결 링크를 만들었어.",
         "",
-        url,
+        f"<{url}>",
         "",
         f"{expires_minutes}분 안에 열어서 PACA/Peak 계정으로 로그인하면 돼.",
+        "방금 발급한 이 링크만 사용해줘. 이전 학원 계정 연결 링크는 무효야.",
     ]
     if is_local:
         lines.append("지금 링크는 로컬 개발용이라 다른 기기에서는 안 열릴 수 있어.")

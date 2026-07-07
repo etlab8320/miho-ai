@@ -101,7 +101,9 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         "domain": "susi_ops",
         "purpose": (
             "verified 수시 룰로 특정 대학/학과의 학생 교과·출결·실기 환산점수를 계산한다. "
-            "전체 추천 후보 생성이 아니라 개별 점수 검증과 재계산에 사용한다."
+            "전체 추천 후보 생성이 아니라 개별 점수 검증과 재계산에 사용한다. "
+            "작년 공식 모집요강 또는 전년도 산식과 올해 산식을 비교하는 개인 산식 비교에서는 "
+            "susi26_rule_lookup으로 전년도 구조를 확인한 뒤 같은 학생 성적 입력을 근거로 현재 산식 계산표를 만든다."
         ),
         "requires": ["university_id", "grades"],
         "output": "verified score calculation payload with vs_prev_year reachability",
@@ -109,6 +111,21 @@ _CORE_CONTRACTS: dict[str, dict[str, Any]] = {
         "retry": "fix university_id or student score inputs and rerun susi27_score_calculate",
         "delivery": "Korean score breakdown only after review pass",
         "blocking_rules": ["do not invent score values without this payload"],
+    },
+    "susi26_rule_lookup": {
+        "domain": "susi_ops",
+        "purpose": (
+            "작년 공식 모집요강, 전년도 입학처 PDF, 작년 산식, 작년 점수와 올해 점수 차이를 묻는 "
+            "개인 산식 비교의 첫 근거 조회 도구다. 작년 내신:실기 비중, 실기만점, 정원, "
+            "실기 종목, 전년도 구조를 확인하고, 근거가 빈약하면 공식 PDF/web source 확보로 넘어가야 한다. "
+            "PDF라는 단어가 있어도 pixel_document_evidence만으로 완료하지 말고 산식 계산 목표를 유지한다."
+        ),
+        "requires": ["university", "department or admission_track when known"],
+        "output": "previous-year admission structure and score-scale evidence",
+        "reviewer": "academy_result_reviewer",
+        "retry": "if the returned structure is too small or lacks formula evidence, obtain official source evidence before answering",
+        "delivery": "previous-year formula evidence paired with current susi27_score_calculate breakdown",
+        "blocking_rules": ["do not treat document OCR or PDF discovery as the final calculation"],
     },
     "hakjong_qualitative_profile": {
         "domain": "academy_ops",

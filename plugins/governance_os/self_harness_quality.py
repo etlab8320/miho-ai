@@ -20,6 +20,7 @@ class SelfHarnessQualityReport:
     rollback_signal_count: int
     historical_failure_count: int = 0
     baseline_created_at: str = ""
+    reviewer_intervention_count: int = 0
     recurrent_failures: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     top_failures: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
@@ -34,6 +35,7 @@ class SelfHarnessQualityReport:
             "rollback_signal_count": self.rollback_signal_count,
             "historical_failure_count": self.historical_failure_count,
             "baseline_created_at": self.baseline_created_at,
+            "reviewer_intervention_count": self.reviewer_intervention_count,
             "recurrent_failures": list(self.recurrent_failures),
             "top_failures": list(self.top_failures),
         }
@@ -57,6 +59,7 @@ def build_self_harness_quality_report(
     items, historical_items = _split_by_baseline(items, baseline)
     historical_failure_count = len(_failure_signatures(historical_items))
     raw_signatures = _failure_signatures(items)
+    reviewer_intervention_count = _reviewer_intervention_count(items)
     signatures = _active_failure_signatures(items)
     counts = Counter(signatures)
     recurrent = _recurrent_failures(counts, min_recurrence=max(2, int(min_recurrence or 2)))
@@ -88,6 +91,7 @@ def build_self_harness_quality_report(
         rollback_signal_count=rollback_count,
         historical_failure_count=historical_failure_count,
         baseline_created_at=baseline,
+        reviewer_intervention_count=reviewer_intervention_count,
         recurrent_failures=tuple(recurrent),
         top_failures=tuple(_top_failures(counts)),
     )
@@ -199,7 +203,27 @@ def _outcome_failures(outcome: dict[str, Any]) -> list[str]:
     failures = outcome.get("failures")
     if not isinstance(failures, list):
         return []
-    return [str(item).strip() for item in failures if str(item).strip()]
+    review_status = str(outcome.get("review_status") or "").strip().lower()
+    cleaned = [str(item).strip() for item in failures if str(item).strip()]
+    if review_status == "retry_needed":
+        # `reviewer_retry_needed` means the defense gate caught a weak first pass
+        # and asked the agent to retry. Treat it as a reviewer intervention signal,
+        # not an unresolved recurrent failure, unless a later event records a true
+        # reviewer failure for the same playbook.
+        cleaned = [item for item in cleaned if item != "reviewer_retry_needed"]
+    return cleaned
+
+
+def _reviewer_intervention_count(outcomes: list[dict[str, Any]]) -> int:
+    count = 0
+    for outcome in outcomes:
+        if not isinstance(outcome, dict):
+            continue
+        review_status = str(outcome.get("review_status") or "").strip().lower()
+        failures = outcome.get("failures")
+        if review_status == "retry_needed" and isinstance(failures, list) and "reviewer_retry_needed" in failures:
+            count += 1
+    return count
 
 
 def _is_followup_pass(outcome: dict[str, Any]) -> bool:

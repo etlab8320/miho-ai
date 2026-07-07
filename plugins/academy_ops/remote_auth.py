@@ -111,7 +111,11 @@ def load_broker_pending() -> dict[str, BrokerPendingLogin]:
 
 
 def save_broker_pending(item: BrokerPendingLogin) -> None:
-    items = _purged_broker_items()
+    items = {
+        state: value
+        for state, value in _purged_broker_items().items()
+        if value.discord_user_id != item.discord_user_id
+    }
     items[item.state] = item
     _write_broker_pending(items)
 

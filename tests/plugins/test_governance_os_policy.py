@@ -186,6 +186,34 @@ def test_governance_pre_tool_guard_allows_governance_introspection_command() -> 
     assert result is None
 
 
+def test_governance_pre_tool_guard_allows_governance_live_check_command() -> None:
+    result = governance_pre_tool_call(
+        tool_name="terminal",
+        args={
+            "command": (
+                ".venv/bin/miho governance live-check --mode live "
+                "--target discord:1507988401171857521:1521079781242704033 --json"
+            )
+        },
+    )
+
+    assert result is None
+
+
+def test_governance_pre_tool_guard_allows_pytest_commands_for_domain_named_tests() -> None:
+    result = governance_pre_tool_call(
+        tool_name="terminal",
+        args={
+            "command": (
+                ".venv/bin/python -m pytest -o addopts='' "
+                "tests/plugins/test_susi_ops_service.py tests/plugins/test_academy_remote_auth.py -q"
+            )
+        },
+    )
+
+    assert result is None
+
+
 def test_governance_pre_tool_guard_blocks_governance_heredoc_artifact_bypass() -> None:
     result = governance_pre_tool_call(
         tool_name="terminal",

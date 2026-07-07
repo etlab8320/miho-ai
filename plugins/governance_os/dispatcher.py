@@ -51,6 +51,8 @@ def dispatch_request(
         forbidden_tools=playbook.forbidden_tools,
         agent_chain=playbook.agent_chain,
         review_gates=playbook.review_gates,
+        retry_policy=playbook.retry_policy,
+        delivery_format=playbook.delivery_format,
         reason="trigger_match",
     )
 
@@ -67,6 +69,10 @@ def build_governance_rewrite(original_text: str, decision: DispatchDecision) -> 
         f"- review_gates: {', '.join(decision.review_gates) or '-'}",
         f"- missing_context: {', '.join(decision.missing_context) or '-'}",
     ]
+    if decision.delivery_format:
+        hints.append(f"- success_contract: {decision.delivery_format}")
+    if decision.retry_policy:
+        hints.append(f"- retry_policy: {decision.retry_policy}")
     if decision.missing_context:
         hints.append(
             "- MUST resolve missing_context before calling required_tools; ask a Korean clarification if missing data cannot be inferred safely."

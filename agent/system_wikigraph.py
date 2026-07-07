@@ -409,6 +409,7 @@ def init_wiki() -> dict[str, Any]:
         "tests",
         "failures",
         "policies",
+        "external-prompts",
         "raw",
         "maps",
     ):
@@ -471,6 +472,9 @@ sources: []
 - requires_test
 - related_to
 - owns
+- compared_with
+- informs
+- observes_pattern
 
 ## Update policy
 Every substantial Miho code/config/skill/tool change should run:
@@ -495,6 +499,7 @@ promotions still need validation through Evolution OS and tests.
 - [[skills/skill-system-map]] — skill storage, curator, and mutation map.
 - [[tests/test-impact-map]] — test selection and impact conventions.
 - [[policies/privacy-and-source-boundary]] — what may and may not enter the WikiGraph.
+- [[external-prompts/prompt-corpus-map]] — metadata-only external prompt corpus map for governance comparison.
 
 ## Generated inventories
 Run `miho evolution wikigraph sync --full` to populate graph.db with code, tests,

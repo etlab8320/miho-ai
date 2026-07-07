@@ -25,6 +25,7 @@ def test_domain_packs_cover_general_and_academy_domains() -> None:
         "academy_hakjong_report",
         "academy_practical_recommendation",
         "life_record_ingest",
+        "susi_legacy_formula_compare",
         "susi_score_calculation",
     )
     assert by_domain["artifact"].domain_agent_key == "artifact_domain_agent"

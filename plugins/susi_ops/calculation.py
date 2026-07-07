@@ -87,8 +87,17 @@ def calculate_score(
 
     readiness_text = str(score_logic.get("calculation_readiness") or "").lower()
     scope_text = str(score_logic.get("calculation_scope") or "").lower()
+    manual_recommendation_override = (
+        str(row["university_id"] or "") == "6"
+        and "강릉캠퍼스" in str(row["university"] or "")
+    )
+    if manual_recommendation_override:
+        readiness_text = "manual_recommendation_override"
+        scope_text = "practical_recommendation"
+        score_logic = dict(score_logic)
+        score_logic["formula_key"] = "KANGWON_GANGNEUNG_LEGACY_PRACTICAL_RECORD300_PRACTICAL700"
     confidence_verified = _is_verified_confidence(confidence)
-    confidence_calculable = _is_calculable_confidence(confidence)
+    confidence_calculable = True if manual_recommendation_override else _is_calculable_confidence(confidence)
     is_non_calculation_scope = (
         "non_calculation_track" in {readiness_text, scope_text}
         or "non_calculation_track" in readiness_text

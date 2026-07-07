@@ -106,6 +106,31 @@ def test_self_harness_quality_closes_playbook_failures_after_followup_pass() -> 
     assert report.recurrent_failures == ()
 
 
+def test_self_harness_quality_treats_reviewer_retry_needed_as_intervention() -> None:
+    outcomes = [
+        {
+            "created_at": "2026-06-27T10:00:00+00:00",
+            "playbook_key": "designed_pdf_artifact",
+            "review_status": "retry_needed",
+            "failures": ["reviewer_retry_needed"],
+        },
+        {
+            "created_at": "2026-06-27T10:01:00+00:00",
+            "playbook_key": "designed_pdf_artifact",
+            "review_status": "retry_needed",
+            "failures": ["reviewer_retry_needed"],
+        },
+    ]
+
+    report = build_self_harness_quality_report(outcomes=outcomes, min_recurrence=2)
+
+    assert report.ready
+    assert report.reviewer_intervention_count == 2
+    assert report.failure_count == 0
+    assert report.recurrent_failures == ()
+    assert report.to_payload()["reviewer_intervention_count"] == 2
+
+
 def test_self_harness_quality_keeps_failures_after_latest_pass_open() -> None:
     outcomes = [
         {

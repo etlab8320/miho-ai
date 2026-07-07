@@ -211,7 +211,12 @@ def resolve_auth_base_url(base_url: str | None = None) -> str:
 
 
 def _save_pending(pending: PendingLogin) -> None:
-    items = load_pending_logins()
+    items = {
+        key: value
+        for key, value in load_pending_logins().items()
+        if value.expires_at >= pending.created_at
+        and value.discord_user_id != pending.discord_user_id
+    }
     items[pending.state] = pending
     _write_pending(items)
 

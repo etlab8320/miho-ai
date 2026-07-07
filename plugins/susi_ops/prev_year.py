@@ -171,6 +171,7 @@ def _safe_like_term(value: str | None) -> str | None:
     text = str(value or "").strip()
     if not text:
         return None
+    text = text.replace("강원대", "강원대학교")
     return _SAFE_TERM_RE.sub("", text)[:60]
 
 

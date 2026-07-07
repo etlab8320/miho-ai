@@ -111,6 +111,8 @@ def decision_from_auxiliary_payload(
         forbidden_tools=playbook.forbidden_tools,
         agent_chain=playbook.agent_chain,
         review_gates=playbook.review_gates,
+        retry_policy=playbook.retry_policy,
+        delivery_format=playbook.delivery_format,
         reason=str(payload.get("reason") or "auxiliary_dispatcher"),
         routing_source=task_name,
     )
@@ -129,6 +131,8 @@ def _decision_metadata(decision: DispatchDecision) -> dict[str, object]:
         "confidence": decision.confidence,
         "required_tools": list(decision.required_tools),
         "matched_triggers": list(decision.matched_triggers),
+        "retry_policy": decision.retry_policy,
+        "delivery_format": decision.delivery_format,
     }
 
 

@@ -146,11 +146,23 @@ def _analyzed_variable(variable: dict[str, Any]) -> dict[str, Any]:
     current, unit = _parse_measure(variable.get("current"))
     elite, elite_unit = _parse_measure(variable.get("elite_1pct"))
     if current is None or elite is None:
-        return {**variable, "deficit_score": 0.0, "advantage_score": 0.0, "diagnosis": _missing_model_diagnosis(variable)}
+        return {
+            **variable,
+            "deficit_score": 0.0,
+            "advantage_score": 0.0,
+            "evaluation_label": "판정 보류",
+            "diagnosis": _missing_model_diagnosis(variable),
+        }
     unit = unit or elite_unit
     current_cmp, elite_cmp = comparison_pair(str(variable.get("key") or ""), current, elite)
     if current_cmp is None or elite_cmp is None:
-        return {**variable, "deficit_score": 0.0, "advantage_score": 0.0, "diagnosis": _missing_model_diagnosis(variable)}
+        return {
+            **variable,
+            "deficit_score": 0.0,
+            "advantage_score": 0.0,
+            "evaluation_label": "판정 보류",
+            "diagnosis": _missing_model_diagnosis(variable),
+        }
     diff = current_cmp - elite_cmp
     direction = str(variable.get("direction") or "")
     deficit_score = _deficit_score(direction, current_cmp, elite_cmp)
@@ -162,6 +174,7 @@ def _analyzed_variable(variable: dict[str, Any]) -> dict[str, Any]:
         "status": status,
         "deficit_score": round(deficit_score, 4),
         "advantage_score": round(advantage_score, 4),
+        "evaluation_label": _evaluation_label(deficit_score, advantage_score),
         "diagnosis": _diagnosis(variable, status),
     }
 
@@ -417,6 +430,14 @@ def _tolerance(value: float) -> float:
 def _format_gap(diff: float, unit: str) -> str:
     sign = "+" if diff >= 0 else ""
     return f"{sign}{diff:.2f} {unit}".strip()
+
+
+def _evaluation_label(deficit_score: float, advantage_score: float) -> str:
+    if deficit_score > 0:
+        return "부족"
+    if advantage_score > 0:
+        return "좋음"
+    return "유지"
 
 
 def _diagnosis(variable: dict[str, Any], status: str) -> str:

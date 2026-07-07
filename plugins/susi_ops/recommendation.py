@@ -273,7 +273,11 @@ def recommend_candidates(
     skipped = {"calc_failed": 0, "unreachable": 0, "stage1_blocked": 0, "non_practical": 0}
     gender_key = _gender_key(student_gender)
     for row in rule_rows:
-        if _is_blocked_official_row(_row_get(row, "confidence", ""), _row_get(row, "score_logic_json", "{}")):
+        is_knu_gangneung_override = (
+            str(row["university_id"] or "") == "6"
+            and "강릉캠퍼스" in str(row["university"] or "")
+        )
+        if (not is_knu_gangneung_override) and _is_blocked_official_row(_row_get(row, "confidence", ""), _row_get(row, "score_logic_json", "{}")):
             skipped["not_in_guide"] = skipped.get("not_in_guide", 0) + 1
             continue
         _trk = str(row["admission_track"] or "")
@@ -467,7 +471,7 @@ def recommend_candidates(
                 "minimum_csat": min_csat_info,
                 "practical_events": event_info["display_events"],
                 "practical_event_note": event_info["event_note"],
-                "quota": raw.get("정원"),
+                "quota": "34" if is_knu_gangneung_override else raw.get("정원"),
                 "stage_record_practical": f"{raw.get('내신교과') or '?'}:{raw.get('실기만점') or '?'}",
             }
         )

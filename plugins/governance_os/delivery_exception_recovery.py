@@ -7,6 +7,11 @@ from typing import Any
 
 from .final_delivery_current_result import compose_current_result
 from .final_delivery_recovery import recover_blocked_delivery
+from .delivery_safety import (
+    contains_internal_guard_leak,
+    contains_non_result_deferral,
+    normalized_blob,
+)
 from .semantic_delivery_judge import SemanticDeliveryVerdict, judge_delivery_semantics
 
 logger = logging.getLogger(__name__)
@@ -18,6 +23,8 @@ def recover_transform_exception(*, response_text: str, context: dict[str, Any]) 
     user_text = str(context.get("user_message") or context.get("user_text") or "")
     original_text = str(response_text or "")
     if not original_text.strip():
+        return None
+    if _is_source_backed_system_map_answer(user_text, original_text):
         return None
 
     verdict = _semantic_exception_verdict(
@@ -105,3 +112,50 @@ def _exception_evidence(
 
 def _limited_current_result(evidence: dict[str, Any]) -> str:
     return compose_current_result(evidence)
+
+
+_SYSTEM_MAP_QUERY_TERMS = (
+    "system_wiki",
+    "system_graph",
+    "wikigraph",
+    "wiki graph",
+    "wiki llm",
+    "위키그래프",
+    "관계 지도",
+    "거버넌스 지도",
+    "스킬/도구",
+    "스킬 도구",
+    "도구/크론",
+    "크론/에이전트",
+    "에이전트 관계",
+)
+_SYSTEM_MAP_EVIDENCE_TERMS = (
+    "system_wiki",
+    "system_graph",
+    "graph.db",
+    "wikigraph",
+    "node",
+    "nodes",
+    "edge",
+    "edges",
+    "skill",
+    "tool",
+    "test",
+    "스킬",
+    "도구",
+    "관계",
+    "그래프",
+)
+
+
+def _is_source_backed_system_map_answer(question: str, answer: str) -> bool:
+    if contains_internal_guard_leak(answer) or contains_non_result_deferral(answer):
+        return False
+    question_blob = normalized_blob(question)
+    answer_blob = normalized_blob(answer)
+    if not question_blob or not answer_blob:
+        return False
+    if not any(term in question_blob for term in _SYSTEM_MAP_QUERY_TERMS):
+        return False
+    evidence_hits = sum(1 for term in _SYSTEM_MAP_EVIDENCE_TERMS if term in answer_blob)
+    return evidence_hits >= 2

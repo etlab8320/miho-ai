@@ -21,7 +21,6 @@ Use this when the user asks for a future/planned class roster as an image (예: 
 ```python
 from datetime import date
 from plugins.academy_ops.auth_store import load_bindings, decrypt_token
-from plugins.academy_ops.paca_client import DEFAULT_PACA_BASE_URL
 from plugins.academy_ops.academy_api import AcademyApiClient
 from plugins.academy_ops.class_roster import class_roster_for_range
 from plugins.academy_ops.attendance_day_renderer import AttendanceDayRosterImageRenderer
@@ -29,7 +28,7 @@ from plugins.academy_ops.attendance_day_renderer import AttendanceDayRosterImage
 TARGET = date(YYYY, MM, DD)
 binding = next(iter(load_bindings().values()))
 token = decrypt_token(binding.token_ciphertext) or ""
-client = AcademyApiClient(token=token, base_url=DEFAULT_PACA_BASE_URL)
+client = AcademyApiClient(token=token)
 roster = class_roster_for_range(client, TARGET, TARGET, with_roster=True)
 
 slots = {}

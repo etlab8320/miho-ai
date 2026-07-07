@@ -17,6 +17,7 @@ from plugins.academy_ops.brand_assets import academy_brand_logo_src
 from plugins.academy_ops.report_fonts import report_font_css
 from plugins.academy_ops.student_card_fonts import goyang_font_css
 
+from .exercise_library import exercise_library_entries
 from .prescription_engine import build_personalized_prescription
 from .report_contracts import allow_placeholders, runtime_report_contract
 from .report_templates import build_report_template_response
@@ -218,6 +219,7 @@ def build_sports_report_html_payload(args: dict[str, Any] | None = None) -> dict
         if args.get("bottlenecks")
         else prescription["bottlenecks"],
         "training_program": prescription["training_program"],
+        "variable_exercise_map": _variable_exercise_map(exercise["key"], prescription["variable_groups"]),
         "evidence": _evidence_rows(template["reference_groups"]),
         "llm_validation": template["llm_validation_contract"],
         "review_contract": template["review_contract"],
@@ -376,6 +378,58 @@ def _training_program(raw: dict[str, Any], variable_labels: dict[str, str]) -> d
             }
         )
     return {**raw, "exercise_blocks": blocks}
+
+
+def _variable_exercise_map(exercise_key: str, variable_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    library = exercise_library_entries(exercise_key)
+    fallback = library[:3]
+    rows: list[dict[str, Any]] = []
+    for group in variable_groups:
+        for variable in group.get("variables") or []:
+            key = str(variable.get("key") or "")
+            if not key:
+                continue
+            linked = _linked_exercises_for_variable(key, library)
+            if len(linked) < 3:
+                linked.extend(item for item in fallback if item not in linked)
+            rows.append(
+                {
+                    "phase": f"P{group.get('priority')} · {group.get('title')}",
+                    "variable": variable.get("display_name") or variable.get("key") or key,
+                    "evaluation": variable.get("evaluation_label") or variable.get("status") or "판정",
+                    "exercises": [_exercise_link_row(item) for item in linked[:3]],
+                }
+            )
+    return rows
+
+
+def _linked_exercises_for_variable(key: str, library: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def score(item: dict[str, Any]) -> int:
+        primary = [str(value) for value in item.get("primary_variables") or []]
+        secondary = [str(value) for value in item.get("secondary_variables") or []]
+        if key in primary:
+            return 3
+        if key in secondary:
+            return 2
+        return 0
+
+    ranked = [(score(item), index, item) for index, item in enumerate(library)]
+    ranked.sort(key=lambda row: (-row[0], row[1]))
+    return [item for item_score, _, item in ranked if item_score > 0]
+
+
+def _exercise_link_row(item: dict[str, Any]) -> dict[str, str]:
+    video = item.get("video") if isinstance(item.get("video"), dict) else {}
+    dosage = item.get("dosage") if isinstance(item.get("dosage"), dict) else {}
+    video_map: dict[str, Any] = video if isinstance(video, dict) else {}
+    dosage_map: dict[str, Any] = dosage if isinstance(dosage, dict) else {}
+    return {
+        "title": str(item.get("title") or "운동"),
+        "kind_label": str(item.get("kind_label") or ""),
+        "url": str(video_map.get("url") or ""),
+        "why": str(item.get("how_to") or item.get("target") or ""),
+        "dose": " · ".join(str(value) for value in (dosage_map.get("sets"), dosage_map.get("reps_or_time"), dosage_map.get("load")) if value),
+    }
 
 
 def _plain_variable_label(variable: dict[str, Any]) -> str:
