@@ -19,6 +19,7 @@ from .service import (
     summarize_life_record,
     verify_latest,
 )
+from .repository import db_path, document_by_id, latest_document, apply_review_decisions, pending_review_items
 from .source_policy import ACCEPTED_SOURCE_TYPES, SOURCE_FILE_ERROR_MESSAGE
 
 
@@ -104,7 +105,7 @@ def _ingest_pdf_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> st
             "promoted": result["promoted"],
             "runs": result["runs"],
             "backup_path": result.get("backup_path"),
-            "assistant_guidance": "합의되지 않은(needs_review) 항목은 확정 표현 금지. 전부 합의되면 중앙DB로 승격되어 학생 단위 조회가 가능해.",
+            "assistant_guidance": "합의되지 않은(needs_review) 항목은 확정 표현을 하지 마세요. life_record_review를 호출해 원장님께 확인이 필요한 항목만 쉬운 말로 안내하고, 전부 검수된 뒤에만 중앙DB로 승격할 수 있습니다.",
         }
     )
 
@@ -115,6 +116,76 @@ def _verify_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
     result = verify_latest(current_life_record_dir(), int(document_id) if document_id else None)
     result["privacy"] = PRIVACY_POLICY
     return _json(result)
+
+
+def _review_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
+    """Create a short, Discord-ready list of only the rows a human must check."""
+    payload = args or {}
+    path = db_path(current_life_record_dir())
+    requested_id = payload.get("document_id")
+    document = document_by_id(path, int(requested_id)) if requested_id else latest_document(path)
+    if not document:
+        return _json({"ok": False, "message": "현재 스레드에서 검수할 생기부를 찾지 못했습니다.", "privacy": PRIVACY_POLICY})
+    document_id = int(document["id"])
+    items = pending_review_items(path, document_id)
+    public_items = [{key: value for key, value in item.items() if not key.startswith("_")} for item in items]
+    return _json(
+        {
+            "ok": True,
+            "operation": "life_record.review",
+            "document_id": document_id,
+            "items": public_items,
+            "remaining_count": len(items),
+            "discord_message": _discord_review_message(document, public_items),
+            "assistant_guidance": (
+                "Discord에는 discord_message만 자연스럽게 전달하세요. DB 경로·행 ID·신뢰도·내부 상태는 말하지 마세요. "
+                "원장님의 실제 답변(예: '1번 맞음', '2번 과목명: 국어', '3번 점수: 92점', '4번 저장 안 함')을 받은 뒤에만 "
+                "life_record_apply_review를 호출하세요."
+            ),
+            "privacy": PRIVACY_POLICY,
+        }
+    )
+
+
+def _apply_review_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
+    """Apply explicit, plain-language human review answers to pending rows."""
+    payload = args or {}
+    decisions = payload.get("decisions")
+    if not isinstance(decisions, list) or not all(isinstance(item, dict) for item in decisions):
+        return _json({"ok": False, "message": "원장님이 확인한 항목과 답변이 필요합니다.", "privacy": PRIVACY_POLICY})
+    path = db_path(current_life_record_dir())
+    requested_id = payload.get("document_id")
+    document = document_by_id(path, int(requested_id)) if requested_id else latest_document(path)
+    if not document:
+        return _json({"ok": False, "message": "현재 스레드에서 검수할 생기부를 찾지 못했습니다.", "privacy": PRIVACY_POLICY})
+    result = apply_review_decisions(path, int(document["id"]), decisions)
+    result["privacy"] = PRIVACY_POLICY
+    if result.get("ok"):
+        result["next_step"] = (
+            "남은 확인 항목이 있으면 life_record_review로 다시 안내하세요. "
+            "남은 항목이 0이고 원장님이 최종 저장을 명시적으로 요청할 때만 life_record_confirm을 호출하세요."
+        )
+    return _json(result)
+
+
+def _discord_review_message(document: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    name = str(document.get("name") or "학생")
+    if not items:
+        return f"{name} 학생 생기부에서 추가로 확인할 항목은 없습니다. 원본을 모두 대조하셨다면 ‘검수 확정해 주세요’라고 말씀해 주세요."
+    lines = [
+        f"{name} 학생 생기부에서 원본 확인이 필요한 부분이 {len(items)}개 있습니다.",
+        "아래 항목만 원본과 대조해 주세요. 엑셀이나 서버 화면을 보실 필요는 없습니다.",
+    ]
+    for item in items:
+        lines.extend(
+            [
+                f"\n{item['number']}. [{item['kind']}] {item['label']}",
+                f"   현재 읽힌 값: {item['current_value']}",
+                f"   맞으면 ‘{item['number']}번 맞음’, 수정이면 ‘{item['number']}번 수정: 정확한 값’, 제외면 ‘{item['number']}번 저장 안 함’이라고 답해 주세요.",
+            ]
+        )
+    lines.append("\n예: ‘1번 과목명은 국어입니다, 2번 점수는 92점입니다, 3번 저장 안 함’")
+    return "\n".join(lines)
 
 
 def _search_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:

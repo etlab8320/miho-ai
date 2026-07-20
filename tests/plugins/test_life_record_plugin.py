@@ -68,6 +68,7 @@ def _patch_vision(monkeypatch, payload, *, pages=1):
     )
     monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"] * pages)
     monkeypatch.setattr(service_module, "_safe_photo", lambda _p: None)
+    monkeypatch.setattr(service_module, "scanned_source_replacement_required", lambda: False)
     monkeypatch.setattr(vision_module, "default_codex_resolver", _fake_resolver_factory(payload))
 
 
@@ -88,7 +89,7 @@ def test_life_record_tools_register() -> None:
     from plugins.life_record import register
     manager = PluginManager()
     register(PluginContext(PluginManifest(name="life_record", source="bundled", key="life_record"), manager))
-    for tool in ("life_record_ingest_pdf", "life_record_verify", "life_record_search", "life_record_summary", "life_record_delete", "life_record_lookup", "life_record_confirm"):
+    for tool in ("life_record_ingest_pdf", "life_record_verify", "life_record_search", "life_record_summary", "life_record_delete", "life_record_lookup", "life_record_review", "life_record_apply_review", "life_record_confirm"):
         assert tool in manager._plugin_tool_names
 
 
@@ -278,6 +279,55 @@ def test_lookup_central_returns_accumulated_student(monkeypatch, tmp_path) -> No
     assert any(g["subject"] == "국어" for g in student["grades"])
 
 
+def test_discord_review_shows_only_simple_items_and_applies_correction(monkeypatch, tmp_path) -> None:
+    from plugins.life_record.repository import connect, db_path
+    from plugins.life_record.tools import _apply_review_tool_handler, _review_tool_handler
+
+    result = _ingest(monkeypatch, tmp_path, "thread-review", SAMPLE_1)
+    bundle = Path(result["db_path"]).parent
+    path = db_path(bundle)
+    conn = connect(path)
+    try:
+        conn.execute(
+            "UPDATE subject_grades SET subject=?, raw_score=?, review_status='needs_review' WHERE student_document_id=?",
+            ("국0", "87점", result["document_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    capture_gateway_context(_event("thread-review"))
+    review = json.loads(_review_tool_handler({}))
+    assert review["ok"] is True
+    assert review["remaining_count"] == 1
+    assert review["items"] == [
+        {
+            "number": 1,
+            "kind": "성적",
+            "label": "1학년 1학기 국0 성적",
+            "current_value": "87점",
+            "allowed_fields": ["achievement", "category", "credits", "rank_grade", "raw_score", "students_count", "subject"],
+        }
+    ]
+    assert "1번 맞음" in review["discord_message"]
+    assert "1번 저장 안 함" in review["discord_message"]
+    assert "life_records.sqlite3" not in review["discord_message"]
+
+    applied = json.loads(
+        _apply_review_tool_handler(
+            {"decisions": [{"number": 1, "action": "correct", "changes": {"subject": "국어", "raw_score": "92점"}}]}
+        )
+    )
+    assert applied["ok"] is True
+    assert applied["remaining"] == 0
+    conn = connect(path)
+    try:
+        row = conn.execute("SELECT subject, raw_score, review_status FROM subject_grades WHERE student_document_id=?", (result["document_id"],)).fetchone()
+    finally:
+        conn.close()
+    assert dict(row) == {"subject": "국어", "raw_score": "92점", "review_status": "confirmed"}
+
+
 # ----------------------------------------------------------------- T-11 confirm
 
 def test_confirm_promotes_needs_review_rows(monkeypatch, tmp_path) -> None:
@@ -294,6 +344,7 @@ def test_confirm_promotes_needs_review_rows(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(service_module, "extract_pdf", lambda _p: SimpleNamespace(page_texts=[], raw_text="", page_count=1, metadata={}, photo=None))
     monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"])
     monkeypatch.setattr(service_module, "_safe_photo", lambda _p: None)
+    monkeypatch.setattr(service_module, "scanned_source_replacement_required", lambda: False)
     # 3 runs all differ on raw_score → no majority → stays needs_review
     seq = [SAMPLE_1, payload_b, payload_c]
     calls = {"i": 0}
@@ -405,6 +456,7 @@ def test_attached_pdf_auto_routes_to_ingest_without_tool_name(monkeypatch, tmp_p
     monkeypatch.setattr(service_module, "extract_pdf", lambda _p: SimpleNamespace(page_texts=[], raw_text="", page_count=1, metadata={}, photo=None))
     monkeypatch.setattr(service_module, "render_page_images", lambda *a, **k: [b"\x89PNG\r\n\x1a\n"])
     monkeypatch.setattr(service_module, "_safe_photo", lambda _p: None)
+    monkeypatch.setattr(service_module, "read_private_first_page_text", lambda _p: "학교생활기록부")
 
     async def _smart(images, prompt):
         # the 1-page gate asks a yes/no question; extraction asks for JSON
@@ -475,8 +527,8 @@ def test_no_attachment_passes_through(monkeypatch, tmp_path) -> None:
 
 # ----------------------------------------------------------------- T-12 live (opt-in)
 
-@pytest.mark.skipif(os.environ.get("MIHO_LIFE_RECORD_LIVE_TEST") != "1", reason="opt-in live vision test")
-def test_live_vision_extraction_on_real_samples(tmp_path, monkeypatch) -> None:
+@pytest.mark.skipif(os.environ.get("MIHO_LIFE_RECORD_LIVE_TEST") != "1", reason="opt-in live document test")
+def test_live_ingestion_or_scanned_source_request(tmp_path, monkeypatch) -> None:
     from plugins.life_record import _capture_gateway_context
     from plugins.life_record.tools import _ingest_pdf_tool_handler
     samples = [Path("/Users/etlab/Downloads/김동혁생기부.pdf"), Path("/Users/etlab/Downloads/120260521102310194.pdf")]
@@ -486,6 +538,11 @@ def test_live_vision_extraction_on_real_samples(tmp_path, monkeypatch) -> None:
             pytest.skip(f"sample missing: {pdf}")
         capture_gateway_context(_event(f"live-{i}"))
         result = json.loads(_ingest_pdf_tool_handler({"pdf_path": str(pdf)}))
+        if result.get("replacement_document_required"):
+            assert result["operation"] == "life_record.scanned_source_required"
+            assert result["accepted_source_types"] == ["original_pdf", "neisplus_mhtml"]
+            assert result["db_write_allowed"] is False
+            continue
         assert result["ok"] is True
-        assert result["student"]["name"]  # vision read a name
+        assert result["student"]["name"]
         assert result["counts"]["subject_grade_rows"] >= 0

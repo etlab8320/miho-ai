@@ -322,6 +322,141 @@ def delete_bundle(bundle_dir: Path) -> bool:
     return True
 
 
+# ---------------------------------------------------------------- Discord review decisions
+
+_REVIEW_SPECS: tuple[dict[str, Any], ...] = (
+    {
+        "table": "subject_grades",
+        "kind": "성적",
+        "label": lambda row: f"{row['grade']}학년 {row['semester']}학기 {row['subject']} 성적",
+        "value": lambda row: row.get("raw_score") or "점수 미확인",
+        "fields": {"subject", "raw_score", "rank_grade", "achievement", "credits", "students_count", "category"},
+    },
+    {
+        "table": "subject_special_notes",
+        "kind": "세특",
+        "label": lambda row: f"{row['grade']}학년 {row.get('semester') or ''}학기 {row['subject']} 세특".replace("  학기", " "),
+        "value": lambda row: (row.get("note_text") or "")[:120],
+        "fields": {"subject", "note_text"},
+    },
+    {
+        "table": "attendance_records",
+        "kind": "출결",
+        "label": lambda row: f"{row['grade']}학년 출결",
+        "value": lambda row: row.get("special_note") or f"수업일수 {row.get('school_days') or '미확인'}일",
+        "fields": {"school_days", "absent_disease", "absent_unexcused", "absent_other", "late_disease", "late_unexcused", "late_other", "early_leave_disease", "early_leave_unexcused", "early_leave_other", "result_disease", "result_unexcused", "result_other", "special_note"},
+    },
+    {
+        "table": "awards",
+        "kind": "수상",
+        "label": lambda row: f"{row.get('grade') or ''}학년 수상".strip(),
+        "value": lambda row: row.get("title") or "수상명 미확인",
+        "fields": {"title", "awarded_at", "issuer"},
+    },
+)
+
+
+def pending_review_items(path: Path, document_id: int, *, limit: int = 12) -> list[dict[str, Any]]:
+    """Return only unresolved rows as short, numbered human-review items.
+
+    The number is a display handle for the current review snapshot. It is resolved
+    server-side again when a correction is applied; callers never choose a table or
+    database path.
+    """
+    conn = connect(path)
+    try:
+        items: list[dict[str, Any]] = []
+        for spec in _REVIEW_SPECS:
+            rows = conn.execute(
+                f"SELECT * FROM {spec['table']} WHERE student_document_id=? AND review_status='needs_review' ORDER BY id",
+                (document_id,),
+            ).fetchall()
+            for row in rows:
+                data = dict(row)
+                items.append(
+                    {
+                        "number": len(items) + 1,
+                        "kind": spec["kind"],
+                        "label": spec["label"](data),
+                        "current_value": spec["value"](data),
+                        "allowed_fields": sorted(spec["fields"]),
+                        "_table": spec["table"],
+                        "_row_id": int(data["id"]),
+                    }
+                )
+                if len(items) >= limit:
+                    return items
+        return items
+    finally:
+        conn.close()
+
+
+def apply_review_decisions(path: Path, document_id: int, decisions: list[dict[str, Any]]) -> dict[str, Any]:
+    """Apply explicit human review decisions from the current Discord conversation.
+
+    Only the short review-item number is accepted. Table names, row IDs and SQL are
+    never model/user inputs. Corrected values and exclusions are audit logged.
+    """
+    if not decisions:
+        return {"ok": False, "message": "반영할 검수 답변이 없습니다."}
+    items = pending_review_items(path, document_id, limit=200)
+    by_number = {int(item["number"]): item for item in items}
+    specs = {spec["table"]: spec for spec in _REVIEW_SPECS}
+    conn = connect(path)
+    try:
+        applied: list[dict[str, Any]] = []
+        for decision in decisions:
+            number_value = decision.get("number")
+            try:
+                number = int(number_value) if number_value is not None else 0
+            except (TypeError, ValueError):
+                return {"ok": False, "message": "검수 항목 번호를 확인해 주세요."}
+            item = by_number.get(number)
+            if item is None:
+                return {"ok": False, "message": f"{number}번은 현재 검수 대기 항목이 아닙니다. 다시 검수 목록을 보여드리겠습니다."}
+            action = str(decision.get("action") or "").strip().lower()
+            table = str(item["_table"])
+            row_id = int(item["_row_id"])
+            if action == "confirm":
+                conn.execute(f"UPDATE {table} SET review_status='confirmed' WHERE id=? AND student_document_id=?", (row_id, document_id))
+                applied.append({"number": number, "action": "확인", "label": item["label"]})
+                continue
+            if action == "exclude":
+                conn.execute(f"UPDATE {table} SET review_status='excluded' WHERE id=? AND student_document_id=?", (row_id, document_id))
+                applied.append({"number": number, "action": "저장 안 함", "label": item["label"]})
+                continue
+            if action != "correct":
+                return {"ok": False, "message": f"{number}번 처리 방식은 '맞음', '수정', '저장 안 함' 중 하나여야 합니다."}
+            changes = decision.get("changes")
+            if not isinstance(changes, dict) or not changes:
+                return {"ok": False, "message": f"{number}번의 수정할 내용을 확인해 주세요."}
+            allowed = specs[table]["fields"]
+            safe_changes = {str(key): value for key, value in changes.items() if str(key) in allowed and value is not None}
+            if not safe_changes or len(safe_changes) != len(changes):
+                return {"ok": False, "message": f"{number}번에는 해당 항목에서 고칠 수 없는 값이 포함되어 있습니다."}
+            assignments = ", ".join(f"{field}=?" for field in safe_changes)
+            conn.execute(
+                f"UPDATE {table} SET {assignments}, review_status='confirmed' WHERE id=? AND student_document_id=?",
+                (*safe_changes.values(), row_id, document_id),
+            )
+            applied.append({"number": number, "action": "수정", "label": item["label"], "changes": safe_changes})
+        conn.execute(
+            "INSERT INTO extraction_audit_logs(document_id, method, version, result_summary, confidence_before, confidence_after, created_at) VALUES(?,?,?,?,?,?,?)",
+            (document_id, "discord_human_review", "1.0.0", json.dumps(applied, ensure_ascii=False), None, None, now_iso()),
+        )
+        remaining = sum(
+            int(conn.execute(
+                f"SELECT COUNT(*) AS n FROM {spec['table']} WHERE student_document_id=? AND review_status='needs_review'",
+                (document_id,),
+            ).fetchone()["n"])
+            for spec in _REVIEW_SPECS
+        )
+        conn.commit()
+        return {"ok": True, "operation": "life_record.apply_review", "applied": applied, "remaining": remaining}
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------- confirm + promote
 
 def confirm_rows(path: Path, document_id: int) -> int:

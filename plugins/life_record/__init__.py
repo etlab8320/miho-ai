@@ -9,10 +9,12 @@ from typing import Any
 
 from .context import capture_gateway_context
 from .tools import (
+    _apply_review_tool_handler,
     _confirm_tool_handler,
     _delete_tool_handler,
     _ingest_pdf_tool_handler,
     _lookup_tool_handler,
+    _review_tool_handler,
     _search_tool_handler,
     _summary_tool_handler,
     _verify_tool_handler,
@@ -37,7 +39,8 @@ def _life_record_command(raw_args: str = "") -> str:
 
 _LIFE_RECORD_TOOLS = {
     "life_record_ingest_pdf", "life_record_verify", "life_record_search",
-    "life_record_summary", "life_record_delete", "life_record_lookup", "life_record_confirm",
+    "life_record_summary", "life_record_delete", "life_record_lookup", "life_record_review",
+    "life_record_apply_review", "life_record_confirm",
 }
 _ROUTE_PRIORITY = 100
 # Unique fingerprints of the life-record DB — if a general-purpose tool's args
@@ -253,6 +256,49 @@ def register(ctx: Any) -> None:
         },
         handler=_lookup_tool_handler,
         description="Look up a student in the central life-record DB (confirmed records accumulated across semesters: grades, attendance, awards). Use when asked about a student whose 생기부 was already ingested and confirmed.",
+    )
+    ctx.register_tool(
+        name="life_record_review",
+        toolset="life_record",
+        schema={"type": "object", "properties": {"document_id": {"type": "integer"}}, "additionalProperties": False},
+        handler=_review_tool_handler,
+        description=(
+            "생기부 추출 후 needs_review 항목이 있을 때 호출한다. 원장님에게 DB나 복잡한 엑셀을 보여주지 않고, "
+            "Discord에서 확인이 필요한 항목만 번호·현재 읽힌 값·쉬운 답변 예시로 안내한다. "
+            "도구 결과의 discord_message를 바탕으로 공손한 한국어로 답한다."
+        ),
+    )
+    ctx.register_tool(
+        name="life_record_apply_review",
+        toolset="life_record",
+        schema={
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "integer"},
+                "decisions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "number": {"type": "integer", "minimum": 1},
+                            "action": {"type": "string", "enum": ["confirm", "correct", "exclude"]},
+                            "changes": {"type": "object"},
+                        },
+                        "required": ["number", "action"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["decisions"],
+            "additionalProperties": False,
+        },
+        handler=_apply_review_tool_handler,
+        description=(
+            "원장님이 현재 메시지에서 검수 답변을 명시했을 때만 호출한다. 예: '1번 맞음'→confirm, "
+            "'2번 과목명은 국어/점수는 92점'→correct+changes, '3번 저장 안 함'→exclude. "
+            "번호는 반드시 직전 life_record_review의 번호를 사용하고, 도구가 반환하지 않은 DB 경로·행 ID·테이블명은 절대 입력하지 않는다."
+        ),
     )
     ctx.register_tool(
         name="life_record_confirm",

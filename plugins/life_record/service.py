@@ -344,9 +344,9 @@ def format_ingest_summary(result: dict[str, Any]) -> str:
     verification = result.get("verification") or {}
     verified = verification.get("status") == "pass" and not verification.get("human_review_required")
     if verified:
-        lines = [f"📄 {name} 생기부를 검증 통과 상태로 스레드 DB에 저장했어."]
+        lines = [f"📄 {name} 생기부를 검증 통과 상태로 스레드 DB에 저장했습니다."]
     else:
-        lines = [f"📄 {name} 생기부 원본을 스레드 DB에 보관했어. 구조화 결과는 검수 필요 상태야."]
+        lines = [f"📄 {name} 생기부 원본을 스레드 DB에 보관했습니다. 구조화 결과는 검수 필요 상태입니다."]
     if result.get("photo_display_path"):
         lines.append(f"MEDIA:{result['photo_display_path']}")
     lines.append(
@@ -365,7 +365,7 @@ def format_ingest_summary(result: dict[str, Any]) -> str:
             lines.append(f"  · {g.get('grade')}학년{sem} {g.get('subject')} {g.get('raw_score') or '—'}{rank}")
         if len(pending_grades) > 12:
             lines.append(f"  · …외 {len(pending_grades) - 12}건")
-        lines.append("→ 맞으면 life_record_confirm으로 일괄 확정, 틀린 건 말해주면 고칠게.")
+        lines.append("→ life_record_review로 확인이 필요한 항목만 원장님께 안내해 주세요. 원장님 답변을 반영한 뒤 최종 확정할 수 있습니다.")
     promoted = result.get("promoted")
     if result.get("consensus_complete") and promoted and promoted.get("ok"):
         lines.append("- 전 항목 합의 완료 → 중앙 학생DB에 저장됨 (이후 life_record_lookup으로 조회 가능)")
