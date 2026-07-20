@@ -33,7 +33,20 @@ def _norm_subject_area(value: Any) -> str:
         return "체육"
     if text.startswith("예술") or "음악" in text or "미술" in text:
         return "예술"
-    if any(k in text for k in ("기술", "가정", "제2외국어", "한문", "교양", "정보", "진로")):
+    if any(
+        k in text
+        for k in (
+            "기술",
+            "가정",
+            "제2외국어",
+            "제2 외국어",
+            "한문",
+            "교양",
+            "교 양",
+            "정보",
+            "진로",
+        )
+    ):
         return "기타"
     return text
 
@@ -64,6 +77,12 @@ def _subject_area_from_row(row: dict[str, Any]) -> str:
     if area not in _GENERIC_CENTRAL_AREAS and area != "기타":
         return area
     subject = str(row.get("subject") or row.get("과목") or "").strip()
+    # Do this before the keyword fallback: e.g. "중국어" contains the
+    # substring "국어" but belongs to the 제2외국어/한문/교양 group, not 국어.
+    # Treating it as 국어 can both select an ineligible course and trigger a
+    # university's major-subject credit bonus.
+    if any(language in subject for language in ("중국어", "일본어", "독일어", "프랑스어", "스페인어", "러시아어", "한문", "제2외국어")):
+        return "기타"
     for resolved, keywords in _SUBJECT_AREA_KEYWORDS:
         if any(keyword in subject for keyword in keywords):
             return resolved

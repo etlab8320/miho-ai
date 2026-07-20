@@ -14,6 +14,12 @@ from .db import _connect, _json_loads
 from .formula_adapter import _formula_calculate
 from .prev_year import _safe_like_term, _vs_prev_year, _vultr_mysql
 from .recommendation_events import recommendation_event_info
+from .recommendation_gender import (
+    gender_key as _gender_key,
+    is_gender_ineligible as _is_gender_ineligible,
+)
+from .recommendation_regions import parse_regions as _parse_regions
+from .recommendation_student import grades_from_central, identity_error_message
 from .recommendation_verdict import practical_verdict
 from .targeting import (
     _is_blocked_official_row,
@@ -30,13 +36,10 @@ _REGION_MAP: dict[str, str] | None = None
 MAX_RECOMMEND_CANDIDATES = 400
 
 
-def _student_grades_from_central(student_query: str) -> tuple[str | None, list[dict[str, Any]]]:
-    original_db = _student_records.CENTRAL_LIFE_DB
-    _student_records.CENTRAL_LIFE_DB = _CENTRAL_LIFE_DB
-    try:
-        return _student_records.student_grades_from_central(student_query)
-    finally:
-        _student_records.CENTRAL_LIFE_DB = original_db
+def _student_grades_from_central(
+    student_query: str, *, student_id: int | None = None
+) -> tuple[str | None, list[dict[str, Any]]]:
+    return grades_from_central(_CENTRAL_LIFE_DB, student_query, student_id=student_id)
 
 
 def _row_get(row: Any, key: str, default: Any = None) -> Any:
@@ -61,27 +64,6 @@ def _region_map() -> dict[str, str]:
             data = {}
     _REGION_MAP = data if isinstance(data, dict) else {}
     return _REGION_MAP
-
-
-def _gender_key(value: Any) -> str:
-    text = str(value or "").strip().casefold()
-    if text in {"m", "male", "man", "boy", "남", "남자", "남학생"}:
-        return "male"
-    if text in {"f", "female", "woman", "girl", "여", "여자", "여학생"}:
-        return "female"
-    if any(marker in text for marker in ("남자", "남학생", " male", "boy")):
-        return "male"
-    if any(marker in text for marker in ("여자", "여학생", " female", "girl")):
-        return "female"
-    return ""
-
-
-def _is_gender_ineligible(university: Any, department: Any, gender_key: str) -> bool:
-    if gender_key != "male":
-        return False
-    text = f"{university or ''} {department or ''}"
-    women_only_markers = ("여자대학교", "여대", "여자대학")
-    return any(marker in text for marker in women_only_markers)
 
 
 # 학교 평가 티어 (실기전형 입결 서열 + 지역·명성 종합) — 추천 정렬 1순위.
@@ -163,35 +145,6 @@ def _display_university_name(row: Any) -> str:
     return university
 
 
-_REGION_GROUPS = {
-    "수도권": ["서울", "경기", "인천"],
-    "충청": ["대전", "세종", "충남", "충북"],
-    "강원": ["강원"],
-    "영남": ["부산", "대구", "울산", "경남", "경북"],
-    "경상": ["부산", "대구", "울산", "경남", "경북"],
-    "호남": ["광주", "전남", "전북"],
-    "전라": ["광주", "전남", "전북"],
-    "제주": ["제주"],
-}
-
-
-def _parse_regions(value: Any) -> list[str]:
-    if isinstance(value, (list, tuple)):
-        items = value
-    else:
-        items = _re.split(r"[,/·\s]+", str(value or ""))
-    out = [str(v).strip() for v in items if str(v).strip()]
-    if any(v in ("전국", "전체") for v in out):
-        return []
-    # 광역권명("수도권/충청권/강원권"...)을 region_map의 시도명으로 확장한다.
-    # 입력이 이미 시도명("충남" 등)이면 그대로 둔다.
-    expanded: list[str] = []
-    for v in out:
-        grp = _REGION_GROUPS.get(v) or _REGION_GROUPS.get(v.rstrip("권"))
-        expanded.extend(grp if grp else [v])
-    return list(dict.fromkeys(expanded))
-
-
 # 전년도 트랙별 컷 캐시 — 26 확정 합격자들의 종목 기록 슬롯 패턴으로 트랙을
 # 분리해 산출한 값 (수원대 실사고 2026-06-12: 전공/기초체력 컷이 한 줄로 섞여
 # 비교 왜곡). 기본 판단 트랙 = 측정이 가장 완전한(슬롯 多) 코호트, 인원 3명
@@ -223,6 +176,7 @@ def recommend_candidates(
     region: Any = None,
     max_candidates: int = 30,
     student_gender: str | None = None,
+    student_id: int | None = None,
 ) -> dict[str, Any]:
     if region is None or str(region).strip() == "":
         # 사장님 설계(2026-06-12): 지역은 도구가 요구한다 — 설명문 지시는 대화
@@ -237,11 +191,23 @@ def recommend_candidates(
                 "보내고 턴을 끝내라. 사용자가 말한 적 없는 지역을 네가 지어내는 것만 금지다."
             ),
         }
-    student_name, grades = _student_grades_from_central(student_query)
+    if student_id is None:
+        student_name, grades = _student_grades_from_central(student_query)
+    else:
+        student_name, grades = _student_grades_from_central(
+            student_query,
+            student_id=student_id,
+        )
     if not grades:
+        status = _student_records.last_student_resolution_status()
         return {
-            "error": f"중앙 생기부 DB에서 '{student_query}' 학생의 확정 성적을 찾지 못했어. "
-            "생기부 인제스트/검수(life_record_confirm)가 끝난 학생만 추천 계산이 가능해."
+            "error": identity_error_message(
+                student_query,
+                student_id=student_id,
+                student_name=student_name,
+                status=status,
+            ),
+            "student_resolution": status.value,
         }
 
     wanted_regions = _parse_regions(region)
