@@ -215,4 +215,24 @@ CREATE TABLE IF NOT EXISTS central_promotions (
   source_thread TEXT,
   promoted_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS student_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL REFERENCES students(id),
+  alias TEXT NOT NULL,
+  alias_normalized TEXT NOT NULL,
+  source_thread TEXT NOT NULL DEFAULT '',
+  confirmed_at TEXT NOT NULL,
+  UNIQUE(student_id, alias_normalized, source_thread)
+);
+CREATE INDEX IF NOT EXISTS idx_student_aliases_lookup
+  ON student_aliases(alias_normalized, source_thread);
+CREATE TABLE IF NOT EXISTS central_achievement_ratios (
+  student_id INTEGER NOT NULL REFERENCES students(id),
+  grade INTEGER NOT NULL,
+  semester INTEGER NOT NULL,
+  subject TEXT NOT NULL,
+  ratios_json TEXT NOT NULL,
+  confirmed_at TEXT NOT NULL,
+  UNIQUE(student_id, grade, semester, subject)
+);
 """

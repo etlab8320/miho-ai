@@ -28,6 +28,7 @@ def _life_record_command(raw_args: str = "") -> str:
     return (
         "생기부 도구\n"
         "- PDF/MHTML 업로드 후 `life_record_ingest_pdf`가 현재 Discord 스레드 전용 SQLite DB를 만듭니다.\n"
+        "- 스캔본은 저장하지 않고 카카오톡 원본 PDF 또는 나이스플러스 MHTML을 다시 요청합니다.\n"
         "- 원본 파일과 학생 사진은 같은 스레드 폴더에만 보관합니다.\n"
         "- 장기기억/RAG에는 원문을 넣지 않습니다.\n"
         "- 검수 전 데이터는 needs_review로 다룹니다."
@@ -141,9 +142,20 @@ async def _capture_gateway_context(event: Any = None, gateway: Any = None, **_: 
             "required_tool": "life_record_ingest_pdf",
             "priority": _ROUTE_PRIORITY,
         }
-    except Exception as exc:  # never block other plugins on a routing failure
-        logger.info("life_record auto-route skipped: %s", exc)
-        return {"action": "allow"}
+    except Exception as exc:
+        logger.warning("life_record private document gate failed: %s", exc)
+        return {
+            "action": "respond",
+            "text": (
+                "첨부 문서를 개인정보 보호 방식으로 안전하게 확인하지 못해 자동 처리를 중단했어. "
+                "원본 파일 상태를 확인한 뒤 다시 첨부해줘."
+            ),
+            "route": "life_record",
+            "reason": "private_document_gate_failed",
+            "intent": "life_record.ingest",
+            "confidence": 1.0,
+            "priority": _ROUTE_PRIORITY,
+        }
 
 
 def _tool_request_text(event: Any, document: Path) -> str:
@@ -155,6 +167,8 @@ def _tool_request_text(event: Any, document: Path) -> str:
         "반드시 일반 답변으로 처리하지 말고 `life_record_ingest_pdf` 도구를 호출해 DB 저장과 검증을 수행해라.\n"
         f"도구 인자: pdf_path={json.dumps(path, ensure_ascii=False)}\n"
         "도구 결과의 document_id, student, counts, verification, review_path를 근거로 답변해라.\n"
+        "replacement_document_required=true이면 저장 완료라고 말하지 말고 "
+        "카카오톡 원본 PDF 또는 나이스플러스 MHTML을 다시 요청해라.\n"
         "검증 상태가 pass가 아니거나 human_review_required=true이면 저장은 됐더라도 '완료/확정'이라고 말하지 말고 검수 필요 상태로 안내해라.\n"
         f"사용자 원문: {original or '생기부 저장해줘'}"
     )
@@ -188,7 +202,7 @@ def register(ctx: Any) -> None:
             "additionalProperties": False,
         },
         handler=_ingest_pdf_tool_handler,
-        description="생기부·학생부·학교생활기록부 PDF/MHTML/MHT를 DB에 저장/정리하라는 요청이면 반드시 이 도구를 호출하라. 직접 sqlite나 python 코드로 DB를 만들지 말 것 — 이 도구가 MHTML source-text 우선 추출, PDF/text/vision 처리, 다회 합의 검증, 중앙 학생DB 승격 보류/승격 판단, 검수 HTML을 모두 처리한다. Ingest a Korean school life record (생기부) PDF or MHTML/MHT: pass the attached local path as pdf_path. Handles source-text-first MHTML ingestion, vision extraction when needed, consensus verification, central student DB promotion only when safe, and review HTML. Never hand-roll a DB for 생기부 — always use this tool. Never writes to long-term memory or Discord RAG.",
+        description="생기부·학생부·학교생활기록부 PDF/MHTML/MHT를 DB에 저장/정리하라는 요청이면 반드시 이 도구를 호출하라. 직접 sqlite나 python 코드로 DB를 만들지 말 것. 디지털 PDF와 MHTML만 추출·검증·저장하고, 글자를 선택할 수 없는 스캔본은 저장하지 않은 채 카카오톡 원본 PDF 또는 나이스플러스 MHTML을 요청한다. Ingest a Korean school life record from a digital PDF or MHTML/MHT path. Scanned inputs return replacement_document_required and are never sent to cloud vision or written to the DB. Never writes to long-term memory or Discord RAG.",
     )
     ctx.register_tool(
         name="life_record_verify",

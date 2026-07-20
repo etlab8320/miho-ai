@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,10 @@ from .service import (
     summarize_life_record,
     verify_latest,
 )
+from .source_policy import ACCEPTED_SOURCE_TYPES, SOURCE_FILE_ERROR_MESSAGE
+
+
+logger = logging.getLogger(__name__)
 
 
 PRIVACY_POLICY = {
@@ -27,17 +32,23 @@ PRIVACY_POLICY = {
     "delete_scope": "pdf_db_photos_reviews_exports",
     "pii": "주민번호 뒷자리 미저장(앞6자리=생년월일만)",
 }
+LIFE_RECORD_INGEST_TIMEOUT_SECONDS = 120.0
 
 
-def _run_async(coro: Any) -> Any:
+def _run_async(coro: Any, *, timeout_seconds: float | None = None) -> Any:
     """Run an async coroutine from a sync tool handler, whether or not a gateway
     event loop is already running."""
+    async def _bounded() -> Any:
+        if timeout_seconds is None:
+            return await coro
+        return await asyncio.wait_for(coro, timeout=max(0.001, timeout_seconds))
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        return asyncio.run(_bounded())
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(lambda: asyncio.run(coro)).result()
+        return executor.submit(lambda: asyncio.run(_bounded())).result()
 
 
 def _ingest_pdf_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> str:
@@ -48,10 +59,30 @@ def _ingest_pdf_tool_handler(args: dict[str, Any] | None = None, **_: Any) -> st
                 Path(str(payload.get("pdf_path") or "")).expanduser(),
                 current_life_record_dir(),
                 source_thread=THREAD_ID.get(),
-            )
+            ),
+            timeout_seconds=LIFE_RECORD_INGEST_TIMEOUT_SECONDS,
         )
+    except TimeoutError:
+        return _json({
+            "ok": False,
+            "message": (
+                "생기부 처리 시간이 길어져 안전하게 중단했어. "
+                "원본 파일 상태를 확인한 뒤 새 메시지에서 다시 시도해줘."
+            ),
+            "human_review_required": True,
+            "privacy": PRIVACY_POLICY,
+        })
     except (OSError, ValueError, RuntimeError) as exc:
-        return _json({"ok": False, "message": str(exc), "privacy": PRIVACY_POLICY})
+        logger.warning("life_record ingest failed: %s", exc)
+        return _json({
+            "ok": False,
+            "message": SOURCE_FILE_ERROR_MESSAGE,
+            "replacement_document_required": True,
+            "accepted_source_types": list(ACCEPTED_SOURCE_TYPES),
+            "privacy": PRIVACY_POLICY,
+        })
+    if result.get("ok") is False:
+        return _json({**result, "privacy": PRIVACY_POLICY})
     return _json(
         {
             "ok": True,

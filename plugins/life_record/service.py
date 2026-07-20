@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from .consensus import all_confirmed, reconcile
+from .docforge_private import read_private_first_page_text
 from .mhtml_tables import extract_neis_mhtml_tables
 from .mhtml_source import empty_extraction, extract_from_mhtml_source
 from .pdf_text_source import extract_from_pdf_text, has_core_pdf_text_data
@@ -39,6 +41,10 @@ from .repository import (
     summary_counts,
 )
 from .review import write_review_html
+from .source_policy import (
+    scanned_source_replacement_required,
+    scanned_source_result,
+)
 from .verifier import run_verification
 from .vision_extractor import (
     VisionResolver,
@@ -88,6 +94,13 @@ async def ingest_life_record(
         logger.warning("life_record: %s has %d pages (> cap %d) — processing only the first %d",
                        processing_pdf_path.name, extracted.page_count, MAX_PAGES, MAX_PAGES)
         render_pages = list(range(MAX_PAGES))
+    is_scanned = bool(
+        extracted
+        and not has_text_layer(mhtml_page_texts)
+        and not has_text_layer(extracted.page_texts)
+    )
+    if is_scanned and resolver is None and scanned_source_replacement_required():
+        return scanned_source_result()
     page_pngs = [] if mhtml_tables else render_page_images(processing_pdf_path, zoom=RENDER_ZOOM, pages=render_pages)
     _save_review_pages(bundle_dir, page_pngs)
 
@@ -296,6 +309,19 @@ async def looks_like_life_record(pdf_path: Path, *, resolver: VisionResolver | N
             return True
         if source_text.strip():
             return False
+    else:
+        extracted = extract_pdf(pdf_path)
+        source_text = "\n".join(extracted.page_texts)
+        if source_text.strip():
+            return _looks_like_life_record_text(source_text)
+    if resolver is None:
+        with tempfile.TemporaryDirectory(prefix="miho_life_record_gate_") as tmp:
+            gate_path = _normalize_to_pdf(pdf_path, Path(tmp))
+            private_text = await asyncio.to_thread(
+                read_private_first_page_text,
+                gate_path,
+            )
+        return _looks_like_life_record_text(private_text)
     with tempfile.TemporaryDirectory(prefix="miho_life_record_gate_") as tmp:
         gate_path = _normalize_to_pdf(pdf_path, Path(tmp))
         images = [to_data_url(png) for png in render_page_images(gate_path, zoom=2.0, pages=[0])]
@@ -398,7 +424,7 @@ def _normalize_to_pdf(document_path: Path, bundle_dir: Path, *, page_texts: list
 
 
 def _looks_like_life_record_text(text: str) -> bool:
-    compact = " ".join((text or "").split())
+    compact = "".join((text or "").split())
     if not compact:
         return False
     markers = ("학교생활기록부", "생활기록부", "학생부", "교과학습발달상황", "창의적 체험활동", "출결상황")
