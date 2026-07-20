@@ -1,5 +1,5 @@
 name: life_record
-version: 0.1.0
+version: 0.2.0
 description: "Thread-scoped Korean school life record PDF/MHTML ingestion, strict verification, and search."
 author: "ET Lab"
 kind: standalone
@@ -12,4 +12,6 @@ tools:
   - life_record_summary
   - life_record_delete
   - life_record_lookup
+  - life_record_review
+  - life_record_apply_review
   - life_record_confirm
